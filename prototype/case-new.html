@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nowa reklamacja — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-page="cases">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+
+      <div class="content" style="max-width: 860px;">
+        <div class="breadcrumb">
+          <a href="cases.html">Reklamacje</a> <span>/</span> <span>Nowa reklamacja</span>
+        </div>
+        <div class="page-header">
+          <div>
+            <h1>Nowa reklamacja</h1>
+            <p class="page-subtitle">Zarejestruj zgłoszenie klienta krok po kroku (BR-011).</p>
+          </div>
+        </div>
+
+        <form id="case-form">
+
+          <!-- Sekcja 1: Klient -->
+          <div class="form-section">
+            <div class="form-section-header">
+              <div class="form-section-index">1</div>
+              <div>
+                <h3>Klient</h3>
+                <p>Znajdź istniejącego klienta lub zarejestruj nowego.</p>
+              </div>
+            </div>
+
+            <div class="form-grid single" id="customer-search-block">
+              <div class="field autocomplete-wrap">
+                <label for="customer-search">Szukaj klienta (nazwisko, telefon, e-mail)</label>
+                <input type="text" id="customer-search" placeholder="np. Zawadzka albo 600 111 222" autocomplete="off" />
+                <div class="autocomplete-results" id="customer-results"></div>
+                <span class="hint">Nie znaleziono klienta? <a href="#" id="toggle-new-customer" style="color:var(--primary); font-weight:600;">Dodaj nowego klienta</a></span>
+              </div>
+            </div>
+
+            <div class="form-grid single hidden" id="selected-customer-block">
+              <div class="selected-customer-chip">
+                <div>
+                  <div style="font-weight:600; font-size:13.5px;" id="selected-customer-name"></div>
+                  <div class="cell-secondary" id="selected-customer-meta"></div>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" id="clear-customer">Zmień</button>
+              </div>
+            </div>
+
+            <div class="form-grid hidden" id="new-customer-block">
+              <div class="field">
+                <label for="c-firstName">Imię</label>
+                <input type="text" id="c-firstName" />
+              </div>
+              <div class="field">
+                <label for="c-lastName">Nazwisko</label>
+                <input type="text" id="c-lastName" />
+              </div>
+              <div class="field">
+                <label for="c-phone">Telefon</label>
+                <input type="tel" id="c-phone" placeholder="600 000 000" />
+              </div>
+              <div class="field">
+                <label for="c-email">E-mail</label>
+                <input type="email" id="c-email" />
+              </div>
+              <div class="field span-2">
+                <label for="c-address">Adres <span class="hint">(opcjonalnie)</span></label>
+                <input type="text" id="c-address" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Sekcja 2: Produkt -->
+          <div class="form-section">
+            <div class="form-section-header">
+              <div class="form-section-index">2</div>
+              <div>
+                <h3>Produkt</h3>
+                <p>Dane produktu, którego dotyczy zgłoszenie.</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="field">
+                <label for="p-brand">Marka <span class="hint">(opcjonalnie — przyspiesza wybór producenta)</span></label>
+                <input type="text" id="p-brand" list="p-brand-list" placeholder="np. Cybex" autocomplete="off" />
+                <datalist id="p-brand-list"></datalist>
+              </div>
+              <div class="field">
+                <label for="p-manufacturer">Producent</label>
+                <select id="p-manufacturer" required></select>
+              </div>
+              <div class="field">
+                <label for="p-model">Model</label>
+                <input type="text" id="p-model" placeholder="np. Wózek spacerowy Comfy 3.0" required />
+              </div>
+              <div class="field">
+                <label for="p-serial">Numer seryjny <span class="hint">(jeżeli istnieje)</span></label>
+                <input type="text" id="p-serial" />
+              </div>
+              <div class="field">
+                <label for="p-frame">Numer ramy <span class="hint">(jeżeli istnieje)</span></label>
+                <input type="text" id="p-frame" />
+              </div>
+              <div class="field">
+                <label for="p-purchaseDate">Data zakupu</label>
+                <input type="date" id="p-purchaseDate" />
+              </div>
+              <div class="field">
+                <label for="p-proof">Numer dowodu zakupu</label>
+                <input type="text" id="p-proof" placeholder="np. FV/2026/07/123" />
+              </div>
+              <div class="field span-2">
+                <label>Załączniki <span class="hint">(paragon, faktura, zdjęcie wady — opcjonalnie)</span></label>
+                <div class="file-drop" id="file-drop">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4 7 9M12 4l5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+                  <span>Dodaj zdjęcie / plik</span>
+                  <input type="file" id="file-input" multiple accept="image/*,application/pdf" hidden />
+                </div>
+                <div id="file-list" class="file-chip-list"></div>
+                <span class="hint">Upload zostanie podłączony w module Dokumentów — na tym etapie plik nie jest nigdzie zapisywany.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sekcja 3: Reklamacja -->
+          <div class="form-section">
+            <div class="form-section-header">
+              <div class="form-section-index">3</div>
+              <div>
+                <h3>Reklamacja</h3>
+                <p>Rodzaj zgłoszenia i jego opis.</p>
+              </div>
+            </div>
+            <div class="form-grid single">
+              <div class="field">
+                <label>Rodzaj reklamacji</label>
+                <div class="radio-card-group">
+                  <label class="radio-card" id="radio-warranty">
+                    <input type="radio" name="complaintType" value="Warranty" checked />
+                    <div>
+                      <div class="radio-card-title">Gwarancja</div>
+                      <div class="radio-card-desc">Decyzję podejmuje producent produktu.</div>
+                    </div>
+                  </label>
+                  <label class="radio-card" id="radio-statutory">
+                    <input type="radio" name="complaintType" value="StatutoryWarranty" />
+                    <div>
+                      <div class="radio-card-title">Rękojmia</div>
+                      <div class="radio-card-desc">Decyzję podejmuje Kierownik (sklep), nie producent.</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="form-grid single">
+              <div class="field">
+                <label for="f-source">Źródło zgłoszenia</label>
+                <select id="f-source" required>
+                  <option value="Sklep stacjonarny">Sklep stacjonarny</option>
+                  <option value="E-mail">E-mail</option>
+                  <option value="Telefon">Telefon</option>
+                  <option value="Formularz WWW">Formularz WWW</option>
+                  <option value="Marketplace">Marketplace</option>
+                  <option value="Inne">Inne</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-grid single">
+              <div class="field">
+                <label for="f-description">Opis zgłoszenia</label>
+                <textarea id="f-description" placeholder="Krótkie podsumowanie sprawy widoczne w historii i na liście." required></textarea>
+              </div>
+              <div class="field">
+                <label for="f-statement">Treść zgłoszenia klienta <span class="hint">(opcjonalnie — dosłowne słowa klienta)</span></label>
+                <textarea id="f-statement" placeholder="Np. dokładny cytat z rozmowy lub wiadomości klienta."></textarea>
+              </div>
+              <div class="field">
+                <label for="f-resolution">Oczekiwane rozwiązanie zgłoszone przez klienta</label>
+                <select id="f-resolution" required>
+                  <option value="">Wybierz oczekiwane rozwiązanie…</option>
+                  <option value="Naprawa">Naprawa</option>
+                  <option value="Wymiana produktu">Wymiana produktu</option>
+                  <option value="Wymiana części">Wymiana części</option>
+                  <option value="Zwrot środków">Zwrot środków</option>
+                  <option value="Odstąpienie od umowy">Odstąpienie od umowy</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sekcja 4: Właściciel sprawy (pole tymczasowe do czasu modułu logowania) -->
+          <div class="form-section">
+            <div class="form-section-header">
+              <div class="form-section-index">4</div>
+              <div>
+                <h3>Właściciel sprawy</h3>
+                <p>Pole tymczasowe — po wdrożeniu logowania właściciel będzie ustawiany automatycznie.</p>
+              </div>
+            </div>
+            <div class="form-grid single">
+              <div class="field">
+                <label for="f-owner">Pracownik rejestrujący sprawę</label>
+                <select id="f-owner" required></select>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-footer">
+            <a href="cases.html" class="btn btn-secondary">Anuluj</a>
+            <button type="submit" class="btn btn-primary">Zapisz zgłoszenie</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/case-new.js"></script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Szczegóły reklamacji — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-page="cases">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+
+      <div class="content" id="content-root">
+        <!-- Wypełniane dynamicznie przez js/case-detail.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: zmiana statusu -->
+  <div class="modal-overlay" id="modal-status">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Zmień status sprawy</h3>
+        <div class="close-x" onclick="closeModal('modal-status')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="modal-status-select">Nowy status</label>
+          <select id="modal-status-select"></select>
+        </div>
+        <div class="field">
+          <label for="modal-status-next-action">Next Action po zmianie</label>
+          <textarea id="modal-status-next-action" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-status')">Anuluj</button>
+        <button class="btn btn-primary" id="modal-status-save">Zapisz status</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: decyzja -->
+  <div class="modal-overlay" id="modal-decision">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Ustaw decyzję</h3>
+        <div class="close-x" onclick="closeModal('modal-decision')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-secondary">Decyzja jest odrębna od oczekiwanego rozwiązania zgłoszonego przez klienta.</p>
+        <div class="field">
+          <label for="modal-decision-select">Decyzja</label>
+          <select id="modal-decision-select">
+            <option value="Naprawa">Naprawa</option>
+            <option value="WymianaCzesci">Wymiana części</option>
+            <option value="WymianaProduktu">Wymiana produktu</option>
+            <option value="ZwrotSrodkow">Zwrot środków</option>
+            <option value="Odrzucenie">Odrzucenie</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-decision')">Anuluj</button>
+        <button class="btn btn-primary" id="modal-decision-save">Zapisz decyzję</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: prośba o uzupełnienie danych -->
+  <div class="modal-overlay" id="modal-info-request">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Poproś klienta o uzupełnienie danych</h3>
+        <div class="close-x" onclick="closeModal('modal-info-request')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-secondary">Nie zakłada nowej reklamacji — wpis trafi do historii tej sprawy i będzie widoczny dla klienta w Portalu Klienta.</p>
+        <div class="field">
+          <label>Szybki wybór (kliknij, aby dodać do treści)</label>
+          <div class="flex gap-8" style="flex-wrap:wrap;">
+            <button type="button" class="tag info-request-chip" data-text="numer seryjny produktu" style="cursor:pointer;">+ numer seryjny</button>
+            <button type="button" class="tag info-request-chip" data-text="dodatkowe zdjęcia usterki" style="cursor:pointer;">+ dodatkowe zdjęcia</button>
+            <button type="button" class="tag info-request-chip" data-text="dowód zakupu (paragon/faktura)" style="cursor:pointer;">+ dowód zakupu</button>
+            <button type="button" class="tag info-request-chip" data-text="dodatkowy dokument od producenta" style="cursor:pointer;">+ inny dokument</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="modal-info-request-text">Czego potrzebujesz od klienta?</label>
+          <textarea id="modal-info-request-text" rows="3" placeholder="np. Prosimy o przesłanie numeru seryjnego produktu."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-info-request')">Anuluj</button>
+        <button class="btn btn-primary" id="modal-info-request-send">Wyślij prośbę</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/case-detail.js"></script>
+</body>
+</html>

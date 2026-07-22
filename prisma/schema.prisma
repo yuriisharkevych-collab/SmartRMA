@@ -1,0 +1,1044 @@
+// ============================================================================
+// SmartRMA AI — Prisma Schema (Fundament architektury)
+//
+// TEN PLIK ZASTĘPUJE poprzedni schema.prisma (zatwierdzony na etapie MVP,
+// obejmujący tylko: User, Customer, Product, Manufacturer, Case, CaseHistory,
+// Document, ReplacementProduct, AuditLog). Poprzednia wersja jest zachowana
+// jako schema.mvp-approved.prisma.reference — do wglądu, nie do użycia.
+//
+// CEL TEGO KROKU (patrz docs/DECISIONS.md, wpis "Etap architektury"):
+// skonsolidować w jednym miejscu wszystkie pola/encje, które przez kolejne
+// rundy prototypowania zostały jawnie oznaczone jako "rozjazd ze schema.prisma
+// do zamknięcia" (pole source, pola Portalu Klienta, pola kreatora zgłoszenia,
+// cała rozbudowa panelu administracyjnego), PLUS pełny model wymagany przez
+// zadanie architektoniczne (Roles/Permissions jako dane, nie enum;
+// Companies/Shops pod przyszłą wielooddziałowość; Orders/Products jako
+// katalog odrębny od zgłoszenia; wieloelementowe reklamacje; Notes/Messages;
+// Logistics; Notifications; rozszerzony AuditLog; Settings).
+//
+// TERMINOLOGIA: zadanie architektoniczne używa nazw angielskich (Complaints,
+// Complaint Items, Complaint Status History, Attachments). Ten schemat
+// ŚWIADOMIE zachowuje nazewnictwo Case/CaseItem/CaseHistory/Document
+// wypracowane w toku całego projektu (widoczne w prototypie, w
+// DECISIONS.md, w oryginalnym BUSINESS_RULES.md) — zmiana nazw na tym
+// etapie byłaby czystym przemianowaniem bez wartości, a zwiększyłaby ryzyko
+// pomyłek przy późniejszym podłączaniu prototypu do backendu. Mapowanie
+// pojęć: Complaint = Case, Complaint Item = CaseItem, Complaint Status
+// History = CaseHistory, Attachment = Document. Patrz DATABASE.md.
+//
+// WIELOOSDZIAŁOWOŚĆ / MULTI-TENANCY: Company to korzeń dzierżawy (tenant),
+// Shop to placówka/oddział należący do Company. Większość encji operacyjnych
+// (User, Customer, Manufacturer, Product, Case, ...) ma companyId - to
+// pierwszy raz w projekcie, gdy tenant ID faktycznie wchodzi do modelu
+// (wcześniej świadomie odłożone, patrz DECISIONS.md "Brak TenantId w MVP").
+// SmartRMA nadal będzie uruchamiane dla jednego Company w MVP (seed tworzy
+// dokładnie jedną firmę), ale model jest już na to przygotowany.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMY
+// ============================================================================
+
+// --- Organizacja / dostęp ---
+
+enum SubmissionMethod {
+  Email
+  PortalB2B
+  FormularzWWW
+}
+
+enum TransportOrganizer {
+  Klient
+  Sklep
+  Producent
+}
+
+// --- Reklamacje ---
+
+// Dwie ścieżki decyzyjne procesu (kto merytorycznie rozstrzyga).
+enum ComplaintType {
+  Warranty
+  StatutoryWarranty
+}
+
+// Kto faktycznie obsługuje zgłoszenie - wymiar NIEZALEŻNY od ComplaintType
+// (np. StatutoryWarranty zawsze idzie przez sklep z mocy prawa, ale
+// Warranty może iść przez sklep ALBO bezpośrednio do producenta).
+enum SubmissionMode {
+  PrzezSklep
+  BezposrednioDoProducenta
+}
+
+enum ComplaintSource {
+  SklepStacjonarny
+  Email
+  Telefon
+  FormularzWWW
+  Marketplace
+  Inne
+}
+
+// Statusy obu ścieżek procesu w jednym enumie. Dozwolone przejścia (zależne
+// od complaintType) waliduje warstwa aplikacji, nie baza danych - patrz
+// WORKFLOW.md. OczekiwanieNaKlienta domyka lukę zidentyfikowaną podczas
+// code review Portalu Klienta (status "oczekiwanie na klienta" nie miał
+// wcześniej odpowiednika w modelu) - dostępny z każdego statusu aktywnego,
+// wraca do Weryfikacja po uzupełnieniu danych przez klienta.
+enum CaseStatus {
+  Nowa
+  Przyjeta
+  Weryfikacja
+  OczekiwanieNaKlienta          // nowy - patrz WORKFLOW.md pkt "Oczekiwanie na klienta"
+  GotowaDoWysylki                // ścieżka: Warranty
+  OczekiwanieNaKuriera           // ścieżka: Warranty
+  WyslanaDoProducenta            // ścieżka: Warranty
+  OczekiwanieNaDecyzjeProducenta // ścieżka: Warranty
+  WeryfikacjaWewnetrzna          // ścieżka: StatutoryWarranty
+  OczekiwanieNaDecyzjeKierownika // ścieżka: StatutoryWarranty
+  RealizacjaDecyzji              // wspólne
+  GotowaDoOdbioru                // wspólne
+  Zamknieta                      // wspólne
+  Anulowana                      // wspólne (BR-003)
+  Zarchiwizowana                 // wspólne (BR-003)
+}
+
+// Wynik rozpatrzenia sprawy - odrębny od requestedResolution.
+enum Decision {
+  Naprawa
+  WymianaCzesci
+  WymianaProduktu
+  ZwrotSrodkow
+  Odrzucenie
+}
+
+enum CasePriority {
+  Niski
+  Normalny
+  Wysoki
+}
+
+// Zamknięty słownik zdarzeń w CaseHistory - wymusza spójność danych.
+// InfoRequested/PortalEnabled/PortalDisabled dodane podczas prototypowania
+// Portalu Klienta (patrz DECISIONS.md) - tutaj domykane w modelu docelowym.
+enum CaseHistoryAction {
+  CaseCreated
+  StatusChanged
+  DocumentAdded
+  DocumentMarkedInvalid
+  ManufacturerAssigned
+  OwnerChanged
+  DecisionSet
+  NextActionUpdated
+  ReplacementProductIssued
+  ReplacementProductReturned
+  InfoRequested
+  PortalEnabled
+  PortalDisabled
+  NoteAdded
+  MessageSent
+  CaseClosed
+  CaseCancelled
+  CaseArchived
+}
+
+// --- Dokumenty ---
+
+enum DocumentType {
+  PDF
+  JPG
+  PNG
+  HEIC
+  MP4
+}
+
+enum DocumentStatus {
+  Aktywny
+  Bledny // BR-020: dokumentu nie usuwamy, tylko oznaczamy jako błędny
+}
+
+// Kategoria NIEZALEŻNA od DocumentType (format pliku) - determinuje
+// docelowe zachowanie UI (podgląd PDF/zdjęcia, grupowanie), patrz prototyp
+// (app.js: getDocumentPreviewInfo). Rozszerzalna migracją addytywną.
+enum DocumentCategory {
+  Confirmation
+  Photo
+  Manufacturer
+  Protocol
+  Decision
+  Other
+}
+
+// Czy dokument jest widoczny dla klienta w Portalu Klienta - luka
+// zidentyfikowana podczas prototypowania Portalu Klienta, domykana tutaj.
+enum DocumentVisibility {
+  Public
+  Internal
+}
+
+// --- Komunikacja ---
+
+enum SenderType {
+  Customer
+  Employee
+  System
+}
+
+enum MessageDirection {
+  Inbound  // od klienta do sklepu
+  Outbound // od sklepu do klienta
+}
+
+enum MessageChannel {
+  Portal
+  Email
+}
+
+// --- Logistyka ---
+
+enum LogisticsType {
+  PickupFromCustomer
+  RedeliveryToCustomer
+  ShipToManufacturer
+  ReturnFromManufacturer
+}
+
+enum LogisticsStatus {
+  Requested
+  Scheduled
+  InTransit
+  Delivered
+  Failed
+  Cancelled
+}
+
+// --- Powiadomienia ---
+
+enum NotificationChannel {
+  Email
+  System
+  SMS
+}
+
+enum NotificationRecipientType {
+  Customer
+  Employee
+}
+
+enum NotificationStatus {
+  Pending
+  Sent
+  Failed
+  Read
+}
+
+// --- Ustawienia ---
+
+enum SettingValueType {
+  String
+  Number
+  Boolean
+  Json
+}
+
+// ============================================================================
+// ORGANIZACJA (przygotowanie pod wielooddziałowość / przyszłe SaaS)
+// ============================================================================
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  nip       String?
+  address   String?
+  email     String?
+  phone     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shops         Shop[]
+  users         User[]
+  employees     Employee[]
+  customers     Customer[]
+  contractors   Contractor[]
+  manufacturers Manufacturer[]
+  brands        Brand[]
+  products      Product[]
+  orders        Order[]
+  cases         Case[]
+  roles         Role[]
+  notificationTemplates NotificationTemplate[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  settings      Setting[]
+
+  @@index([name])
+}
+
+model Shop {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  name       String
+  address    String?
+  city       String?
+  postalCode String?
+  phone      String?
+  email      String?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  users     User[]
+  employees Employee[]
+  orders    Order[]
+  cases     Case[]
+
+  @@index([companyId])
+}
+
+// ============================================================================
+// TOŻSAMOŚĆ I DOSTĘP (RBAC oparte o dane, nie o enum)
+// ============================================================================
+
+// Role systemowe SĄ DANYMI (nie enumem) — zgodnie z ROLES_AND_PERMISSIONS.md:
+// "System powinien pozwalać na przypisanie użytkownikowi wielu ról" oraz z
+// wymaganiem RBAC.md o pełnej konfigurowalności uprawnień. companyId=null
+// oznacza rolę systemową (seedowaną, dostępną dla każdej firmy, niekasowalną
+// - patrz isSystem); companyId ustawione = rola niestandardowa danej firmy.
+model Role {
+  id          String   @id @default(uuid())
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id])
+  name        String   // np. "Pracownik Działu Reklamacji"
+  code        String   // np. "Pracownik" - stabilny identyfikator używany w kodzie/gatingu UI
+  description String?
+  isSystem    Boolean  @default(false) // role seedowane (5 ról z RBAC.md) - niekasowalne, edytowalne tylko w zakresie uprawnień
+  createdAt   DateTime @default(now())
+
+  permissions RolePermission[]
+  users       UserRoleAssignment[]
+
+  @@unique([companyId, code])
+}
+
+// Pojedyncze uprawnienie - "moduł.akcja", patrz RBAC.md dla pełnej listy.
+model Permission {
+  id          String  @id @default(uuid())
+  code        String  @unique // np. "cases.status.change", "manufacturers.manage"
+  module      String  // grupowanie w UI: "Cases", "Manufacturers", "Users", "Reports", "Settings", ...
+  description String
+
+  roles RolePermission[]
+
+  @@index([module])
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+// Wiele ról na użytkownika - wprost wymagane przez ROLES_AND_PERMISSIONS.md
+// ("właściciel jako Kierownik i Administrator jednocześnie"). Efektywne
+// uprawnienia użytkownika to suma uprawnień wszystkich przypisanych ról.
+model UserRoleAssignment {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id])
+  assignedAt DateTime @default(now())
+
+  @@id([userId, roleId])
+}
+
+// User = tożsamość UWIERZYTELNIANIA (login, hasło, role, dostęp do
+// systemu). Celowo ODDZIELONE od Employee (dane kadrowe) - nie każdy User
+// jest pracownikiem etatowym (np. rola "Serwis" może reprezentować
+// zewnętrznego technika z ograniczonym dostępem, bez rekordu Employee).
+// Klienci NIE mają rekordu User - dostęp do Portalu Klienta jest odrębnym
+// mechanizmem (Case.clientAccessCodeHash), nie kontem systemowym.
+model User {
+  id           String   @id @default(uuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id])
+  shopId       String?  // główny/domyślny oddział - nullable dla ról bez stałego przypisania (np. Administrator centralny)
+  shop         Shop?    @relation(fields: [shopId], references: [id])
+
+  firstName    String
+  lastName     String
+  email        String   @unique
+  passwordHash String
+  active       Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+
+  roles             UserRoleAssignment[]
+  employee          Employee?
+  ownedCases        Case[]        @relation("CaseOwner")
+  decidedCases      Case[]        @relation("CaseDecisionBy")
+  uploadedDocuments Document[]
+  historyEntries    CaseHistory[]
+  notes             Note[]
+  messages          Message[]
+  auditLogs         AuditLog[]
+  loginEvents       LoginEvent[]
+
+  @@index([email])
+  @@index([companyId])
+}
+
+// Dane kadrowe - stanowisko, data zatrudnienia. Relacja 1:1 z User,
+// OPCJONALNA (nie każdy User to Employee - patrz komentarz przy User).
+model Employee {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id])
+  companyId      String
+  company        Company   @relation(fields: [companyId], references: [id])
+  shopId         String?
+  shop           Shop?     @relation(fields: [shopId], references: [id])
+
+  employeeNumber String?
+  position       String?
+  hireDate       DateTime?
+  terminationDate DateTime?
+  active         Boolean   @default(true)
+
+  @@index([companyId])
+}
+
+// Zdarzenie logowania - odrębne od AuditLog (AuditLog to log ZDARZEŃ
+// SYSTEMOWYCH/zmian danych; LoginEvent to węższy, częsty log wyłącznie
+// logowań, żeby nie zaśmiecać AuditLog setkami identycznych wpisów
+// "LOGIN_SUCCESS" - ale oba mają wspólny rodowód koncepcyjny).
+model LoginEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  ipAddress String?
+  userAgent String?
+  success   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// KLIENCI
+// ============================================================================
+
+model Customer {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  firstName String
+  lastName  String
+  phone     String
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  orders Order[]
+  cases  Case[]
+
+  @@index([companyId])
+  @@index([lastName])
+  @@index([phone])
+  @@index([email])
+}
+
+// ============================================================================
+// PRODUCENCI / MARKI / KATALOG PRODUKTÓW
+// ============================================================================
+
+// ============================================================================
+// KONTRAHENCI — ogólna encja partnera biznesowego (dostawca, dystrybutor,
+// firma logistyczna, producent). "Producent" (Manufacturer) to
+// WYSPECJALIZOWANY PROFIL kontrahenta, dotyczący wyłącznie obsługi
+// reklamacji - nie każdy Contractor musi mieć taki profil (np. kontrahent
+// będący wyłącznie dostawcą opakowań nie obsługuje reklamacji). Dane
+// firmowe (nazwa, NIP, adres, kontakt) żyją WYŁĄCZNIE tutaj, nie są
+// duplikowane na Manufacturer - patrz DATABASE.md dla pełnego uzasadnienia
+// tego podziału.
+// ============================================================================
+
+enum ContractorCategory {
+  Manufacturer      // producent/gwarant - typowy przypadek z profilem Manufacturer
+  Distributor       // dystrybutor wielu marek - typowy przypadek z profilem Manufacturer
+  LogisticsPartner  // firma kurierska/spedycyjna
+  Supplier          // dostawca inny niż producent (np. opakowań)
+  Other
+}
+
+model Contractor {
+  id        String   @id @default(uuid())
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  name          String
+  category      ContractorCategory @default(Manufacturer)
+  country       String?
+  nip           String?
+  address       String?
+  contactEmail  String?
+  contactPhone  String?
+  contactPerson String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  manufacturerProfile Manufacturer?
+
+  @@index([companyId])
+  @@index([name])
+  @@unique([companyId, nip])
+}
+
+// ----------------------------------------------------------------------------
+// Producent — profil kontrahenta specyficzny dla OBSŁUGI REKLAMACJI. Relacja
+// 1:1 z Contractor (nie każdy kontrahent ma ten profil; kontrahent BEZ
+// profilu Manufacturer nie może zostać przypisany do żadnej marki/produktu).
+// ----------------------------------------------------------------------------
+
+model Manufacturer {
+  id           String     @id @default(uuid())
+  contractorId String     @unique
+  contractor   Contractor @relation(fields: [contractorId], references: [id])
+  companyId    String     // denormalizacja - ułatwia zapytania bez JOIN przez Contractor
+  company      Company    @relation(fields: [companyId], references: [id])
+
+  submissionMethod SubmissionMethod @default(Email)
+  portalUrl               String?
+  portalLogin             String?
+  portalPasswordEncrypted String? // BACKEND TODO: szyfrowanie aplikacyjne (nie hash - hasło musi być odzyskiwalne do logowania w portalu producenta), nigdy jawnie w API/UI poza formularzem edycji
+
+  complaintProcedure    String?
+  requiredDocumentsNote String?
+  requiredPhotosNote    String?
+  requiredVideosNote    String?
+  requiresSerialNumber    Boolean @default(false)
+  requiresFrameNumber     Boolean @default(false)
+  requiresProofOfPurchase Boolean @default(true)
+  maxPhotos               Int     @default(6)
+  maxAttachmentSizeMb     Int     @default(15)
+
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  logistics  ManufacturerLogistics?
+  automation ManufacturerAutomation?
+  sla        ManufacturerSLA?
+  brands     Brand[]
+  products   Product[]
+  caseItems  CaseItem[]
+
+  @@index([companyId])
+}
+
+// Wydzielone jako osobna tabela (relacja 1:1), nie pole JSON na
+// Manufacturer - łatwiej o walidację/indeksy/migracje pól logistycznych
+// niezależnie od reszty danych producenta (patrz DECISIONS.md, uwaga o
+// tym żeby logistics/automation nie zostały spłaszczone do JSON).
+model ManufacturerLogistics {
+  id             String       @id @default(uuid())
+  manufacturerId String       @unique
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+
+  returnAddress               String?
+  transportOrganizer          TransportOrganizer @default(Klient)
+  manufacturerProvidesLabel   Boolean @default(false)
+  shopCanOrderCourier         Boolean @default(false)
+  shopCourierCost             Decimal @default(0) @db.Decimal(10, 2)
+  originalPackagingRequired   Boolean @default(true)
+  substitutePackagingAllowed  Boolean @default(true)
+  transportProtectionNote     String?
+  productConditionNote        String?
+}
+
+model ManufacturerAutomation {
+  id             String       @id @default(uuid())
+  manufacturerId String       @unique
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+
+  autoEmailEnabled  Boolean @default(false)
+  autoCloseEnabled  Boolean @default(false)
+  autoCloseDays     Int     @default(30)
+}
+
+// SLA producenta — brakujący moduł zgłoszony w code review po Etapie
+// architektury: "odpowiedź do 14 dni / naprawa 21 dni / przypomnienie po
+// 10 dniach / eskalacja po 14 dniach", konfigurowalne PER PRODUCENT (różni
+// producenci mają różne warunki - patrz przykład Producent A / Producent B
+// w docs/DECISIONS.md). Wszystkie pola nullable: `null` = brak progu
+// skonfigurowanego dla tego producenta (np. "Producent B: brak
+// przypomnień" to po prostu reminderAfterDays=null, nie osobna flaga
+// włącz/wyłącz - jedno źródło prawdy zamiast dwóch niezależnych pól,
+// które mogłyby się rozjechać, jak poprzednie autoReminders/autoEscalation
+// jako osobne booleany od nieistniejących wtedy progów dniowych).
+model ManufacturerSLA {
+  id             String       @id @default(uuid())
+  manufacturerId String       @unique
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+
+  // Oczekiwany czas odpowiedzi producenta na zgłoszenie (liczony od
+  // wejścia sprawy w status WyslanaDoProducenta) - patrz WORKFLOW.md.
+  responseDays Int?
+
+  // Oczekiwany czas realizacji podjętej decyzji (naprawa/wymiana) -
+  // liczony od wejścia sprawy w status RealizacjaDecyzji.
+  repairDays Int?
+
+  // Po ilu dniach od wysłania (bez odpowiedzi producenta) system wysyła
+  // automatyczne przypomnienie. `null` = przypomnienia wyłączone dla tego
+  // producenta.
+  reminderAfterDays Int?
+
+  // Po ilu dniach bez odpowiedzi/realizacji sprawa jest eskalowana
+  // (priorytet -> Wysoki, powiadomienie do roli Kierownik). `null` =
+  // eskalacja wyłączona dla tego producenta.
+  escalationAfterDays Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Marka - relacja jeden-do-wielu z Manufacturer (jeden producent/dystrybutor
+// obsługuje wiele marek; marka należy do dokładnie jednego producenta -
+// świadome uproszczenie, patrz DECISIONS.md).
+model Brand {
+  id             String       @id @default(uuid())
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id])
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+
+  name   String
+  active Boolean @default(true)
+
+  products Product[]
+
+  @@index([companyId])
+  @@index([manufacturerId])
+}
+
+// Product to POZYCJA KATALOGOWA (typ produktu), NIE konkretny egzemplarz
+// zakupiony przez klienta - to jest zmiana względem wcześniejszego modelu
+// MVP, gdzie "Product" był tworzony od nowa przy każdej reklamacji i
+// faktycznie reprezentował egzemplarz. Konkretny zakupiony egzemplarz to
+// teraz OrderItem (numer seryjny, data zakupu, dowód zakupu żyją tam).
+// Patrz DATABASE.md dla pełnego uzasadnienia tej zmiany.
+model Product {
+  id             String        @id @default(uuid())
+  companyId      String
+  company        Company       @relation(fields: [companyId], references: [id])
+  manufacturerId String
+  manufacturer   Manufacturer  @relation(fields: [manufacturerId], references: [id])
+  brandId        String?
+  brand          Brand?        @relation(fields: [brandId], references: [id])
+
+  name     String // model/nazwa produktu
+  sku      String?
+  category String?
+  active   Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  orderItems OrderItem[]
+  caseItems  CaseItem[]
+
+  @@index([companyId])
+  @@index([manufacturerId])
+  @@index([name])
+}
+
+// ============================================================================
+// ZAMÓWIENIA (katalog transakcji zakupowych - podstawa auto-uzupełniania
+// danych produktu przy rejestracji reklamacji, patrz prototyp:
+// "wyszukiwanie zamówienia po numerze" w kreatorze klienta, tam mockowane
+// płaską tablicą MOCK_ORDERS - to jest jej docelowy odpowiednik).
+// ============================================================================
+
+model Order {
+  id          String   @id @default(uuid())
+  companyId   String
+  company     Company  @relation(fields: [companyId], references: [id])
+  shopId      String?
+  shop        Shop?    @relation(fields: [shopId], references: [id])
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  orderNumber String
+  orderDate   DateTime
+  totalAmount Decimal? @db.Decimal(10, 2)
+  currency    String   @default("PLN")
+  createdAt   DateTime @default(now())
+
+  items OrderItem[]
+
+  @@unique([companyId, orderNumber])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id      String @id @default(uuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+  productId String
+  product Product @relation(fields: [productId], references: [id])
+
+  quantity            Int     @default(1)
+  unitPrice           Decimal? @db.Decimal(10, 2)
+  serialNumber        String?
+  frameNumber         String?
+  invoiceNumber       String? // numer paragonu/faktury dla TEJ pozycji
+
+  caseItems CaseItem[]
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([serialNumber])
+}
+
+// ============================================================================
+// REKLAMACJE (Case = Complaint) — centralna encja systemu
+// ============================================================================
+
+model Case {
+  id         String  @id @default(uuid())
+  companyId  String
+  company    Company @relation(fields: [companyId], references: [id])
+  shopId     String?
+  shop       Shop?   @relation(fields: [shopId], references: [id])
+
+  caseNumber String @unique // format: RMA/{rok}/{sekwencja}
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  ownerId String?
+  owner   User?   @relation("CaseOwner", fields: [ownerId], references: [id])
+
+  complaintType  ComplaintType
+  submissionMode SubmissionMode  @default(PrzezSklep)
+  source         ComplaintSource @default(SklepStacjonarny)
+
+  requestedResolution String
+  description          String
+  customerStatement    String?
+
+  status   CaseStatus   @default(Nowa)
+  priority CasePriority @default(Normalny)
+
+  decision         Decision?
+  decisionAt       DateTime?
+  decisionByUserId String?
+  decisionBy       User?     @relation("CaseDecisionBy", fields: [decisionByUserId], references: [id])
+
+  nextAction        String?
+  nextActionDueDate DateTime?
+
+  requiresManagerApproval Boolean @default(false)
+  isException             Boolean @default(false)
+
+  // Pola z kreatora zgłoszenia (client-new-case.js) - domykają rozjazd
+  // opisany w DECISIONS.md ("Kreator zgłoszenia reklamacyjnego").
+  deliveryAddress          String?
+  courierRequested         Boolean @default(false)
+  preparationFeeAccepted   Boolean @default(false)
+
+  // Portal Klienta - domykają rozjazd opisany w DECISIONS.md (kilka rund
+  // code review Portalu Klienta). Hashe/tokeny NIGDY jawnym tekstem.
+  clientPortalEnabled     Boolean   @default(false)
+  clientAccessCodeHash    String?
+  clientAccessTokenHash   String?
+  clientAccessTokenUsed   Boolean   @default(false)
+  clientLastLoginAt       DateTime?
+
+  createdAt   DateTime  @default(now())
+  closedAt    DateTime?
+  cancelledAt DateTime?
+  archivedAt  DateTime?
+
+  items              CaseItem[]
+  documents          Document[]
+  history            CaseHistory[]
+  notes              Note[]
+  messages           Message[]
+  logisticsEntries   Logistics[]
+  notifications      Notification[]
+
+  @@index([companyId])
+  @@index([caseNumber])
+  @@index([status])
+  @@index([ownerId])
+  @@index([createdAt])
+}
+
+// Pozycja reklamacji - jeden Case może dotyczyć wielu produktów/egzemplarzy
+// (np. klient reklamuje jednocześnie wózek i fotelik z tego samego
+// zamówienia). To jest ROZSZERZENIE względem wcześniejszego modelu MVP,
+// gdzie Case miał dokładnie jeden Product bezpośrednio - patrz DATABASE.md.
+// W typowym, jednoelementowym zgłoszeniu (zdecydowana większość przypadków
+// w dotychczasowym prototypie) istnieje dokładnie jeden CaseItem.
+model CaseItem {
+  id     String @id @default(uuid())
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id])
+
+  // Powiązanie z faktycznie zakupionym egzemplarzem (gdy zamówienie zostało
+  // odnalezione) - patrz kreator klienta, "auto-uzupełnianie po numerze
+  // zamówienia". Nullable: zgłoszenie mogło powstać bez dopasowania do
+  // zamówienia (ręczne wprowadzenie danych produktu).
+  orderItemId String?
+  orderItem   OrderItem? @relation(fields: [orderItemId], references: [id])
+
+  // Fallback/denormalizacja gdy nie ma dopasowania do OrderItem - zawsze
+  // wypełnione, niezależnie od orderItemId (ułatwia zapytania "wszystkie
+  // reklamacje danego produktu" bez LEFT JOIN przez Order).
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  // Producent odpowiedzialny za TĘ pozycję - sugerowany automatycznie z
+  // Product.manufacturerId, ale pracownik może go zmienić (ETAP 4 procesu).
+  manufacturerId String?
+  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
+
+  description  String  // opis usterki TEJ pozycji
+  quantity     Int     @default(1)
+
+  replacementProduct ReplacementProduct?
+  documents          Document[]
+
+  @@index([caseId])
+  @@index([productId])
+}
+
+// Historia sprawy - niemodyfikowalny dziennik biznesowy (odrębny od
+// AuditLog, który dotyczy zdarzeń bezpieczeństwa/systemowych ogólnie).
+model CaseHistory {
+  id            String            @id @default(uuid())
+  caseId        String
+  case          Case              @relation(fields: [caseId], references: [id])
+  userId        String?           // nullable: część wpisów tworzy system automatycznie
+  user          User?             @relation(fields: [userId], references: [id])
+  action        CaseHistoryAction
+  previousValue String?
+  newValue      String?
+  visibleForCustomer Boolean      @default(false) // czy wpis trafia do publicznej osi czasu Portalu Klienta
+  createdAt     DateTime          @default(now())
+
+  @@index([caseId])
+}
+
+// Wewnętrzne notatki pracowników - NIGDY widoczne dla klienta (odrębne od
+// Message). Domyka odłożone wcześniej "notatki pracownika trafią do modelu
+// Comment" (patrz komentarz w poprzednim schema.prisma przy Case.description).
+model Note {
+  id        String   @id @default(uuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([caseId])
+}
+
+// Komunikacja Z klientem (formularz kontaktowy Portalu Klienta + przyszła
+// dwukierunkowa wymiana wiadomości) - formalizuje to, co w prototypie było
+// wyłącznie mockiem (toast po wysłaniu formularza kontaktowego).
+model Message {
+  id         String            @id @default(uuid())
+  caseId     String
+  case       Case              @relation(fields: [caseId], references: [id])
+  senderType SenderType
+  senderUserId String?         // wypełnione, gdy senderType = Employee
+  senderUser User?             @relation(fields: [senderUserId], references: [id])
+  direction  MessageDirection
+  channel    MessageChannel
+  subject    String?
+  content    String
+  sentAt     DateTime          @default(now())
+  readAt     DateTime?
+
+  @@index([caseId])
+}
+
+// Produkt zastępczy - powiązany z konkretną pozycją reklamacji (CaseItem),
+// nie z całą sprawą, żeby poprawnie obsłużyć wieloelementowe reklamacje
+// (każda pozycja może mieć własny produkt zastępczy).
+model ReplacementProduct {
+  id                String    @id @default(uuid())
+  caseItemId        String    @unique
+  caseItem          CaseItem  @relation(fields: [caseItemId], references: [id])
+  productIdentifier String
+  issuedAt          DateTime
+  plannedReturnAt   DateTime?
+  returnedAt        DateTime?
+  conditionOnReturn String?
+  notes             String?
+}
+
+// ============================================================================
+// DOKUMENTY
+// ============================================================================
+
+model Document {
+  id           String             @id @default(uuid())
+  caseId       String
+  case         Case               @relation(fields: [caseId], references: [id])
+  caseItemId   String?            // nullable: dokument może dotyczyć całej sprawy lub konkretnej pozycji
+  caseItem     CaseItem?          @relation(fields: [caseItemId], references: [id])
+
+  fileName     String
+  fileType     DocumentType
+  mimeType     String
+  fileSize     Int
+  storagePath  String
+  category     DocumentCategory   @default(Other)
+  visibility   DocumentVisibility @default(Internal)
+  status       DocumentStatus     @default(Aktywny)
+  uploadedById String
+  uploadedBy   User               @relation(fields: [uploadedById], references: [id])
+  uploadedAt   DateTime           @default(now())
+  version      Int                @default(1)
+
+  @@index([caseId])
+}
+
+// ============================================================================
+// LOGISTYKA — formalizuje ustalenia z kreatora zgłoszenia (odbiór/wysyłka
+// kurierem) i z konfiguracji producenta (ManufacturerLogistics określa
+// REGUŁY, ten model zapisuje KONKRETNE zdarzenia transportowe danej sprawy).
+// ============================================================================
+
+model Logistics {
+  id             String          @id @default(uuid())
+  caseId         String
+  case           Case            @relation(fields: [caseId], references: [id])
+
+  type           LogisticsType
+  status         LogisticsStatus @default(Requested)
+  courierProvider String?
+  trackingNumber String?
+  cost           Decimal?        @db.Decimal(10, 2)
+  addressSnapshot String?        // adres w momencie zlecenia (może różnić się od danych klienta później zmienionych)
+  scheduledAt    DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime        @default(now())
+
+  @@index([caseId])
+}
+
+// ============================================================================
+// POWIADOMIENIA — centralny system (e-mail / w systemie / przyszłe SMS)
+// ============================================================================
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  companyId String?  // nullable = szablon globalny/domyślny, dostępny dla każdej firmy
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  code         String               // np. "case.created.customer", "case.status_changed.customer" - patrz WORKFLOW.md/BUSINESS_RULES.md dla pełnej listy
+  channel      NotificationChannel
+  subject      String?              // niewymagane dla channel=System
+  bodyTemplate String               // tekst z placeholderami {{caseNumber}}, {{customerName}}, ...
+  variables    Json                 // lista oczekiwanych placeholderów, np. ["caseNumber","customerName","statusLabel"]
+  active       Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+
+  notifications Notification[]
+
+  @@unique([companyId, code, channel])
+}
+
+model Notification {
+  id        String  @id @default(uuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  templateId String?
+  template  NotificationTemplate? @relation(fields: [templateId], references: [id])
+
+  channel         NotificationChannel
+  recipientType   NotificationRecipientType
+  recipientUserId String?  // wypełnione, gdy recipientType = Employee
+  recipientEmail  String?  // wypełnione dla channel = Email (klient nie ma User)
+  recipientPhone  String?  // wypełnione dla channel = SMS
+
+  relatedCaseId String?
+  relatedCase   Case?   @relation(fields: [relatedCaseId], references: [id])
+
+  subject       String?
+  body          String
+  status        NotificationStatus @default(Pending)
+  sentAt        DateTime?
+  readAt        DateTime?
+  failureReason String?
+  createdAt     DateTime @default(now())
+
+  @@index([companyId])
+  @@index([relatedCaseId])
+  @@index([status])
+}
+
+// ============================================================================
+// AUDYT — KAŻDA operacja w systemie (nie tylko logowania - te są w
+// LoginEvent). previousValue/newValue jako Json, żeby faktycznie przechować
+// strukturalną różnicę pól, nie tylko opisowy tekst.
+// ============================================================================
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  companyId     String?
+  company       Company? @relation(fields: [companyId], references: [id])
+  userId        String?  // nullable: zdarzenia systemowe bez inicjatora-człowieka
+  user          User?    @relation(fields: [userId], references: [id])
+
+  action        String   // np. "CASE_STATUS_CHANGED", "USER_ROLE_ASSIGNED", "MANUFACTURER_UPDATED"
+  entityType    String   // np. "Case", "User", "Manufacturer"
+  entityId      String?
+  ipAddress     String?
+  previousValue Json?
+  newValue      Json?
+  createdAt     DateTime @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// USTAWIENIA — companyId=null to wartość domyślna systemu, nadpisywana per
+// firma gdy companyId ustawione.
+// ============================================================================
+
+model Setting {
+  id        String            @id @default(uuid())
+  companyId String?
+  company   Company?          @relation(fields: [companyId], references: [id])
+
+  key         String
+  value       Json
+  type        SettingValueType @default(String)
+  description String?
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([companyId, key])
+}

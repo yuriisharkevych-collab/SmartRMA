@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sprawdź status reklamacji — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="public-login-page">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="sidebar-brand-mark">R</div>
+        <div class="sidebar-brand-text" style="font-size:16px;">Smart<span>RMA</span> AI</div>
+      </div>
+
+      <h1 class="login-title" data-i18n="login_title">Sprawdź status reklamacji</h1>
+      <p class="login-subtitle" data-i18n="login_subtitle">Podaj numer reklamacji oraz kod dostępu, który otrzymałeś na potwierdzeniu przyjęcia.</p>
+
+      <div id="token-login-status" class="hidden" role="status" aria-live="polite" style="padding:12px 14px; background:var(--primary-soft); border-radius:var(--radius-md); font-size:12.5px; font-weight:600; color:var(--primary-hover); margin-bottom:16px;">
+        <span data-i18n="login_token_verifying">Weryfikacja bezpiecznego linku…</span>
+      </div>
+
+      <form class="login-form" id="client-login-form">
+        <div class="field">
+          <label for="case-number" data-i18n="login_field_case_number">Numer reklamacji</label>
+          <input type="text" id="case-number" class="mono" placeholder="RMA/2026/0001" autocomplete="off" required />
+        </div>
+        <div class="field">
+          <label for="access-code" data-i18n="login_field_access_code">Kod dostępu</label>
+          <input type="text" id="access-code" class="mono" placeholder="np. RM4-8821" autocomplete="off" required style="text-transform:uppercase;" />
+        </div>
+        <button type="submit" class="btn btn-primary w-full" id="submit-btn" style="justify-content:center; padding:11px;">
+          <span data-i18n="login_submit">Sprawdź status</span>
+        </button>
+        <div id="error-message" class="hidden" role="alert" aria-live="assertive" style="color:var(--red); font-size:12.5px; font-weight:600;"></div>
+        <div id="lockout-banner" class="lockout-banner hidden" role="alert" aria-live="assertive" data-i18n="lockout_message">
+          Zbyt wiele nieudanych prób logowania. Ze względów bezpieczeństwa dostęp został tymczasowo zablokowany.
+          Skontaktuj się ze sklepem, aby otrzymać nowy kod dostępu.
+        </div>
+      </form>
+
+      <div class="login-demo-hint">
+        <strong>To jest klikalny prototyp UX.</strong> Przykładowa aktywna sprawa do przetestowania:
+        numer <strong>RMA/2026/0001</strong>, kod <strong>RM4-8821</strong>.
+        <br />
+        <a href="#" id="reset-attempts" data-i18n="login_reset_attempts" style="color:var(--primary); font-weight:600;">Zresetuj licznik prób (demo)</a>
+      </div>
+
+      <div class="login-footer-link"><span data-i18n="login_no_code_hint">Nie masz kodu dostępu? Skontaktuj się ze sklepem, w którym złożono reklamację.</span></div>
+      <div class="login-footer-link mt-8">
+        <a href="client-new-case.html" data-i18n="wizard_entry_link" style="color:var(--primary); font-weight:600;">Nie masz jeszcze zgłoszenia? Zgłoś nową reklamację</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/public-status-mapper.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/client-login.js"></script>
+</body>
+</html>

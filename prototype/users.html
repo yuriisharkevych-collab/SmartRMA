@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Użytkownicy — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-page="users">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+
+      <div class="content" id="content-root">
+        <!-- Wypełniane dynamicznie przez js/users.js (zawiera też stan "Brak dostępu") -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: dodaj/edytuj użytkownika -->
+  <div class="modal-overlay" id="modal-user">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="user-modal-title">Dodaj użytkownika</h3>
+        <div class="close-x" onclick="closeModal('modal-user')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="u-firstName">Imię</label>
+            <input type="text" id="u-firstName" />
+          </div>
+          <div class="field">
+            <label for="u-lastName">Nazwisko</label>
+            <input type="text" id="u-lastName" />
+          </div>
+          <div class="field span-2">
+            <label for="u-email">E-mail</label>
+            <input type="email" id="u-email" />
+          </div>
+          <div class="field">
+            <label for="u-role">Rola</label>
+            <select id="u-role"></select>
+          </div>
+          <div class="field">
+            <label for="u-branch">Sklep / oddział</label>
+            <select id="u-branch"></select>
+          </div>
+        </div>
+        <div class="field">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+            <input type="checkbox" id="u-active" style="width:auto;" checked />
+            Konto aktywne
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="u-delete" style="margin-right:auto;" data-write-action>Usuń użytkownika</button>
+        <button class="btn btn-secondary" id="u-reset-password" data-write-action>Resetuj hasło</button>
+        <button class="btn btn-secondary" onclick="closeModal('modal-user')">Anuluj</button>
+        <button class="btn btn-primary" id="u-save">Zapisz użytkownika</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: reset hasła -->
+  <div class="modal-overlay" id="modal-reset-password">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Resetuj hasło</h3>
+        <div class="close-x" onclick="closeModal('modal-reset-password')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-secondary" id="reset-password-intro"></p>
+        <div id="reset-password-result" class="hidden">
+          <div class="access-code-display" id="reset-password-value"></div>
+          <p class="text-sm text-muted mt-8">Przekaż to hasło pracownikowi bezpiecznym kanałem — nie jest ono nigdzie zapisane jawnie poza tym oknem.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-reset-password')">Zamknij</button>
+        <button class="btn btn-primary" id="reset-password-confirm">Wygeneruj nowe hasło</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: historia logowań i aktywność -->
+  <div class="modal-overlay" id="modal-user-activity">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="activity-modal-title">Historia i aktywność</h3>
+        <div class="close-x" onclick="closeModal('modal-user-activity')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+        <div class="modal-section-label">Historia logowań</div>
+        <div id="activity-login-history"></div>
+        <div class="modal-section-label">Ostatnia aktywność w sprawach</div>
+        <div id="activity-case-log"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-user-activity')">Zamknij</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/users.js"></script>
+</body>
+</html>

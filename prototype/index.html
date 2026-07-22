@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logowanie — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="sidebar-brand-mark">R</div>
+        <div class="sidebar-brand-text" style="font-size:16px;">Smart<span>RMA</span> AI</div>
+      </div>
+
+      <h1 class="login-title">Zaloguj się</h1>
+      <p class="login-subtitle">Wprowadź dane, aby uzyskać dostęp do panelu reklamacji.</p>
+
+      <form class="login-form" id="login-form">
+        <div class="field">
+          <label for="email">Adres e-mail</label>
+          <input type="email" id="email" value="pracownik@smartrma.test" required />
+        </div>
+        <div class="field">
+          <label for="password">Hasło</label>
+          <input type="password" id="password" value="••••••••••" required />
+        </div>
+        <div class="field">
+          <label for="role">Zaloguj jako (prototyp)</label>
+          <select id="role">
+            <option value="Pracownik">Pracownik — Anna Kowalska</option>
+            <option value="Kierownik">Kierownik — Marek Nowak</option>
+            <option value="Administrator">Administrator — Ewa Wiśniewska</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary w-full" style="justify-content:center; padding:11px;">
+          Zaloguj się
+        </button>
+      </form>
+
+      <div class="login-demo-hint">
+        <strong>To jest klikalny prototyp UX</strong> — logowanie nie jest podłączone do backendu.
+        Wybór roli powyżej symuluje uprawnienia RBAC (Pracownik / Kierownik / Administrator)
+        w dalszej części prototypu — możesz ją zmienić w każdej chwili w panelu bocznym.
+      </div>
+
+      <div class="login-footer-link">Nie pamiętasz hasła? <a href="#">Skontaktuj się z administratorem</a></div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const role = document.getElementById('role').value;
+      setCurrentRole(role);
+      window.location.href = 'dashboard.html';
+    });
+  </script>
+</body>
+</html>

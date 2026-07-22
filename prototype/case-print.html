@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Potwierdzenie przyjęcia reklamacji — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <style>
+    /* Style specyficzne dla widoku wydruku - celowo nie w głównym styles.css,
+       żeby nie mieszać z powłoką aplikacji (ta strona nie ma sidebar/topbar). */
+    body { background: #E9EBEE; }
+    .print-toolbar {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .print-wrap { max-width: 780px; margin: 28px auto 60px; display: flex; flex-direction: column; gap: 28px; }
+    .print-copy {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md); padding: 40px 44px;
+    }
+    .print-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 2px solid var(--text); }
+    .print-brand { display: flex; align-items: center; gap: 10px; }
+    .print-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; margin-top: 10px; }
+    .print-copy-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 10px; border-radius: 999px; background: var(--primary-soft); color: var(--primary-hover); height: fit-content; }
+    .print-section { margin-bottom: 18px; }
+    .print-section h4 { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 8px; }
+    .print-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+    .print-field { display: flex; flex-direction: column; gap: 2px; }
+    .print-field .l { font-size: 11px; color: var(--text-muted); }
+    .print-field .v { font-size: 13px; font-weight: 500; }
+    .print-footer-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; gap: 24px; }
+    .qr-placeholder {
+      width: 92px; height: 92px; border: 1.5px dashed var(--border-strong); border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px;
+      color: var(--text-muted); font-size: 9.5px; text-align: center; flex-shrink: 0;
+    }
+    .signatures { display: flex; gap: 40px; flex: 1; }
+    .signature-block { flex: 1; }
+    .signature-line { border-top: 1px solid var(--text-muted); margin-top: 34px; padding-top: 6px; font-size: 11px; color: var(--text-muted); text-align: center; }
+
+    @media print {
+      body { background: #fff; }
+      .no-print { display: none !important; }
+      .print-wrap { margin: 0; max-width: none; gap: 0; }
+      .print-copy { box-shadow: none; border: none; border-radius: 0; padding: 24px 8px; page-break-after: always; }
+      .print-copy:last-child { page-break-after: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="print-toolbar no-print">
+    <a id="back-link" href="cases.html" class="btn btn-ghost btn-sm">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+      Wróć do sprawy
+    </a>
+    <button class="btn btn-primary btn-sm" id="btn-print-now">Drukuj / Zapisz jako PDF</button>
+  </div>
+
+  <div class="print-wrap" id="print-wrap">
+    <!-- Wypełniane dynamicznie przez js/case-print.js (dwa egzemplarze: klient + sklep) -->
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/case-print.js"></script>
+</body>
+</html>

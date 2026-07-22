@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Producenci — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-page="manufacturers">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+
+      <div class="content" id="content-root">
+        <!-- Wypełniane dynamicznie przez js/manufacturers.js (zawiera też stan "Brak dostępu") -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: dodaj/edytuj producenta -->
+  <div class="modal-overlay" id="modal-manufacturer">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h3 id="manufacturer-modal-title">Dodaj producenta</h3>
+        <div class="close-x" onclick="closeModal('modal-manufacturer')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </div>
+      </div>
+      <div class="modal-body">
+
+        <div class="modal-section-label">Dane podstawowe</div>
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="mf-name">Nazwa firmy</label>
+            <input type="text" id="mf-name" />
+          </div>
+          <div class="field">
+            <label for="mf-country">Kraj</label>
+            <input type="text" id="mf-country" />
+          </div>
+          <div class="field">
+            <label for="mf-nip">NIP</label>
+            <input type="text" id="mf-nip" />
+          </div>
+          <div class="field span-2">
+            <label for="mf-address">Adres</label>
+            <input type="text" id="mf-address" />
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-active" style="width:auto;" checked />
+              Producent aktywny
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-section-label">Dane kontaktowe</div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="mf-contact-person">Osoba kontaktowa</label>
+            <input type="text" id="mf-contact-person" />
+          </div>
+          <div class="field">
+            <label for="mf-phone">Telefon</label>
+            <input type="text" id="mf-phone" />
+          </div>
+          <div class="field span-2">
+            <label for="mf-email">E-mail kontaktowy</label>
+            <input type="email" id="mf-email" />
+          </div>
+        </div>
+
+        <div class="modal-section-label">Sposób zgłoszenia reklamacji</div>
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="mf-method">Sposób zgłoszenia</label>
+            <select id="mf-method">
+              <option value="E-mail">E-mail</option>
+              <option value="Portal B2B">Portal B2B</option>
+              <option value="Formularz WWW">Formularz WWW</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-grid" id="mf-portal-fields-wrap">
+          <div class="field span-2">
+            <label for="mf-portal">Adres portalu</label>
+            <input type="text" id="mf-portal" placeholder="https://" />
+          </div>
+          <div class="field">
+            <label for="mf-portal-login">Login</label>
+            <input type="text" id="mf-portal-login" />
+          </div>
+          <div class="field">
+            <label for="mf-portal-password">Hasło</label>
+            <input type="text" id="mf-portal-password" class="mono" />
+            <span class="hint">Demo: w produkcji sekret szyfrowany po stronie backendu, nigdy niewidoczny jawnie w interfejsie.</span>
+          </div>
+        </div>
+
+        <div class="modal-section-label">Procedura reklamacyjna</div>
+        <div class="form-grid single">
+          <div class="field">
+            <label for="mf-procedure">Opis procedury</label>
+            <textarea id="mf-procedure" rows="2"></textarea>
+          </div>
+          <div class="field">
+            <label for="mf-docs">Wymagane dokumenty</label>
+            <textarea id="mf-docs" rows="2"></textarea>
+          </div>
+          <div class="field">
+            <label for="mf-photos">Wymagane zdjęcia</label>
+            <textarea id="mf-photos" rows="2"></textarea>
+          </div>
+          <div class="field">
+            <label for="mf-videos">Wymagane filmy</label>
+            <textarea id="mf-videos" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="mf-max-photos">Maks. liczba zdjęć</label>
+            <input type="number" id="mf-max-photos" min="0" />
+          </div>
+          <div class="field">
+            <label for="mf-max-size">Maks. rozmiar załączników (MB)</label>
+            <input type="number" id="mf-max-size" min="0" />
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-req-serial" style="width:auto;" /> Wymagany numer seryjny
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-req-frame" style="width:auto;" /> Wymagany numer ramy
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-req-proof" style="width:auto;" /> Wymagany dowód zakupu
+            </label>
+          </div>
+        </div>
+
+        <div class="modal-section-label">Logistyka</div>
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="mf-return-address">Adres, na który wysyłany jest reklamowany produkt</label>
+            <input type="text" id="mf-return-address" />
+          </div>
+          <div class="field">
+            <label for="mf-transport-organizer">Kto organizuje transport</label>
+            <select id="mf-transport-organizer">
+              <option value="Klient">Klient</option>
+              <option value="Sklep">Sklep</option>
+              <option value="Producent">Producent</option>
+            </select>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500; margin-top:22px;">
+              <input type="checkbox" id="mf-manufacturer-label" style="width:auto;" /> Producent wysyła własną etykietę kurierską
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-shop-courier" style="width:auto;" /> Sklep może zamówić kuriera w imieniu klienta
+            </label>
+          </div>
+          <div class="field">
+            <label for="mf-courier-cost">Koszt zamówienia kuriera przez sklep (zł)</label>
+            <input type="number" id="mf-courier-cost" min="0" />
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-original-packaging" style="width:auto;" /> Wymagane oryginalne opakowanie
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-substitute-packaging" style="width:auto;" /> Opakowanie zastępcze dopuszczalne
+            </label>
+          </div>
+          <div class="field span-2">
+            <label for="mf-transport-protection">Wymagania zabezpieczenia produktu podczas transportu</label>
+            <input type="text" id="mf-transport-protection" />
+          </div>
+          <div class="field span-2">
+            <label for="mf-product-condition">Wymagania dotyczące stanu produktu</label>
+            <input type="text" id="mf-product-condition" placeholder="np. produkt czysty, suchy, przygotowany do oględzin" />
+          </div>
+        </div>
+
+        <div class="modal-section-label">Automatyzacja</div>
+        <div class="form-grid">
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-auto-email" style="width:auto;" /> Automatyczne wysyłanie e-mail
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-auto-reminders" style="width:auto;" /> Automatyczne przypomnienia
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-auto-escalation" style="width:auto;" /> Automatyczne eskalacje
+            </label>
+          </div>
+          <div class="field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500;">
+              <input type="checkbox" id="mf-auto-close" style="width:auto;" /> Automatyczne zamknięcie sprawy
+            </label>
+          </div>
+          <div class="field">
+            <label for="mf-auto-close-days">Po ilu dniach bez aktywności</label>
+            <input type="number" id="mf-auto-close-days" min="1" />
+          </div>
+        </div>
+        <p class="hint" style="margin-top:-8px;">Ustawienia automatyzacji zapisują się w danych producenta — samo wykonywanie (wysyłka, eskalacja) wymaga backendu i harmonogramu zadań, poza zakresem prototypu.</p>
+
+        <div class="modal-section-label">Obsługiwane marki</div>
+        <div class="field">
+          <div class="chip-list" id="mf-brand-chips"></div>
+          <div class="flex gap-8 mt-8">
+            <input type="text" id="mf-brand-input" placeholder="Nazwa nowej marki…" style="flex:1;" />
+            <button type="button" class="btn btn-secondary btn-sm" id="mf-brand-add">Dodaj markę</button>
+          </div>
+          <span class="hint">Marki przypisane do tego producenta będą automatycznie sugerowały producenta przy rejestracji reklamacji.</span>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-manufacturer')">Anuluj</button>
+        <button class="btn btn-primary" id="mf-save">Zapisz producenta</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/manufacturers.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Twoja reklamacja — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body class="public-page">
+  <header class="public-header">
+    <div class="brand">
+      <div class="sidebar-brand-mark">R</div>
+      <div class="sidebar-brand-text" style="font-size:14px;">Smart<span>RMA</span> AI</div>
+    </div>
+    <div class="flex items-center gap-10">
+      <span class="mono text-sm text-secondary" id="header-case-number"></span>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">Wyloguj</button>
+    </div>
+  </header>
+
+  <main class="public-main" id="public-main">
+    <!-- Nagłówek sprawy + zakładki wypełniane dynamicznie przez js/client-portal.js -->
+  </main>
+
+  <nav class="mobile-tab-bar" id="mobile-tab-bar"></nav>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/public-status-mapper.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/client-portal.js"></script>
+</body>
+</html>

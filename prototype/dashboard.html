@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — SmartRMA AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-page="dashboard">
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+
+      <div class="content">
+        <div class="page-header">
+          <div>
+            <h1 id="greeting">Dashboard</h1>
+            <p class="page-subtitle" id="subtitle">Oto co wymaga Twojej uwagi.</p>
+          </div>
+          <a href="case-new.html" class="btn btn-primary" data-write-action>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Nowa reklamacja
+          </a>
+        </div>
+
+        <div class="stat-grid" id="stat-grid"></div>
+
+        <div class="detail-grid" style="grid-template-columns: 1.6fr 1fr;">
+          <div class="card">
+            <div class="card-header">
+              <h3>Sprawy wymagające Twojej uwagi</h3>
+              <a href="cases.html" class="btn btn-ghost btn-sm">Zobacz wszystkie</a>
+            </div>
+            <div id="attention-list"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>Zadania na dziś</h3>
+            </div>
+            <div id="today-list"></div>
+          </div>
+        </div>
+
+        <div class="card mt-20">
+          <div class="table-toolbar">
+            <h3 style="font-size:14.5px;">Wszystkie sprawy</h3>
+          </div>
+          <div class="table-toolbar" style="border-top:none; padding-top:0;">
+            <div class="filter-tabs" id="dashboard-filter-tabs"></div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Nr sprawy</th>
+                  <th>Klient</th>
+                  <th>Produkt</th>
+                  <th>Producent</th>
+                  <th>Typ</th>
+                  <th>Status</th>
+                  <th>Właściciel</th>
+                  <th>Utworzono</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-cases-tbody"></tbody>
+            </table>
+          </div>
+          <div id="dashboard-empty-wrap"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/client-labels.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
