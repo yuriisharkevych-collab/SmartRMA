@@ -83,13 +83,25 @@ Kolumna "Wyzwalacz" odwołuje się do `EVENTS.md`. Kolumna "Odbiorca" —
 | `case.monitored.customer` | Email | Customer | Utworzenie sprawy monitorowanej (`submissionMode=BezposrednioDoProducenta`, klient poprosił o monitoring) | `caseNumber`, `manufacturerName` |
 | `case.producer_instructions.customer` | Email | Customer | Klient prosi o instrukcję zgłoszenia w kreatorze (ścieżka bezpośrednio do producenta) | `manufacturerName`, `instructions` |
 | `case.secure_link.customer` | Email | Customer | Pracownik generuje i wysyła bezpieczny link (opcjonalna akcja z panelu "Portal klienta") | `caseNumber`, `secureLink` |
-| `case.customer_responded.employee` | System | Employee (`ownerId`) | `CustomerResponded` | `caseNumber` |
-| `case.sla_reminder.manufacturer` | Email | Kontrahent (`Manufacturer.contractor.contactEmail`) | Próg `ManufacturerSLA.reminderAfterDays` przekroczony | `caseNumber`, `daysOverdue` |
+| `case.customer_responded.employee` | System | Employee (`ownerId`) | `case.customer_replied` (`MessageSent`, `WORKFLOW.md` §6 poz. 5) | `caseNumber` |
+| `case.sla_reminder.manufacturer` | Email | Manufacturer (`recipientType=Manufacturer`, adres z `Manufacturer.contractor.contactEmail`) | Próg `ManufacturerSLA.reminderAfterDays` przekroczony | `caseNumber`, `daysOverdue` |
 | `case.sla_reminder.employee` | System | Employee (`ownerId`) | jw. (informacyjnie do pracownika) | `caseNumber` |
 | `case.escalation.manager` | System | Wszyscy `User` z rolą `Kierownik` danego `Shop` | Próg `ManufacturerSLA.escalationAfterDays` przekroczony | `caseNumber`, `daysOverdue` |
 | `case.next_action_due.employee` | System | Employee (`ownerId`) | `Case.nextActionDueDate` minęło | `caseNumber`, `nextAction` |
-| `user.account_created.employee` | Email | Employee (nowo utworzony `User`) | Utworzenie konta przez Administratora | `firstName`, `loginUrl` |
-| `user.password_reset.employee` | Email | Employee | `PasswordReset` | `tempPassword` *(lub link resetujący, do ustalenia przy implementacji — patrz uwaga bezpieczeństwa §9)* |
+| `user.account_created.employee` | Email | Employee (nowo utworzony `User`) | Utworzenie konta przez Administratora *(zdarzenie modułu `Users` — poza katalogiem `EVENTS.md` §5, patrz uwaga niżej)* | `firstName`, `loginUrl` |
+| `user.password_reset.employee` | Email | Employee | Reset hasła przez Administratora *(zdarzenie modułu `Users` — poza katalogiem `EVENTS.md` §5, patrz uwaga niżej)* | `tempPassword` *(lub link resetujący, do ustalenia przy implementacji — patrz uwaga bezpieczeństwa §9)* |
+
+> **Uwaga (Zadanie 6):** `user.account_created.employee` i
+> `user.password_reset.employee` dotyczą agregatu `User`, którego
+> `EVENTS.md` §5 **nie katalogował** — ten dokument opisuje wyłącznie
+> zdarzenia domenowe modułu `Cases` i powiązanych agregatów
+> (`Document`/`CaseItem`/`Replacement`/`Logistics`). Oba szablony
+> pozostają poprawne jako pozycje katalogu powiadomień, ale ich formalny
+> kontrakt zdarzenia (koperta, payload, subskrybenci) nie jest jeszcze
+> nigdzie zdefiniowany — **rekomendacja:** rozszerzyć `EVENTS.md` o
+> sekcję `5.4 Agregat User` przy implementacji modułu `Users`, poza
+> zakresem tego zadania (dotyczyło wyłącznie domknięcia luk już
+> istniejących w `WORKFLOW.md`/`CaseHistoryAction`).
 
 > Katalog jest **punktem startowym**, nie zamkniętą listą — nowe szablony
 > dodaje się tak samo jak nowe kody błędów (`ERROR_CODES.md` — zasady
@@ -126,7 +138,7 @@ nie "jaka akcja biznesowa".
 | Klient (Email) | `Customer.email` (przez `Case.customerId`) | Odczyt **na żywo** w momencie wysyłki, nie migawka z momentu utworzenia sprawy — poprawka danych klienta powinna wpłynąć na kolejne powiadomienia |
 | Klient (SMS, przyszłość) | `Customer.phone` | jw., nieaktywne w obecnym zakresie |
 | Pracownik (System) | `Notification.recipientUserId` → `User` | Powiadomienie widoczne w UI przy najbliższym zalogowaniu/odświeżeniu |
-| Kontrahent/Producent (Email) | `Manufacturer.contractor.contactEmail` (**nie** `Manufacturer.contactEmail` — to pole zostało przeniesione na `Contractor` przy rozdzieleniu Kontrahent/Producent, patrz `DATABASE.md` §0/§11) | Jeśli puste — powiadomienie zapisywane jako `Failed` z `failureReason="Brak adresu e-mail kontrahenta"`, nie próba wysyłki na pusty adres |
+| Producent (Email, `recipientType=Manufacturer`) | `Manufacturer.contractor.contactEmail` (**nie** `Manufacturer.contactEmail` — to pole zostało przeniesione na `Contractor` przy rozdzieleniu Kontrahent/Producent, patrz `DATABASE.md` §0/§11), `Notification.recipientManufacturerId` wypełnione dla identyfikacji (Zadanie 5, `DATABASE.md` §28) | Jeśli puste — powiadomienie zapisywane jako `Failed` z `failureReason="Brak adresu e-mail kontrahenta"`, nie próba wysyłki na pusty adres |
 | Rola (np. wszyscy Kierownicy oddziału) | Zapytanie `UserRoleAssignment` + `User.shopId` w momencie wysyłki | "Wszyscy aktualni" — zmiana przypisania roli między zdarzeniem a wysyłką wpływa na listę odbiorców (asynchroniczność z §4.1) |
 
 ---
@@ -165,11 +177,11 @@ Formalizacja `ManufacturerSLA.escalationAfterDays`:
 1. To samo zadanie cykliczne z §6, próg `escalationAfterDays` zamiast
    `reminderAfterDays`.
 2. Przy przekroczeniu: `Case.priority → Wysoki` (jeśli jeszcze nie),
-   wpis `CaseHistory` (rekomendacja: rozszerzyć `CaseHistoryAction` o
-   wartość `EscalatedForSla` przy implementacji — **nieujęte** w obecnym
-   enumie, bo dotąd nie było mechanizmu, który by go potrzebował;
-   najmniejsza możliwa migracja addytywna), `Notification` z szablonu
-   `case.escalation.manager` do wszystkich `Kierownik` danego `Shop`.
+   wpis `CaseHistory` (`CaseHistoryAction.PriorityChanged`,
+   `previousValue`/`newValue` = poprzedni/nowy priorytet — dodane w
+   Zadaniu 5, patrz `EVENTS.md` §10.2 i `DATABASE.md` §22), `Notification`
+   z szablonu `case.escalation.manager` do wszystkich `Kierownik` danego
+   `Shop`.
 3. Eskalacja **nie zmienia statusu sprawy** — tylko priorytet i
    widoczność dla Kierownika. Sprawa nadal czeka na tę samą, pierwotną
    akcję (odpowiedź producenta) — eskalacja to sygnał "ktoś z wyższymi

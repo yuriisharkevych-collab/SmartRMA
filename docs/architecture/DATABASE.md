@@ -162,11 +162,23 @@ wymaganych, co jest tu pożądanym zachowaniem).
 **Klucze obce:** `companyId → Company.id` (opcjonalne).
 **Relacje:** N:1 `Company` (opcjonalna). 1:N `RolePermission`,
 `UserRoleAssignment`.
-**Indeksy:** brak dodatkowego poza unikalnym złożonym (patrz niżej —
-Postgres tworzy indeks automatycznie dla `@@unique`).
-**Ograniczenia:** `@@unique([companyId, code])` — kod roli unikalny w
-obrębie firmy (rola systemowa ma `companyId=null`, więc jej `code` jest
-unikalny globalnie wśród ról systemowych).
+**Indeksy:** `@@index([companyId, code])` (patrz "Ograniczenia" — od
+Zadania 9 to **wyłącznie** indeks wydajnościowy, nie źródło unikalności).
+**Ograniczenia (decyzja końcowa, Zadanie 9 — patrz `DECISIONS.md`):**
+kod roli musi być unikalny w obrębie firmy (rola systemowa ma
+`companyId=null`, więc jej `code` musi być unikalny globalnie wśród ról
+systemowych) — **ale nie przez `@@unique([companyId, code])`**. Postgres
+traktuje `NULL` jako różny od `NULL` w standardowym indeksie unikalnym,
+więc taki atrybut **nie zablokowałby** dwóch ról systemowych o tym samym
+`code`. Prisma nie ma atrybutu dla `NULLS NOT DISTINCT` (Postgres 15+,
+projekt używa Postgres 16 — patrz `docker-compose.yml`), więc prawdziwe
+ograniczenie jest dopisywane **ręcznie w migracji SQL**:
+`CREATE UNIQUE INDEX role_company_code_key ON "Role" ("companyId", "code") NULLS NOT DISTINCT;`
+Wymagany krok operacyjny: po `prisma migrate dev --create-only`, przed
+zastosowaniem migracji, dopisać powyższy indeks do wygenerowanego pliku
+`.sql` (zamiast zwykłego `CREATE UNIQUE INDEX` bez `NULLS NOT DISTINCT`,
+które Prisma wygenerowałoby dla zwykłego `@@unique`). Ten sam wzorzec
+dotyczy `NotificationTemplate` (§27) i `Setting` (§30) — patrz tam.
 
 ---
 
@@ -582,7 +594,7 @@ uniemożliwiać).
 | complaintType | enum `ComplaintType` (Warranty/StatutoryWarranty) | nie |
 | submissionMode | enum `SubmissionMode` (PrzezSklep/BezposrednioDoProducenta) | nie, domyślnie `PrzezSklep` |
 | source | enum `ComplaintSource` | nie, domyślnie `SklepStacjonarny` |
-| requestedResolution, description | String | nie |
+| requestedResolution, description | String | **tak** (Zadanie 9, patrz uwaga niżej) |
 | customerStatement | String | tak |
 | status | enum `CaseStatus` (15 wartości — patrz `WORKFLOW.md`) | nie, domyślnie `Nowa` |
 | priority | enum `CasePriority` | nie, domyślnie `Normalny` |
@@ -617,6 +629,18 @@ Prisma, żeby uniknąć niejednoznaczności). 1:N `CaseItem`, `Document`,
 danych — enumy nie potrafią wyrazić zależności warunkowej):
 `submissionMode=BezposrednioDoProducenta` dopuszczalne tylko przy
 `complaintType=Warranty` (patrz `WORKFLOW.md` §1).
+
+> **`requestedResolution`/`description` nullable — decyzja końcowa
+> (Zadanie 9, patrz `DECISIONS.md`).** Sprawa monitorowana ze ścieżki
+> `BezposrednioDoProducenta` (`WORKFLOW.md` §3.2) powstaje **bez** opisu
+> usterki — producent zbiera go bezpośrednio, sklep tylko obserwuje.
+> `NULL` oznacza "nie dotyczy tej sprawy", **nie** "dane nieznane" —
+> świadomie odrzucony wariant to syntetyczny tekst-placeholder ("Zgłoszenie
+> monitorowane..."), bo zafałszowałby dane w raportach/eksportach.
+> Warstwa aplikacji wymaga obu pól dla **każdej innej** ścieżki
+> (`BUSINESS_RULES.md` BR-105) — baza danych celowo tego nie wymusza,
+> zgodnie z zasadą projektową #3 tego dokumentu (ograniczenia warunkowe
+> żyją w aplikacji, nie w schemacie).
 
 ---
 
@@ -675,7 +699,7 @@ jeden produkt zastępczy na pozycję reklamacji.
 | id | UUID | nie |
 | caseId | UUID | nie |
 | userId | UUID | tak |
-| action | enum `CaseHistoryAction` (18 wartości) | nie |
+| action | enum `CaseHistoryAction` (20 wartości) | nie |
 | previousValue, newValue | String | tak |
 | visibleForCustomer | Boolean | nie, domyślnie `false` |
 | createdAt | DateTime | nie |
@@ -690,6 +714,12 @@ insert-only (niemodyfikowalny dziennik biznesowy), egzekwowane w warstwie
 usług backendu, nie jako ograniczenie bazy danych (Postgres nie ma
 natywnego "insert-only"; alternatywa: trigger `BEFORE UPDATE/DELETE RAISE
 EXCEPTION`, do rozważenia przy hardening bezpieczeństwa).
+
+> **Zmiana w Zadaniu 5:** dodano `LogisticsStatusChanged` (zmiana statusu
+> zdarzenia logistycznego, `Logistics.status`) i `PriorityChanged` (zmiana
+> `Case.priority`, dziś wyłącznie z automatycznej eskalacji SLA — patrz
+> `WORKFLOW.md` §6 poz. 8) — domykają lukę, w której te operacje zmieniały
+> dane bez odpowiadającego wpisu w historii sprawy (`EVENTS.md` §10.2/§13).
 
 ---
 
@@ -812,9 +842,13 @@ czasie, patrz `BUSINESS_RULES.md` BR-082).
 **Klucz główny:** `id`.
 **Klucze obce:** `companyId → Company.id` (opcjonalny).
 **Relacje:** N:1 `Company` (opcjonalna). 1:N `Notification`.
-**Indeksy:** unikalny indeks złożony (patrz ograniczenia).
-**Ograniczenia:** `@@unique([companyId, code, channel])` — jeden szablon
-danego kodu na kanał, per firma (lub globalnie dla `companyId=null`).
+**Indeksy:** `@@index([companyId, code, channel])` — wyłącznie wydajność,
+nie unikalność (patrz "Ograniczenia").
+**Ograniczenia (decyzja końcowa, Zadanie 9 — ten sam wzorzec co `Role` §3,
+pełne uzasadnienie tam):** jeden szablon danego kodu na kanał, per firma
+(lub globalnie dla `companyId=null`) — egzekwowane ręcznie dopisanym
+indeksem `NULLS NOT DISTINCT` w migracji SQL, nie przez `@@unique` w
+`schema.prisma`.
 
 ---
 
@@ -827,8 +861,9 @@ danego kodu na kanał, per firma (lub globalnie dla `companyId=null`).
 | companyId | UUID | nie |
 | templateId | UUID | tak |
 | channel | enum `NotificationChannel` | nie |
-| recipientType | enum `NotificationRecipientType` (Customer/Employee) | nie |
+| recipientType | enum `NotificationRecipientType` (Customer/Employee/Manufacturer) | nie |
 | recipientUserId | UUID | tak |
+| recipientManufacturerId | UUID | tak |
 | recipientEmail, recipientPhone | String | tak |
 | relatedCaseId | UUID | tak |
 | subject | String | tak |
@@ -847,6 +882,17 @@ NotificationTemplate.id` (opcjonalny), `relatedCaseId → Case.id`
 **Indeksy:** `@@index([companyId])`, `@@index([relatedCaseId])`,
 `@@index([status])` — ostatni wspiera zadanie cykliczne "znajdź
 powiadomienia `Pending` do wysłania".
+
+> **Zmiana w Zadaniu 5:** `NotificationRecipientType` rozszerzony o
+> `Manufacturer` — WORKFLOW.md §6 poz. 7 przewidywał przypomnienie SLA do
+> producenta od samego początku, ale enum wcześniej pozwalał wyrazić tylko
+> `Customer`/`Employee` (`EVENTS.md` §13). Dodano `recipientManufacturerId`
+> (String, nullable), wypełniane gdy `recipientType=Manufacturer` —
+> analogicznie do `recipientUserId` dla `Employee`, **bez** formalnej
+> relacji Prisma (ten sam wzorzec "miękkiego" odwołania po id, już
+> stosowany dla `recipientUserId`). Adres e-mail (`recipientEmail`) jest
+> nadal kopiowany w momencie utworzenia powiadomienia z
+> `Manufacturer.contractor.contactEmail` (patrz `NOTIFICATIONS.md` §5).
 **Ograniczenia:** brak dodatkowych — treść (`subject`/`body`) to kopia
 **po** podstawieniu placeholderów, nie referencja do szablonu (żeby
 zmiana szablonu w przyszłości nie zmieniła historycznie wysłanej treści).
@@ -896,25 +942,35 @@ historia zmian tego konkretnego rekordu"), `@@index([createdAt])`.
 **Klucz główny:** `id`.
 **Klucze obce:** `companyId → Company.id` (opcjonalny).
 **Relacje:** N:1 `Company` (opcjonalna).
-**Indeksy:** unikalny indeks złożony (patrz ograniczenia).
-**Ograniczenia:** `@@unique([companyId, key])` — nadpisanie per firma
-współistnieje z wartością domyślną (`companyId=null`); przykłady kluczy:
-`case.archival.retentionMonths`, `manufacturer.sla.days`,
-`case.preparationFee.amount` (patrz `BUSINESS_RULES.md` BR-083).
+**Indeksy:** `@@index([companyId, key])` — wyłącznie wydajność, nie
+unikalność (patrz "Ograniczenia").
+**Ograniczenia (decyzja końcowa, Zadanie 9 — ten sam wzorzec co `Role` §3,
+pełne uzasadnienie tam):** nadpisanie per firma współistnieje z jedną
+wartością domyślną (`companyId=null`) — egzekwowane ręcznie dopisanym
+indeksem `NULLS NOT DISTINCT` w migracji SQL, nie przez `@@unique` w
+`schema.prisma`; przykłady kluczy: `case.archival.retentionMonths`,
+`manufacturer.sla.days`, `case.preparationFee.amount` (patrz
+`BUSINESS_RULES.md` BR-083).
 
 ---
 
 ## Znane ograniczenia tego dokumentu
 
-- `prisma validate` nie mogło zostać uruchomione w tym środowisku (brak
-  dostępu do `binaries.prisma.sh`) — walidacja ograniczona do
-  sprawdzenia strukturalnego (zbalansowanie nawiasów, ręczna weryfikacja
-  wszystkich relacji, w tym nowego podziału `Contractor`/`Manufacturer`).
-  Do wykonania w środowisku z pełnym dostępem sieciowym przed pierwszą
-  migracją.
-- `seed.ts` nadal nie został zaktualizowany (odziedziczone ograniczenie z
-  poprzedniej wersji tego dokumentu) — wymaga przepisania pod aktualny
-  schemat, w tym pod nowy podział Kontrahent/Producent.
+- `prisma validate`/`prisma migrate dev` nie mogły zostać uruchomione w
+  środowisku, w którym powstał ten scaffold (brak Node.js/npm/Dockera) —
+  walidacja ograniczona do sprawdzenia strukturalnego (zbalansowanie
+  nawiasów, ręczna weryfikacja wszystkich relacji). **Pierwsze uruchomienie
+  `npm install && npx prisma generate && npx prisma migrate dev` pozostaje
+  niezweryfikowane realnym wykonaniem** — patrz raport Zadania 8.
+- `seed.ts` **istnieje** (`apps/api/prisma/seed.ts`, Zadanie 7) — seeduje
+  jedną `Company`, 5 ról systemowych z pełną macierzą uprawnień z
+  `RBAC.md` §3. Nieaktualne od poprzedniej wersji tego dokumentu — poprawione.
+- **Wymagany ręczny krok migracji (Zadanie 9, nowość):** `Role`, `NotificationTemplate`,
+  `Setting` wymagają ręcznie dopisanego indeksu `... NULLS NOT DISTINCT`
+  (Postgres 16+) do pierwszej wygenerowanej migracji SQL — `@@unique` w
+  `schema.prisma` **celowo** nie jest już użyty dla tych trzech modeli,
+  patrz §3/§27/§30 i `DECISIONS.md` ("Zadanie 9 — Zamrożenie architektury").
+  Bez tego kroku baza dopuszcza duplikaty globalnych ról/szablonów/ustawień.
 - Indeksy oznaczone jako "do rozważenia" (np. `Brand.@@unique([manufacturerId,
   name])`, `Product.@@unique([companyId, sku])`) są **rekomendacjami**, nie
   częścią zatwierdzonego schematu — dodanie ich to migracja addytywna,

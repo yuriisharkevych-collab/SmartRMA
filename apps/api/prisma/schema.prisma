@@ -129,6 +129,9 @@ enum CasePriority {
 // Zamknięty słownik zdarzeń w CaseHistory - wymusza spójność danych.
 // InfoRequested/PortalEnabled/PortalDisabled dodane podczas prototypowania
 // Portalu Klienta (patrz DECISIONS.md) - tutaj domykane w modelu docelowym.
+// LogisticsStatusChanged/PriorityChanged dodane w Zadaniu 5 - domykają lukę
+// zgłoszoną w EVENTS.md §10.2/§13 (zdarzenia logistyczne i automatyczna
+// eskalacja SLA zmieniały dane bez odpowiednika w historii sprawy).
 enum CaseHistoryAction {
   CaseCreated
   StatusChanged
@@ -148,6 +151,8 @@ enum CaseHistoryAction {
   CaseClosed
   CaseCancelled
   CaseArchived
+  LogisticsStatusChanged
+  PriorityChanged
 }
 
 // --- Dokumenty ---
@@ -228,9 +233,14 @@ enum NotificationChannel {
   SMS
 }
 
+// Manufacturer dodany w Zadaniu 5 - WORKFLOW.md §6 poz. 7 przewiduje
+// przypomnienie SLA wysyłane do producenta, ale enum wcześniej pozwalał
+// wyrazić tylko odbiorcę wewnętrznego (Employee) lub klienta (Customer) -
+// domykana luka zgłoszona w EVENTS.md §13 poz. 4.
 enum NotificationRecipientType {
   Customer
   Employee
+  Manufacturer
 }
 
 enum NotificationStatus {
@@ -327,7 +337,14 @@ model Role {
   permissions RolePermission[]
   users       UserRoleAssignment[]
 
-  @@unique([companyId, code])
+  // Zadanie 9 (decyzja końcowa, patrz DECISIONS.md) — `@@unique([companyId, code])`
+  // NIE wystarcza: Postgres traktuje NULL jako różny od NULL w indeksie unikalnym,
+  // więc nic nie blokowałoby dwóch ról systemowych (`companyId=null`) o tym samym
+  // `code`. Prisma nie ma atrybutu dla `NULLS NOT DISTINCT` (Postgres 15+), więc
+  // prawdziwa unikalność (włącznie z partycją `companyId IS NULL`) jest egzekwowana
+  // ręcznie dopisanym ograniczeniem w migracji, NIE przez ten atrybut — poniższy
+  // indeks wspiera wyłącznie wydajność zapytań. Patrz DATABASE.md §3.
+  @@index([companyId, code])
 }
 
 // Pojedyncze uprawnienie - "moduł.akcja", patrz RBAC.md dla pełnej listy.
@@ -736,8 +753,14 @@ model Case {
   submissionMode SubmissionMode  @default(PrzezSklep)
   source         ComplaintSource @default(SklepStacjonarny)
 
-  requestedResolution String
-  description          String
+  // Zadanie 9 (decyzja końcowa) — nullable. Wymagane warstwą aplikacji dla
+  // KAŻDEJ ścieżki OPRÓCZ sprawy monitorowanej `BezposrednioDoProducenta`
+  // (WORKFLOW.md §3.2 — "bez opisu usterki, bez załączników", producent
+  // zbiera je bezpośrednio). NULL oznacza "nie dotyczy tej sprawy", nie
+  // "dane nieznane" — świadomie NIE syntetyzujemy tekstu-placeholdera,
+  // patrz BUSINESS_RULES.md BR-105.
+  requestedResolution String?
+  description          String?
   customerStatement    String?
 
   status   CaseStatus   @default(Nowa)
@@ -965,7 +988,12 @@ model NotificationTemplate {
 
   notifications Notification[]
 
-  @@unique([companyId, code, channel])
+  // Zadanie 9 (decyzja końcowa) — jak `Role.@@index([companyId, code])` powyżej:
+  // to NIE jest pełna gwarancja unikalności, tylko indeks wydajnościowy. Prawdziwa
+  // unikalność (w tym partycja `companyId IS NULL` — jeden szablon globalny na
+  // `code`+`channel`, na czym opiera się rozwiązywanie w NOTIFICATIONS.md §2.2)
+  // wymaga ręcznie dopisanego ograniczenia w migracji. Patrz DATABASE.md §27.
+  @@index([companyId, code, channel])
 }
 
 model Notification {
@@ -978,7 +1006,8 @@ model Notification {
   channel         NotificationChannel
   recipientType   NotificationRecipientType
   recipientUserId String?  // wypełnione, gdy recipientType = Employee
-  recipientEmail  String?  // wypełnione dla channel = Email (klient nie ma User)
+  recipientManufacturerId String? // wypełnione, gdy recipientType = Manufacturer (id producenta, bez formalnej relacji Prisma - analogicznie do recipientUserId)
+  recipientEmail  String?  // wypełnione dla channel = Email (klient nie ma User; dla producenta - adres skopiowany z Manufacturer.contractor.contactEmail w momencie utworzenia, patrz NOTIFICATIONS.md §5)
   recipientPhone  String?  // wypełnione dla channel = SMS
 
   relatedCaseId String?
@@ -1040,5 +1069,9 @@ model Setting {
   description String?
   updatedAt   DateTime         @updatedAt
 
-  @@unique([companyId, key])
+  // Zadanie 9 (decyzja końcowa) — jak `Role`/`NotificationTemplate` powyżej:
+  // indeks wydajnościowy, NIE gwarancja unikalności. Prawdziwa unikalność
+  // (w tym jedna wartość domyślna systemu na `key`, `companyId IS NULL`)
+  // wymaga ręcznie dopisanego ograniczenia w migracji. Patrz DATABASE.md §30.
+  @@index([companyId, key])
 }

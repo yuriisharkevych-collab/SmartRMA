@@ -119,6 +119,14 @@ Pomiędzy `Nowa` a `RealizacjaDecyzji` sprawa żyje głównie przez `Message`
 przez zmiany statusu. `RealizacjaDecyzji` jest ustawiane ręcznie przez
 pracownika, gdy z relacji klienta wynika, że producent podjął decyzję.
 
+> **Decyzja końcowa (Zadanie 9, patrz `DECISIONS.md`):** sprawa z tej
+> ścieżki powstaje z `Case.description`/`requestedResolution` = `null` —
+> producent zbiera szczegóły usterki bezpośrednio, sklep ich nie zna w
+> momencie utworzenia sprawy. Oba pola są **wymagane warstwą aplikacji**
+> dla każdej innej ścieżki (`BUSINESS_RULES.md` BR-105) — `null` nie jest
+> tu wartością domyślną/błędem, tylko jedynym poprawnym stanem dla tego
+> konkretnego, węższego automatu.
+
 ### 3.3 Uwaga implementacyjna
 
 `informStore`/wybór "Tak/Nie" w kreatorze zgłoszenia to **decyzja podjęta
@@ -188,9 +196,47 @@ bez zmiany statusu sprawy.
 ## 6. Akcje automatyczne — pełna lista
 
 > Każda pozycja tej tabeli ma odpowiadający kontrakt zdarzenia w
-> `EVENTS.md` §5 — z wyjątkiem pozycji 6 i 12, dla których `EVENTS.md`
+> `EVENTS.md` §5 — z wyjątkiem pozycji 6, 12 i 22, dla których `EVENTS.md`
 > §5.3 wyjaśnia, dlaczego zdarzenie nie powstaje. Dodanie pozycji do tej
 > tabeli wymaga uzupełnienia `EVENTS.md` §5 albo §5.3.
+>
+> Pozycje 15–16 (produkt zastępczy) dodane w Zadaniu 5 — domykają lukę
+> zgłoszoną w `BUSINESS_RULES.md` BR-073/BR-082 (produkt zastępczy jest
+> częścią modelu i reguł biznesowych od dawna), które wcześniej nie miały
+> odpowiednika w tej tabeli.
+>
+> Pozycje 17–20 dodane w Zadaniu 6 — domykają ostatnie cztery zdarzenia
+> wymienione jako otwarte w `EVENTS.md` §13 poz. 2 (`case.owner_changed`,
+> `document.uploaded`, `document.marked_invalid`, `logistics.status_changed`).
+> Wszystkie miały już kontrakt zdarzenia (`EVENTS.md` §5) i wartość
+> `CaseHistoryAction`, brakowało im wyłącznie miejsca na tej liście.
+>
+> Pozycje 21–22 dodane w Zadaniu 6 przy okazji pełnego audytu spójności:
+> `PortalDisabled` (poz. 21) domyka asymetrię względem poz. 13 (istniała
+> wartość enuma i uprawnienie `cases.portal.manage`, brakowało zdarzenia i
+> wiersza tabeli); `NextActionUpdated` (poz. 22) domyka ostatnią wartość
+> `CaseHistoryAction` bez żadnego odniesienia w tym dokumencie.
+>
+> **`NoteAdded` i `MessageSent` (kierunek `Outbound`, pracownik → klient)
+> celowo NIE mają wiersza w tej tabeli** — to bezpośrednie akcje
+> pracownika bez dodatkowych automatycznych konsekwencji poza samym
+> zapisem (`Note`/`Message` **jest** już całością operacji, nie ma czego
+> więcej "zautomatyzować"). `MessageSent` dla kierunku `Inbound` (klient
+> odpowiada) ma odrębny wiersz — poz. 5 — bo tam istnieje realna
+> automatyczna konsekwencja: powrót ze statusu `OczekiwanieNaKlienta`.
+>
+> **Zadanie 9 — Portal Klienta ma teraz konkretną implementację backendu.**
+> Poz. 13/14/21 (strona pracownicza — generowanie/unieważnianie dostępu)
+> mają odpowiadające endpointy `POST /cases/:id/portal/*` w
+> `CasesController`. Strona kliencka (logowanie kodem/linkiem, podgląd
+> statusu/historii/dokumentów, wysłanie wiadomości) to osobny moduł,
+> `PortalModule` (`POST /portal/login`, `POST /portal/login/token`,
+> `GET /portal/case`, `GET /portal/case/history`, `GET /portal/case/documents`,
+> `POST /portal/case/messages`) — celowo poza tą tabelą, bo nie są to
+> automatyczne KONSEKWENCJE zdarzeń z lewej kolumny, tylko odrębna,
+> bezstanowa gałąź API z własnym mechanizmem dostępu (`PortalAccessGuard`,
+> RBAC.md §1.2). Pełny opis: `RBAC.md` §1.2, `DECISIONS.md`
+> ("Zadanie 9 — Zamrożenie architektury").
 
 
 | # | Zdarzenie wyzwalające | Akcja automatyczna |
@@ -207,8 +253,16 @@ bez zmiany statusu sprawy.
 | 10 | Sprawa `Zamknieta` dłużej niż okres retencji (`Setting` `case.archival.retentionMonths`) | Zadanie cykliczne przechodzi sprawę do `Zarchiwizowana` (§5) |
 | 11 | Wybór producenta z listy w formularzu zgłoszenia (pracownik lub kreator klienta) | Auto-uzupełnienie `CaseItem.manufacturerId` z `Product.manufacturerId`; jeśli wybrano markę zamiast producenta wprost — rozwiązanie `Brand.manufacturerId` (patrz prototyp: auto-rozpoznawanie producenta po marce) |
 | 12 | Wpisanie numeru zamówienia w kreatorze zgłoszenia | Wyszukanie `Order`/`OrderItem` po numerze; jeśli znaleziono — auto-uzupełnienie danych produktu (`Product`, `serialNumber`, `invoiceNumber`) w formularzu |
-| 13 | Włączenie Portalu Klienta dla sprawy (`clientPortalEnabled: false → true`) | Wygenerowanie `clientAccessCodeHash` (kod jawny pokazany pracownikowi **tylko raz**, w momencie generowania), wpis `CaseHistory` (`PortalEnabled`) |
-| 14 | Wygenerowanie bezpiecznego linku (token) | Wygenerowanie `clientAccessTokenHash`, `clientAccessTokenUsed=false`; po pierwszym udanym użyciu tokenu do logowania: `clientAccessTokenUsed=true` (token jednorazowy) |
+| 13 | Włączenie Portalu Klienta dla sprawy (`clientPortalEnabled: false → true`) — `POST /cases/:id/portal/enable`, Zadanie 9 | Wygenerowanie `clientAccessCodeHash` (kod jawny pokazany pracownikowi **tylko raz**, w momencie generowania), wpis `CaseHistory` (`PortalEnabled`) |
+| 14 | Wygenerowanie bezpiecznego linku (token) — `POST /cases/:id/portal/secure-link`, Zadanie 9 | Wygenerowanie `clientAccessTokenHash`, `clientAccessTokenUsed=false`; po pierwszym udanym użyciu tokenu do logowania: `clientAccessTokenUsed=true` (token jednorazowy) |
+| 15 | Wydanie produktu zastępczego (`ReplacementProduct.issuedAt` ustawiane, zwykle w statusie `RealizacjaDecyzji` przy `decision=WymianaProduktu`) | Wpis `CaseHistory` (`ReplacementProductIssued`, `visibleForCustomer=true`), wysyłka `Notification` do klienta z informacją o wydanym produkcie zastępczym i (jeśli ustawiony) planowanym terminie zwrotu (`plannedReturnAt`) |
+| 16 | Zwrot produktu zastępczego (`ReplacementProduct.returnedAt` ustawiane) | Wpis `CaseHistory` (`ReplacementProductReturned`, `visibleForCustomer=true`), zapis stanu zwracanego produktu (`conditionOnReturn`) |
+| 17 | Zmiana opiekuna sprawy (`Case.ownerId` aktualizowane — akcja "Przenieś sprawę", `cases.assign`) | Wpis `CaseHistory` (`OwnerChanged`, `previousValue`/`newValue` = poprzedni/nowy `ownerId`, `visibleForCustomer=false` — wewnętrzne, patrz BR-079/BR-104), `Notification` systemowe do nowego opiekuna ("przypisano Ci sprawę") |
+| 18 | Dodanie dokumentu do sprawy lub pozycji (`Document` powstaje, `documents.upload`) | Wpis `CaseHistory` (`DocumentAdded`, `visibleForCustomer` = `true` **wyłącznie** gdy `Document.visibility=Public`, zgodnie z BR-079/BR-080) |
+| 19 | Oznaczenie dokumentu jako błędny (`Document.status → Bledny`, `documents.markInvalid`) | Wpis `CaseHistory` (`DocumentMarkedInvalid`, `newValue` = podany powód) — dokument **nie jest usuwany** (BR-020 z dokumentu źródłowego), pozostaje widoczny ze statusem błędnym |
+| 20 | Zmiana statusu zdarzenia logistycznego (`Logistics.status` aktualizowane) | Wpis `CaseHistory` (`LogisticsStatusChanged`, `previousValue`/`newValue`); gdy `type=ShipToManufacturer` i nowy `status=Delivered` w statusie `OczekiwanieNaKuriera` — spełnia warunek blokujący przejście do `WyslanaDoProducenta` (patrz §8, `STATE_MACHINE.md`) |
+| 21 | Wyłączenie Portalu Klienta dla sprawy (`clientPortalEnabled: true → false`, `cases.portal.manage`) — `POST /cases/:id/portal/disable`, Zadanie 9 | Unieważnienie `clientAccessCodeHash`/`clientAccessTokenHash` (ustawienie na `null` — dotychczasowy kod/link przestaje działać), wpis `CaseHistory` (`PortalDisabled`) — domyka asymetrię względem poz. 13 (BR-077) |
+| 22 | Ręczna edycja `Case.nextAction`/`nextActionDueDate` przez pracownika, niezależna od zmiany statusu (`cases.edit`) | Wpis `CaseHistory` (`NextActionUpdated`, `previousValue`/`newValue`, `visibleForCustomer=false` — BR-104) — **nie emituje zdarzenia domenowego**, patrz `EVENTS.md` §5.3 |
 
 > **SLA producenta (`ManufacturerSLA`, patrz `DATABASE.md` §14a) zastąpiło
 > wcześniejszy placeholder** "SLA do zdefiniowania per Manufacturer,
@@ -261,8 +315,12 @@ bez zmiany statusu sprawy.
 | Dowolne → `RealizacjaDecyzji`, gdy `decision = ZwrotSrodkow` | `Case.requiresManagerApproval` musi być `true`, a decyzję musiał ustawić Kierownik/Administrator — zwrot środków nigdy nie jest jednoosobową decyzją Pracownika |
 | `GotowaDoOdbioru` → `Zamknieta` (ręcznie) | Brak twardego warunku — decyzja pracownika, że klient odebrał produkt |
 | Dowolny aktywny → `Anulowana` | Wymaga podania powodu (Note lub `CaseHistory.newValue`) |
-| Tworzenie sprawy z `submissionMode=BezposrednioDoProducenta` | `complaintType` musi być `Warranty` (§1) |
-| Tworzenie sprawy z `complaintType=StatutoryWarranty` | `submissionMode` musi być `PrzezSklep` (§1) |
+| Tworzenie sprawy z `submissionMode=BezposrednioDoProducenta` | `complaintType` musi być `Warranty` (§1, `BUSINESS_RULES.md` BR-097, `ERROR_CODES.md` CASE-007) |
+| Tworzenie sprawy z `complaintType=StatutoryWarranty` | `submissionMode` musi być `PrzezSklep` (§1, `BUSINESS_RULES.md` BR-097, `ERROR_CODES.md` CASE-007) |
+| Dowolna zmiana statusu | Musi być zgodna z automatem stanów właściwej ścieżki (§2, `STATE_MACHINE.md`) — przejście nieosiągalne z bieżącego statusu jest odrzucane (`BUSINESS_RULES.md` BR-098, `ERROR_CODES.md` CASE-001) |
+| `Weryfikacja` → `GotowaDoWysylki` (`Warranty`) / `WeryfikacjaWewnetrzna` (`StatutoryWarranty`) | Dokumentacja pozycji reklamacji kompletna: numer seryjny jeśli `Manufacturer.requiresSerialNumber=true`, numer ramy jeśli `requiresFrameNumber=true`, dowód zakupu jeśli `requiresProofOfPurchase=true` i brak dopasowania do `OrderItem`, minimum 2 zdjęcia uszkodzenia, liczba/rozmiar załączników w granicach `Manufacturer.maxPhotos`/`maxAttachmentSizeMb` (`BUSINESS_RULES.md` BR-102, `ERROR_CODES.md` CASE-002/CASE-004–006/FILE-001/002/004) |
+| `OczekiwanieNaKuriera` → `WyslanaDoProducenta` | Istnieje `Logistics` z `type=ShipToManufacturer` i `status=Delivered` dla tej sprawy (§6 poz. 20, `STATE_MACHINE.md`) |
+| Dowolna modyfikacja sprawy (status, decyzja, dokumenty, notatki) | Sprawa nie może być w statusie końcowym — `Zamknieta`/`Anulowana`/`Zarchiwizowana` (§2.3 "status aktywny", `BUSINESS_RULES.md` BR-103, `ERROR_CODES.md` CASE-008) |
 
 ---
 

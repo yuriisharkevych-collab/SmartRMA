@@ -222,11 +222,15 @@ opisany jest warunek biznesowy.
 | `case.decision_set` | Cases | §6 poz. 3 | `decision`, `decisionByUserId`, `requiresManagerApproval`, `caseHistoryId` | Notifications, Reports\* |
 | `case.info_requested` | Cases | §6 poz. 4 | `requestedItems: string[]`, `messageText`, `caseHistoryId` | Notifications |
 | `case.customer_replied` | Messages | §6 poz. 5 | `messageId`, `channel`, `restoredStatus` | Notifications |
-| `case.owner_changed` | Cases | *(brak w §6 — patrz §13 poz. 2)* | `previousOwnerId`, `newOwnerId`, `caseHistoryId` | Notifications |
+| `case.owner_changed` | Cases | §6 poz. 17 | `previousOwnerId`, `newOwnerId`, `caseHistoryId` | Notifications |
 | `case.portal_enabled` | Cases | §6 poz. 13 | `caseHistoryId` | Notifications |
+| `case.portal_disabled` | Cases | §6 poz. 21 | `caseHistoryId` | Notifications |
 | `case.portal_token_generated` | Cases | §6 poz. 14 | `tokenExpiresAt` | Notifications |
 | `case.sla_reminder_due` | Scheduler | §6 poz. 7 | `manufacturerId`, `daysWaiting`, `reminderAfterDays` | Notifications |
 | `case.sla_escalated` | Scheduler | §6 poz. 8 | `manufacturerId`, `daysWaiting`, `previousPriority`, `newPriority` | Notifications |
+| `case.updated` | Cases | Edycja opisu/oczekiwanego rozwiązania/priorytetu (`cases.edit`, `PATCH /cases/:id`) — dodane w Zadaniu 16 | `changedFields: string[]` | Reports\* |
+| `case.note_added` | Cases | Dodanie notatki wewnętrznej (`notes.create`) — dodane w Zadaniu 16, patrz uwaga pod §10.2 | `noteId`, `caseHistoryId` | — |
+| `case.message_added` | Cases | Wysłanie wiadomości do klienta, kierunek Outbound (`messages.send`) — dodane w Zadaniu 16, patrz uwaga pod §10.2 | `messageId`, `channel`, `direction`, `caseHistoryId` | Notifications\* |
 
 \* moduł planowany — kontrakt zarezerwowany, subskrybent jeszcze nie istnieje.
 
@@ -242,16 +246,33 @@ subskrybent powiadomień używa jej do doboru szablonu.
 subskrybenta do nasłuchiwania dwóch źródeł tej samej prawdy. Subskrybent
 zainteresowany zamknięciem filtruje po `newStatus === 'Zamknieta'`.
 
+> **Rewizja (Zadanie 16):** `case.note_added`/`case.message_added` **odwracają**
+> wcześniejsze stwierdzenie w tym dokumencie (i w `WORKFLOW.md` §6, uwaga pod
+> tabelą akcji automatycznych), że dodanie notatki i wysłanie wiadomości do
+> klienta (kierunek Outbound) "celowo nie mają zdarzenia — to bezpośrednia
+> akcja pracownika bez dodatkowych automatycznych konsekwencji poza samym
+> zapisem". Przy implementacji modułu Cases (Zadanie 16) okazało się to zbyt
+> wąskie: inne moduły (np. przyszłe Reports/AIAssistant) potrzebują
+> jednolitego strumienia zdarzeń dla WSZYSTKICH mutacji sprawy, nie tylko
+> tych ze statusem/decyzją. Oba zdarzenia niosą wyłącznie identyfikatory
+> (`noteId`/`messageId` + `caseHistoryId`), zero treści notatki/wiadomości —
+> nie zmienia to zasady minimalizacji danych z §2.1 pkt 3, tylko dodaje
+> punkt zaczepienia dla przyszłych subskrybentów. `WORKFLOW.md` §6 pozostaje
+> bez zmian redakcyjnych (wciąż poprawnie opisuje, że nie ma dodatkowej
+> AKCJI biznesowej poza zapisem) — zmienia się wyłącznie fakt, że sam zapis
+> jest teraz też ogłaszany zdarzeniem, zgodnie z `CaseHistoryAction` już od
+> dawna istniejącym w zamkniętym enumie (§10.2).
+
 ## 5.2 Pozostałe agregaty
 
 | Zdarzenie | Publisher | Wyzwalacz | Payload | Subskrybenci |
 |---|---|---|---|---|
-| `document.uploaded` | Documents | *(patrz §13 poz. 2)* | `documentId`, `caseItemId`, `category`, `visibility`, `fileType`, `caseHistoryId` | Notifications, AIAssistant\* |
-| `document.marked_invalid` | Documents | *(patrz §13 poz. 2)* | `documentId`, `reason`, `caseHistoryId` | Notifications |
+| `document.uploaded` | Documents | §6 poz. 18 | `documentId`, `caseItemId`, `category`, `visibility`, `fileType`, `caseHistoryId` | Notifications, AIAssistant\* |
+| `document.marked_invalid` | Documents | §6 poz. 19 | `documentId`, `reason`, `caseHistoryId` | Notifications |
 | `case_item.manufacturer_assigned` | CaseItems | §6 poz. 11 | `caseItemId`, `previousManufacturerId`, `newManufacturerId`, `resolvedFrom: 'product' \| 'brand' \| 'manual'`, `caseHistoryId` | Notifications, Scheduler |
-| `replacement.issued` | Replacement | *(patrz §13 poz. 2)* | `replacementId`, `caseItemId`, `productIdentifier`, `plannedReturnAt`, `caseHistoryId` | Notifications, Scheduler |
-| `replacement.returned` | Replacement | *(patrz §13 poz. 2)* | `replacementId`, `caseItemId`, `conditionOnReturn`, `caseHistoryId` | Notifications |
-| `logistics.status_changed` | Logistics | *(patrz §13 poz. 3)* | `logisticsId`, `type`, `previousStatus`, `newStatus`, `trackingNumber` | Notifications |
+| `replacement.issued` | Replacement | §6 poz. 15 | `replacementId`, `caseItemId`, `productIdentifier`, `plannedReturnAt`, `caseHistoryId` | Notifications, Scheduler |
+| `replacement.returned` | Replacement | §6 poz. 16 | `replacementId`, `caseItemId`, `conditionOnReturn`, `caseHistoryId` | Notifications |
+| `logistics.status_changed` | Logistics | §6 poz. 20 | `logisticsId`, `type`, `previousStatus`, `newStatus`, `trackingNumber` | Notifications |
 
 `case_item.manufacturer_assigned` ma `Scheduler` wśród subskrybentów, bo
 zmiana producenta zmienia obowiązujące `ManufacturerSLA` — zaplanowane
@@ -263,6 +284,7 @@ przypomnienia/eskalacje trzeba przeliczyć (`WORKFLOW.md` §6 poz. 6–8).
 |---|---|
 | 6 (wyliczenie `nextActionDueDate` z `ManufacturerSLA`) | Deterministyczne wyliczenie wykonywane w tej samej transakcji co zmiana statusu — niezmiennik (§1.2), nie reakcja. Zdarzeniem jest `case.status_changed`, które je poprzedza. |
 | 12 (wyszukanie zamówienia po numerze) | Operacja odczytu w formularzu, przed powstaniem sprawy. Brak faktu domenowego do ogłoszenia. |
+| 22 (ręczna edycja `nextAction`/`nextActionDueDate`, `NextActionUpdated`) | *(Zadanie 6)* Zapis `CaseHistory` jest tu całością operacji — nie ma modułu, który musiałby na to zareagować (brak `Notification`, brak przeliczeń pochodnych). Gdyby w przyszłości pojawiła się taka reakcja, to jest sygnał do dodania zdarzenia, nie do domyślnego jego braku. |
 
 Ta tabela jest częścią kontraktu dokumentu: jeśli ktoś doda pozycję do
 `WORKFLOW.md` §6, musi albo dopisać zdarzenie w §5, albo uzasadnić tutaj,
@@ -421,7 +443,7 @@ odtwarzać go z payloadu.
 
 ## 10.2 `CaseHistoryAction` jest zamkniętym enumem
 
-18 wartości (`schema.prisma`). **Nowe zdarzenie nie może wprowadzić nowej
+20 wartości (`schema.prisma`). **Nowe zdarzenie nie może wprowadzić nowej
 wartości historii bez migracji.** Przy projektowaniu zdarzenia obowiązuje
 kolejność: najpierw sprawdź, czy odpowiadająca akcja istnieje w enumie; jeśli
 nie — to jest zmiana modelu danych do zatwierdzenia (`DATABASE.md` + migracja),
@@ -437,14 +459,28 @@ Aktualne mapowanie zdarzeń na akcje historii (wszystkie istnieją w enumie):
 | `case.info_requested` | `InfoRequested` |
 | `case.customer_replied` | `MessageSent` |
 | `case.owner_changed` | `OwnerChanged` |
-| `case.portal_enabled` | `PortalEnabled` / `PortalDisabled` |
+| `case.portal_enabled` | `PortalEnabled` |
+| `case.portal_disabled` | `PortalDisabled` *(dodane w Zadaniu 6 — brakujący odpowiednik enuma miał wartość od dawna, ale zdarzenie i wiersz `WORKFLOW.md` nie istniały)* |
 | `document.uploaded` | `DocumentAdded` |
 | `document.marked_invalid` | `DocumentMarkedInvalid` |
 | `case_item.manufacturer_assigned` | `ManufacturerAssigned` |
 | `replacement.issued` | `ReplacementProductIssued` |
 | `replacement.returned` | `ReplacementProductReturned` |
-| `logistics.status_changed` | **brak odpowiednika** — patrz §13 poz. 3 |
-| `case.sla_escalated` | **brak odpowiednika** (zmiana `priority`) — patrz §13 poz. 3 |
+| `logistics.status_changed` | `LogisticsStatusChanged` *(dodane w Zadaniu 5)* |
+| `case.sla_escalated` | `PriorityChanged` *(dodane w Zadaniu 5; nazwa celowo nie odwołuje się do SLA — pole `Case.priority` może zmienić się też ręcznie, bez potrzeby kolejnej wartości enuma)* |
+| `case.updated` | `PriorityChanged` (gdy zmienia się `priority`) — **poza tym `case.updated` nie zapisuje osobnego wpisu `CaseHistory`** dla `description`/`requestedResolution` (brak dedykowanej wartości enuma dla samej edycji opisu; `AuditLog` i tak niesie diff, patrz BR-088) *(dodane w Zadaniu 16)* |
+| *(brak zdarzenia, §5.3 poz. 22)* | `NextActionUpdated` — ręczna edycja `nextAction`/`nextActionDueDate`, niezależna od zmiany statusu |
+| `case.note_added` | `NoteAdded` *(od Zadania 16 — wcześniej bez zdarzenia, patrz rewizja pod §5.1)* |
+| `case.message_added` | `MessageSent` *(kierunek `Outbound`; od Zadania 16 — wcześniej bez zdarzenia, patrz rewizja pod §5.1)* |
+
+Wszystkie 20 wartości `CaseHistoryAction` mają jawne miejsce w tej tabeli —
+jako mapowanie ze zdarzenia, jako pozycja `§5.3` (niezmiennik bez zdarzenia),
+albo jako jawnie udokumentowany wyjątek bez automatycznej reprezentacji.
+Domknięte w Zadaniu 6, zrewidowane w Zadaniu 16 (`NoteAdded`/`MessageSent`
+zyskały zdarzenia; `PriorityChanged` zyskał drugiego "właściciela" —
+`case.updated` obok `case.sla_escalated`, bo pole może zmienić się ręcznie
+lub automatycznie, dokładnie jak przewidywał komentarz przy `case.sla_escalated`
+od Zadania 5).
 
 ## 10.3 `visibleForCustomer`
 
@@ -565,20 +601,43 @@ usunięcia danych — to jest praktyczny powód tamtej zasady, nie estetyka.
 
 1. **`ProcessedEvent` nie istnieje w MVP** (§8.2) — do wprowadzenia razem
    z brokerem, nie wcześniej.
-2. **Zdarzenia bez pozycji w `WORKFLOW.md` §6:** `case.owner_changed`,
-   `document.uploaded`, `document.marked_invalid`, `replacement.issued`,
-   `replacement.returned`. Wszystkie mają odpowiednik w `CaseHistoryAction`,
-   więc historia jest zapisywana — brakuje ich natomiast na liście akcji
-   automatycznych. **Rekomendacja:** uzupełnić `WORKFLOW.md` §6
-   (osobny krok, decyzja biznesowa — zwłaszcza pytanie, czy klient ma być
-   powiadamiany o wydaniu produktu zastępczego).
-3. **Brak wartości `CaseHistoryAction`** dla zdarzeń logistycznych i dla
-   zmiany priorytetu przy eskalacji SLA (§10.2). Wymaga migracji addytywnej
-   (np. `LogisticsUpdated`, `PriorityChanged`) — do zatwierdzenia razem
-   z pkt. 2.
-4. **`NotificationRecipientType` nie obejmuje producenta**, mimo że
-   `WORKFLOW.md` §6 poz. 7 przewiduje przypomnienie wysyłane do producenta.
-   Do rozstrzygnięcia: nowa wartość enuma czy inny mechanizm. Patrz
-   §13 w niniejszym dokumencie oraz uwaga w `DECISIONS.md`.
+2. ~~**Zdarzenia bez pozycji w `WORKFLOW.md` §6:** `case.owner_changed`,
+   `document.uploaded`, `document.marked_invalid`, `logistics.status_changed`.~~
+   **Domknięte w Zadaniu 6:** wszystkie cztery mają teraz pozycję w
+   `WORKFLOW.md` §6 (poz. 17–20) i zaktualizowaną kolumnę "Wyzwalacz" w §5
+   powyżej. Przy okazji domknięto też brakujący warunek przejścia
+   `OczekiwanieNaKuriera → WyslanaDoProducenta` w `WORKFLOW.md` §8, który
+   `STATE_MACHINE.md` już egzekwował, ale `WORKFLOW.md` go nie opisywał.
+   *(`replacement.issued`/`replacement.returned` domknięte wcześniej, w
+   Zadaniu 5 — patrz `WORKFLOW.md` §6 poz. 15–16.)*
+3. ~~**Brak wartości `CaseHistoryAction`** dla zdarzeń logistycznych i dla
+   zmiany priorytetu przy eskalacji SLA (§10.2).~~ **Domknięte w Zadaniu 5:**
+   dodano `LogisticsStatusChanged` i `PriorityChanged` (`schema.prisma`,
+   `DATABASE.md` §22, `DECISIONS.md`). Przy okazji ujednolicono nazwę z
+   `NOTIFICATIONS.md` §7 pkt 2, który wcześniej proponował inną wartość
+   (`EscalatedForSla`) dla tego samego zdarzenia — obowiązuje `PriorityChanged`.
+4. ~~**`NotificationRecipientType` nie obejmuje producenta**~~ **Domknięte
+   w Zadaniu 5:** dodano wartość `Manufacturer` oraz pole
+   `Notification.recipientManufacturerId` (`schema.prisma`, `DATABASE.md`
+   §28, `NOTIFICATIONS.md` §5).
 5. **Reports / AIAssistant** figurują w §5 jako zarezerwowani subskrybenci
    — kontrakty są gotowe, moduły nie istnieją.
+6. **Domknięte w Zadaniu 6, znalezione przy pełnym audycie §10.2:**
+   `PortalDisabled` nie miał zdarzenia ani pozycji w `WORKFLOW.md` §6, mimo
+   że `PortalEnabled` (jego para) miał oba od dawna — dodano
+   `case.portal_disabled` i `WORKFLOW.md` §6 poz. 21. `NextActionUpdated`
+   był jedyną wartością `CaseHistoryAction` bez żadnego odniesienia w tym
+   dokumencie — dodano jako pozycję niezmienniczą bez zdarzenia (§5.3
+   poz. 22, `WORKFLOW.md` §6 poz. 22). `NoteAdded` i `MessageSent`
+   (kierunek `Outbound`) pozostają świadomie bez zdarzenia i bez pozycji w
+   `WORKFLOW.md` §6 — bezpośrednie akcje pracownika bez dalszych
+   automatycznych konsekwencji (uzasadnienie: `WORKFLOW.md` §6, notatka
+   pod tabelą).
+7. **Moduł `User`/`Auth` nie ma sekcji w katalogu §5.** `NOTIFICATIONS.md`
+   §3 katalogu zawiera dwa szablony tego modułu
+   (`user.account_created.employee`, `user.password_reset.employee`) bez
+   odpowiadającego kontraktu zdarzenia — zauważone przy audycie w Zadaniu
+   6, celowo **nie domknięte** w tym kroku (dotyczy innego agregatu niż
+   `Case` i jego zależne encje, którymi zajmowało się to zadanie).
+   **Rekomendacja:** sekcja `5.4 Agregat User` przy projektowaniu modułu
+   `Users`/`Auth` w backendzie.

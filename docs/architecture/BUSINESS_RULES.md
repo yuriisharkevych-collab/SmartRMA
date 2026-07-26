@@ -260,3 +260,116 @@ Terminy SLA są liczone od **wejścia sprawy w odpowiedni status**
 (`responseDays` od `WyslanaDoProducenta`, `repairDays` od
 `RealizacjaDecyzji`), nie od utworzenia sprawy — patrz `WORKFLOW.md` §6,
 pozycja 6.
+
+---
+
+# 22. Walidacja procesu reklamacji (Zadanie 6)
+
+**Uwaga o numeracji:** `ERROR_CODES.md` (CASE-001, CASE-007) już przed tym
+krokiem odwoływał się do `BR-097`/`BR-098` dla dokładnie tych dwóch reguł —
+formalizacja poniżej **wypełnia** oczekiwane, wcześniej nieopisane numery,
+zamiast rezerwować nowe. Zobacz uwagę w `DECISIONS.md` ("Zadanie 6") o
+renumeracji reguł Zadania 5, które omyłkowo zajęły te same numery.
+
+## BR-097
+Sprawa z `submissionMode=BezposrednioDoProducenta` jest dopuszczalna
+**wyłącznie** dla `complaintType=Warranty` — rękojmia zawsze idzie przez
+sklep, z mocy prawa (patrz `WORKFLOW.md` §1). Próba utworzenia sprawy
+`StatutoryWarranty` + `BezposrednioDoProducenta` jest odrzucana przez
+warstwę aplikacji (`ERROR_CODES.md` CASE-007). Reguła istniała w prozie
+`WORKFLOW.md` §1 i jako ograniczenie aplikacyjne w `DATABASE.md` §19 od
+etapu architektury, ale nie miała dotąd numeru `BR`.
+
+## BR-098
+Zmiana `Case.status` musi być zgodna z dozwolonymi przejściami automatu
+stanów właściwej ścieżki (`complaintType`/`submissionMode`) opisanego w
+`WORKFLOW.md` §2 i zakodowanego maszynowo w `STATE_MACHINE.md`. Próba
+przejścia nieosiągalnego z bieżącego statusu jest odrzucana
+(`ERROR_CODES.md` CASE-001). Reguła jest sformułowana wprost w notce
+projektowej na początku `WORKFLOW.md` ("dozwolone przejścia... walidowane
+w warstwie aplikacji"), ale nie miała dotąd numeru `BR`.
+
+---
+
+# 23. Ujednolicenie modelu domenowego (Zadanie 5)
+
+## BR-099
+Producent (`Manufacturer`) jest odbiorcą powiadomień
+(`NotificationRecipientType.Manufacturer`), nie tylko podmiotem opisywanym
+w treści powiadomień do pracownika. Dotyczy to w szczególności przypomnień
+o przekroczonym terminie SLA (`WORKFLOW.md` §6 poz. 7, `NOTIFICATIONS.md`
+§5–7), które istniały jako funkcjonalność opisana w dokumentacji od etapu
+SLA producentów, zanim model formalnie pozwalał wyrazić tego odbiorcę.
+
+## BR-100
+Każda zmiana statusu zdarzenia logistycznego (`Logistics.status`) oraz
+każda automatyczna zmiana priorytetu sprawy wynikająca z eskalacji SLA
+(`Case.priority`, `WORKFLOW.md` §6 poz. 8) pozostawia wpis w `CaseHistory`
+(`CaseHistoryAction.LogisticsStatusChanged` / `PriorityChanged`) —
+domyka to wymóg, żeby **każda istotna operacja** miała ślad w historii
+sprawy (kontynuacja BR-002 z dokumentu źródłowego), wcześniej spełniany
+tylko częściowo: obie operacje zmieniały dane systemu, ale nie miały
+odpowiednika w zamkniętym enumie historii.
+
+## BR-101
+Wydanie i zwrot produktu zastępczego (`ReplacementProduct.issuedAt`/
+`returnedAt`) są zdarzeniami widocznymi dla klienta w historii sprawy
+(`CaseHistory.visibleForCustomer=true` dla akcji
+`ReplacementProductIssued`/`ReplacementProductReturned`, które już
+istniały w enumie, ale nie miały odpowiednika w `WORKFLOW.md`) — klient
+fizycznie posiada produkt zastępczy i musi wiedzieć, kiedy go otrzymał
+oraz jaki jest planowany termin zwrotu, patrz `WORKFLOW.md` §6 poz. 15–16.
+
+---
+
+# 24. Kompletność dokumentacji przejść i załączników (Zadanie 6)
+
+## BR-102
+Przejście `Weryfikacja` → `GotowaDoWysylki` (`Warranty`) lub
+`WeryfikacjaWewnetrzna` (`StatutoryWarranty`) wymaga **kompletnej
+dokumentacji pozycji reklamacji**: numeru seryjnego, jeśli
+`Manufacturer.requiresSerialNumber=true` (`ERROR_CODES.md` CASE-004);
+numeru ramy, jeśli `requiresFrameNumber=true` (CASE-005); dowodu zakupu,
+jeśli `requiresProofOfPurchase=true` i brak dopasowania do `OrderItem`
+(CASE-006); minimum 2 zdjęć uszkodzenia (FILE-004); liczby/rozmiaru
+załączników w granicach `Manufacturer.maxPhotos`/`maxAttachmentSizeMb`
+(FILE-001/FILE-002). Zbiorczo egzekwowane jako CASE-002 "Brak wymaganych
+dokumentów" — patrz `WORKFLOW.md` §8.
+
+## BR-103
+Sprawa w statusie końcowym (`Zamknieta`/`Anulowana`/`Zarchiwizowana` —
+patrz `WORKFLOW.md` §2.3 "status aktywny") nie może być dalej
+modyfikowana (status, decyzja, dokumenty, notatki) — patrz
+`ERROR_CODES.md` CASE-008, `WORKFLOW.md` §8.
+
+---
+
+# 25. Widoczność pól wewnętrznych sprawy (Zadanie 6)
+
+## BR-104
+Zmiana opiekuna sprawy (`Case.ownerId`, `cases.assign`) i ręczna edycja
+`nextAction`/`nextActionDueDate` (`cases.edit`) to pola **wyłącznie
+operacyjne/wewnętrzne** — obie zmiany są zapisywane w `CaseHistory`
+(`OwnerChanged`/`NextActionUpdated`, `WORKFLOW.md` §6 poz. 17/22), ale
+zawsze z `visibleForCustomer=false`, zgodnie z ogólną zasadą BR-079
+(klient widzi wyłącznie wpisy jawnie oznaczone jako publiczne). Klient nie
+ma potrzeby ani prawa wiedzieć, **który konkretnie pracownik** aktualnie
+prowadzi jego sprawę wewnętrznie, poza ogólnymi danymi opiekuna
+udostępnianymi celowo w Portalu Klienta (`RBAC.md` §3a, wiersz "Podgląd
+danych opiekuna sprawy").
+
+---
+
+# 26. Kompletność opisu sprawy (Zadanie 9)
+
+## BR-105
+`Case.description` i `Case.requestedResolution` są wymagane przez warstwę
+aplikacji dla **każdej** sprawy utworzonej jakąkolwiek ścieżką **poza**
+`submissionMode=BezposrednioDoProducenta` ze zgodą klienta na monitoring
+(`WORKFLOW.md` §3.2) — tam producent zbiera opis usterki bezpośrednio,
+sklep go nie zna w momencie utworzenia sprawy, więc oba pola pozostają
+`NULL` (nie syntetyczny tekst zastępczy). W `schema.prisma` oba pola są
+nullable (`String?`) — baza danych celowo nie wymusza tej zależności
+warunkowej (nie potrafi, tak jak `submissionMode`/`complaintType` z
+BR-097), egzekwuje ją wyłącznie walidacja przy tworzeniu sprawy. Decyzja
+końcowa — patrz `DECISIONS.md` ("Zadanie 9 — Zamrożenie architektury").

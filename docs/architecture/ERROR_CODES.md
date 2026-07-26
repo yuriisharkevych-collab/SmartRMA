@@ -34,14 +34,14 @@ pola formularza lub niesie dodatkowy kontekst.
 
 | Kod | HTTP | Treść (PL) | Kiedy występuje | Powiązana reguła |
 |---|---|---|---|---|
-| CASE-001 | 409 | Nieprawidłowe przejście statusu. | Próba zmiany statusu na wartość nieosiągalną z bieżącego statusu wg automatu stanów danej ścieżki | `WORKFLOW.md` §2, §9.3; `BUSINESS_RULES.md` BR-098 |
-| CASE-002 | 422 | Brak wymaganych dokumentów. | Próba przejścia dalej bez kompletu wymaganych załączników (np. mniej niż 2 zdjęcia uszkodzenia) | `WORKFLOW.md` §10.1 |
+| CASE-001 | 409 | Nieprawidłowe przejście statusu. | Próba zmiany statusu na wartość nieosiągalną z bieżącego statusu wg automatu stanów danej ścieżki | `WORKFLOW.md` §2, §8; `STATE_MACHINE.md`; `BUSINESS_RULES.md` BR-098 |
+| CASE-002 | 422 | Brak wymaganych dokumentów. | Próba przejścia dalej bez kompletu wymaganych załączników (np. mniej niż 2 zdjęcia uszkodzenia) | `WORKFLOW.md` §8; `BUSINESS_RULES.md` BR-102 |
 | CASE-003 | 422 | Wybrana marka nie jest obsługiwana przez wskazanego producenta. | `Brand.manufacturerId` nie zgadza się z wybranym/sugerowanym `Manufacturer` dla pozycji reklamacji | `DATABASE.md` §15; `BUSINESS_RULES.md` BR-076 |
-| CASE-004 | 422 | Numer seryjny jest wymagany dla wybranego producenta. | `Manufacturer.requiresSerialNumber=true`, a pole puste | `WORKFLOW.md` §9.1, §10.2 |
+| CASE-004 | 422 | Numer seryjny jest wymagany dla wybranego producenta. | `Manufacturer.requiresSerialNumber=true`, a pole puste | `WORKFLOW.md` §8; `BUSINESS_RULES.md` BR-102 |
 | CASE-005 | 422 | Numer ramy jest wymagany dla wybranego producenta. | `Manufacturer.requiresFrameNumber=true`, a pole puste | jw. |
 | CASE-006 | 422 | Dowód zakupu jest wymagany dla wybranego producenta. | `Manufacturer.requiresProofOfPurchase=true`, brak dokumentu i brak dopasowania do `OrderItem` | jw. |
-| CASE-007 | 422 | Zgłoszenie bezpośrednio do producenta jest dostępne wyłącznie dla reklamacji gwarancyjnych. | Próba utworzenia sprawy `submissionMode=BezposrednioDoProducenta` + `complaintType=StatutoryWarranty` | `BUSINESS_RULES.md` BR-097 |
-| CASE-008 | 409 | Sprawa jest zamknięta/anulowana/zarchiwizowana i nie może być zmieniana. | Próba jakiejkolwiek modyfikacji sprawy w statusie końcowym | `WORKFLOW.md` §9.3 |
+| CASE-007 | 422 | Zgłoszenie bezpośrednio do producenta jest dostępne wyłącznie dla reklamacji gwarancyjnych. | Próba utworzenia sprawy `submissionMode=BezposrednioDoProducenta` + `complaintType=StatutoryWarranty` | `WORKFLOW.md` §1, §8; `BUSINESS_RULES.md` BR-097 |
+| CASE-008 | 409 | Sprawa jest zamknięta/anulowana/zarchiwizowana i nie może być zmieniana. | Próba jakiejkolwiek modyfikacji sprawy w statusie końcowym | `WORKFLOW.md` §2.3, §8; `BUSINESS_RULES.md` BR-103 |
 | CASE-009 | 422 | Nie można zrealizować decyzji — decyzja nie została jeszcze ustawiona. | Przejście `OczekiwanieNaDecyzjeProducenta`/`OczekiwanieNaDecyzjeKierownika` → `RealizacjaDecyzji` bez `Case.decision` | `WORKFLOW.md` §8 |
 | CASE-010 | 403 | Ta decyzja wymaga zatwierdzenia przez Kierownika lub Administratora. | Próba ustawienia decyzji `ZwrotSrodkow` lub decyzji w sprawie rękojmi przez użytkownika bez `cases.decision.approve` | `RBAC.md`; `BUSINESS_RULES.md` BR-085 |
 | CASE-011 | 422 | Podanie powodu jest wymagane przy anulowaniu sprawy. | `Case.status → Anulowana` bez towarzyszącej notatki/powodu | `WORKFLOW.md` §5 |
@@ -84,10 +84,10 @@ pola formularza lub niesie dodatkowy kontekst.
 
 | Kod | HTTP | Treść (PL) | Kiedy występuje | Powiązana reguła |
 |---|---|---|---|---|
-| FILE-001 | 413 | Załącznik przekracza dopuszczalny rozmiar. | Rozmiar pliku > `Manufacturer.maxAttachmentSizeMb` (lub domyślny limit systemowy, jeśli sprawa nie ma jeszcze przypisanego producenta) | `WORKFLOW.md` §9.2 |
+| FILE-001 | 413 | Załącznik przekracza dopuszczalny rozmiar. | Rozmiar pliku > `Manufacturer.maxAttachmentSizeMb` (lub domyślny limit systemowy, jeśli sprawa nie ma jeszcze przypisanego producenta) | `WORKFLOW.md` §8; `BUSINESS_RULES.md` BR-102 |
 | FILE-002 | 422 | Przekroczono maksymalną liczbę zdjęć. | Liczba zdjęć w danej kategorii > `Manufacturer.maxPhotos` | jw. |
 | FILE-003 | 415 | Nieobsługiwany format pliku. | Typ pliku spoza `DocumentType` (PDF/JPG/PNG/HEIC/MP4) | `DATABASE.md` §25 |
-| FILE-004 | 422 | Wymagane minimum 2 zdjęcia uszkodzenia. | Próba przejścia dalej z mniej niż 2 zdjęciami w kategorii `Photo`/uszkodzenie | `WORKFLOW.md` §10.1 |
+| FILE-004 | 422 | Wymagane minimum 2 zdjęcia uszkodzenia. | Próba przejścia dalej z mniej niż 2 zdjęciami w kategorii `Photo`/uszkodzenie | `WORKFLOW.md` §8; `BUSINESS_RULES.md` BR-102 |
 
 ---
 
@@ -114,6 +114,7 @@ pola formularza lub niesie dodatkowy kontekst.
 | PORTAL-003 | 429 | Zbyt wiele nieudanych prób logowania. Spróbuj ponownie później lub skontaktuj się ze sklepem. | 5. nieudana próba logowania dla danego numeru sprawy | `BUSINESS_RULES.md` BR-078 |
 | PORTAL-004 | 401 | Link jest nieprawidłowy lub wygasł. | `clientAccessTokenHash` nie pasuje / nie istnieje | jw. |
 | PORTAL-005 | 401 | Ten link został już wykorzystany. | `clientAccessTokenUsed=true` — token jednorazowy | jw. |
+| PORTAL-006 | 401 | Sesja Portalu wygasła lub jest nieprawidłowa — zaloguj się ponownie. | Brak/nieprawidłowy/wygasły token sesji Portalu (`PortalAccessGuard`) na dowolnym żądaniu poza logowaniem — dodany w Zadaniu 9, żeby nie pożyczać `AUTH-003` (moduł AUTH to jawnie "uwierzytelnianie (pracownicy)") | `RBAC.md` §1.2.1 |
 
 ---
 

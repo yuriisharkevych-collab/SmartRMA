@@ -1123,6 +1123,366 @@ przez subskrybenta oraz przeniesienie `WORKFLOW.md` §6 do `EVENTS.md`.
 `CaseHistoryAction` dla logistyki i priorytetu oraz rozszerzenie
 `NotificationRecipientType` o producenta.
 
+---
+
+## Zadanie 5 — Ujednolicenie modelu domenowego
+
+**Kontekst:** `EVENTS.md` (Zadanie 4) zostawił trzy jawnie spisane "Kwestie
+otwarte": `NotificationRecipientType` nie pozwalał wyrazić producenta jako
+odbiorcy powiadomienia, mimo że `WORKFLOW.md` §6 poz. 7 od dawna opisuje
+przypomnienie SLA wysyłane do producenta; `CaseHistoryAction` nie miał
+wartości dla zmiany statusu logistyki ani dla automatycznej zmiany
+priorytetu przy eskalacji SLA; `WORKFLOW.md` §6 nie opisywał wydania ani
+zwrotu produktu zastępczego, mimo że `ReplacementProduct` i odpowiadające
+mu wartości `CaseHistoryAction` (`ReplacementProductIssued`/`Returned`)
+istniały w modelu od etapu architektury. Przy przeglądzie dokumentacji pod
+kątem tych trzech luk wykryto też rozjazd **między dwoma dokumentami**:
+`EVENTS.md` §13 proponował nazwę `PriorityChanged` dla nowej akcji
+historii przy eskalacji SLA, a `NOTIFICATIONS.md` §7 — dla tego samego
+zdarzenia — proponował `EscalatedForSla`. Żadna z tych nazw nie została
+wcześniej wprowadzona do schematu, więc nie było jeszcze migracji do
+poprawienia, tylko sprzeczna dokumentacja do ujednolicenia.
+
+**Decyzja i zakres zmian:**
+
+1. **`NotificationRecipientType`** rozszerzony o wartość `Manufacturer`
+   (`schema.prisma`). `Notification` zyskał pole `recipientManufacturerId`
+   (String, nullable) — miękkie odwołanie po id, **bez** formalnej relacji
+   Prisma, konsekwentnie z istniejącym wzorcem `recipientUserId` dla
+   `Employee` (ten sam brak formalnej relacji, ta sama przyczyna: odbiorca
+   zmienia się w zależności od `recipientType`, więc sztywna relacja do
+   jednej tabeli byłaby myląca dla pozostałych typów). Adres e-mail nadal
+   kopiowany do `recipientEmail` w momencie tworzenia powiadomienia z
+   `Manufacturer.contractor.contactEmail`, zgodnie z już istniejącym
+   opisem w `NOTIFICATIONS.md` §5 — ten dokument już zakładał tę
+   funkcjonalność, tylko model jej formalnie nie wspierał.
+2. **`CaseHistoryAction`** rozszerzony o `LogisticsStatusChanged` (zmiana
+   `Logistics.status`) i `PriorityChanged` (zmiana `Case.priority`; nazwa
+   celowo nie odwołuje się do SLA, żeby objąć też ewentualną przyszłą
+   ręczną zmianę priorytetu bez kolejnej wartości enuma). Enum rośnie z 18
+   do 20 wartości. **Ujednolicono nazewnictwo między `EVENTS.md` i
+   `NOTIFICATIONS.md`** — obowiązuje `PriorityChanged` (spójne z istniejącą
+   konwencją `{Pole}Changed`, jak `StatusChanged`/`OwnerChanged`);
+   `NOTIFICATIONS.md` §7 poprawiony, żeby nie proponował już
+   `EscalatedForSla`.
+3. **`WORKFLOW.md` §6** — dwie nowe pozycje (15, 16): wydanie i zwrot
+   produktu zastępczego, obie z wpisem `CaseHistory`
+   (`visibleForCustomer=true` — klient fizycznie posiada produkt i musi
+   widzieć te zdarzenia) i, dla wydania, powiadomieniem klienta o
+   planowanym terminie zwrotu. Odpowiadające kontrakty zdarzeń
+   (`replacement.issued`/`replacement.returned`) już istniały w
+   `EVENTS.md` §5.2 — zaktualizowano tam wyłącznie kolumnę "Wyzwalacz"
+   (z `(patrz §13 poz. 2)` na konkretne numery pozycji).
+4. **Synchronizacja dokumentacji:**
+   - `DATABASE.md` §22 i §28 — zaktualizowane liczby wartości enumów,
+     nowe pole `recipientManufacturerId`, adnotacje wyjaśniające.
+   - `EVENTS.md` §10.2 — mapowanie `logistics.status_changed` →
+     `LogisticsStatusChanged`, `case.sla_escalated` → `PriorityChanged`;
+     §13 zaktualizowane — punkty o brakującym `CaseHistoryAction` i o
+     `NotificationRecipientType` oznaczone jako domknięte, `logistics.
+     status_changed` przeniesione do punktu o brakujących pozycjach
+     `WORKFLOW.md` §6 (bo ten punkt **pozostaje otwarty** — dodano tylko
+     wartość enuma, nie pozycję w tabeli akcji automatycznych, zgodnie z
+     zakresem tego zadania).
+   - `NOTIFICATIONS.md` §5 i §7 — dopasowane do nowego enuma i pola,
+     poprawiona niespójna nazwa akcji historii (patrz wyżej).
+   - `BUSINESS_RULES.md` — nowa sekcja 22 (BR-097 do BR-099), formalizująca
+     powyższe trzy zmiany jako reguły biznesowe, kontynuacja numeracji.
+   - `RBAC.md` — sprawdzony pod kątem zgodności: `cases.replacement.manage`
+     już pokrywa wydawanie/przyjmowanie produktów zastępczych,
+     `notifications.view` już pokrywa przeglądanie powiadomień niezależnie
+     od typu odbiorcy — **bez zmian**, żadna nowa operacja nie wymaga
+     nowego uprawnienia.
+
+**Świadomie pozostawione otwarte:** `case.owner_changed`,
+`document.uploaded`, `document.marked_invalid`, `logistics.status_changed`
+nadal nie mają pozycji w `WORKFLOW.md` §6 (mają już odpowiednik w
+`CaseHistoryAction`, więc historia się zapisuje — brakuje im wyłącznie
+miejsca na liście akcji automatycznych). Poza zakresem tego zadania, które
+obejmowało wyłącznie produkt zastępczy z listy `EVENTS.md` §13.
+
+**Uzasadnienie:** Wszystkie trzy luki były już jawnie spisane w
+`EVENTS.md` po Zadaniu 4 — to zadanie jest ich systematycznym domknięciem,
+a nie nowym odkryciem. Wykryta przy okazji niespójność nazewnictwa
+(`PriorityChanged` vs. `EscalatedForSla`) pokazuje wartość jawnego kroku
+"synchronizacja dokumentacji" jako osobnej pozycji zadania, nie tylko
+efektu ubocznego zmiany schematu — bez tego przeglądu sprzeczność
+przetrwałaby do faktycznej migracji, kiedy poprawka byłaby droższa.
+
+---
+
+## Zadanie 6 — Domknięcie architektury
+
+**Kontekst:** Zadanie 5 zostawiło jawnie otwarte cztery zdarzenia bez
+pozycji w `WORKFLOW.md` §6: `case.owner_changed`, `document.uploaded`,
+`document.marked_invalid`, `logistics.status_changed` (`EVENTS.md` §13
+poz. 2). Celem tego kroku było domknięcie tej listy **i** wykonanie
+pełnego audytu spójności całej dokumentacji architektonicznej — nie tylko
+czterech wymienionych zdarzeń — żeby móc odpowiedzialnie odpowiedzieć na
+pytanie, czy architektura jest gotowa pod implementację backendu.
+
+**Decyzja i zakres zmian:**
+
+1. **`WORKFLOW.md` §6** — cztery nowe pozycje (17–20) domykające zdarzenia
+   z listy otwartej w Zadaniu 5, plus dwie dodatkowe (21–22) znalezione
+   przy audycie: `PortalDisabled` nie miał zdarzenia ani wiersza, mimo że
+   jego para (`PortalEnabled`) miała oba od dawna; `NextActionUpdated`
+   był jedyną z 20 wartości `CaseHistoryAction` bez żadnego odniesienia w
+   dokumentacji. Dodano też brakujący warunek przejścia
+   `OczekiwanieNaKuriera → WyslanaDoProducenta` w §8 (Logistics
+   `status=Delivered`) — `STATE_MACHINE.md` już go egzekwował, ale
+   `WORKFLOW.md` nigdy go nie opisał.
+2. **Weryfikacja czteroelementowa wszystkich 20 wartości
+   `CaseHistoryAction`** (CaseHistoryAction / zdarzenie domenowe / reguła
+   biznesowa / opis w WORKFLOW) — pełna macierz w raporcie końcowym.
+   Efekt: 18 z 20 mają komplet czterech elementów; 2 mają udokumentowany,
+   świadomy wyjątek zamiast zdarzenia (`NextActionUpdated` — niezmiennik
+   bez reakcji, `EVENTS.md` §5.3 poz. 22) lub zamiast wiersza `WORKFLOW.md`
+   (`NoteAdded`, `MessageSent` w kierunku `Outbound` — bezpośrednie akcje
+   pracownika bez dalszych automatycznych konsekwencji). **Żadna z 20
+   wartości nie została bez wyjaśnienia.**
+3. **Kolizja numeracji `BUSINESS_RULES.md` wykryta przy audycie:**
+   `ERROR_CODES.md` (CASE-001, CASE-007) odwoływał się do `BR-097`/`BR-098`
+   dla reguł, które **nigdy nie zostały spisane** (ograniczenie
+   `submissionMode`/`complaintType` i wymóg zgodności przejścia z
+   automatem stanów istniały tylko jako proza w `WORKFLOW.md`). Zadanie 5
+   omyłkowo naniosło zupełnie inną treść pod te same numery (odbiorca
+   powiadomień, historia logistyki/priorytetu, widoczność produktu
+   zastępczego), bo nie sprawdzono `ERROR_CODES.md` przed przydzieleniem
+   numerów. **Naprawiono przez wypełnienie oczekiwanych numerów właściwą
+   treścią** (nowe BR-097/BR-098) **i renumerację** rzeczywistych reguł
+   Zadania 5 (BR-097→099, BR-098→100, BR-099→101 — bez pozostawiania luki
+   w numeracji). Dodano też dwie zupełnie nowe reguły domykające dalsze
+   dangling references znalezione w `ERROR_CODES.md`: BR-102 (kompletność
+   dokumentacji przed `Weryfikacja` → dalej, CASE-002/004-006/FILE-*),
+   BR-103 (zakaz modyfikacji spraw w statusie końcowym, CASE-008), oraz
+   BR-104 (widoczność `ownerId`/`nextAction` wyłącznie wewnętrzna,
+   domykająca brakującą regułę dla `OwnerChanged`/`NextActionUpdated`).
+4. **`ERROR_CODES.md` — pięć dangling references naprawionych:**
+   CASE-001, CASE-002, CASE-004–006, CASE-008, FILE-001/002/004
+   odwoływały się do `WORKFLOW.md` §9.1/§9.2/§9.3/§10.1/§10.2 —
+   sekcji, które **nigdy nie istniały** w `WORKFLOW.md` (dokument kończy
+   się na §9 "Diagram całościowy", bez podsekcji). Przekierowano wszystkie
+   na rzeczywiste miejsca (`WORKFLOW.md` §2, §2.3, §8) i uzupełniono
+   kolumnę "Powiązana reguła" o nowe BR-y z pkt. 3.
+5. **`NOTIFICATIONS.md` — jedna błędna nazwa naprawiona:** wiersz
+   `case.customer_responded.employee` odwoływał się do wyzwalacza
+   `CustomerResponded`, który nie istnieje ani jako zdarzenie, ani jako
+   `CaseHistoryAction` — poprawiono na rzeczywistą parę
+   `case.customer_replied`/`MessageSent`. Przy okazji odnotowano (bez
+   naprawiania w tym kroku) że `user.account_created.employee` i
+   `user.password_reset.employee` dotyczą agregatu `User`, którego
+   `EVENTS.md` §5 nigdy nie katalogował — poza zakresem tego zadania,
+   które dotyczyło wyłącznie domykania luk wokół `Case`.
+6. **`RBAC.md`** — doprecyzowano opis `cases.edit` o ręczną edycję
+   `nextAction`/`nextActionDueDate` (poz. 22), żeby uprawnienie
+   przywołane w nowym wierszu `WORKFLOW.md` faktycznie ją obejmowało.
+
+**Świadomie pozostawione otwarte (nie blokują implementacji backendu):**
+- Moduł `User`/`Auth` nie ma sekcji `EVENTS.md` §5 — do uzupełnienia przy
+  projektowaniu tego modułu.
+- Role `Serwis`/`Odczyt` (`RBAC.md`) czekają na potwierdzenie biznesowe.
+- `Product.sku` bez unikalności, i18n `NotificationTemplate.locale`,
+  mechanizm resetu hasła (hasło tymczasowe vs. link) — świadome,
+  wcześniej odnotowane decyzje odłożone do implementacji.
+- `docs/source/*.md` (dokumenty źródłowe BR-001–061, GLOSSARY, itd.),
+  do których odwołuje się większość dokumentów architektury, **nie
+  znajdują się w tym repozytorium** (patrz `README_ORGANIZACJA.txt` —
+  repozytorium zawiera świadomie tylko wyjście etapu architektury).
+  Odwołania po numerze (np. "BR-020 z dokumentu źródłowego") pozostają
+  nieweryfikowalne lokalnie — nie jest to defekt wprowadzony w tym
+  zadaniu, tylko właściwość struktury repozytorium.
+
+**Uzasadnienie:** Zakres słowny zadania (cztery zdarzenia) był świadomie
+wąski, ale pytanie końcowe ("czy architektura jest kompletna") wymagało
+przejścia przez każdy dokument, nie tylko przez listę z `EVENTS.md` §13.
+Kolizja numeracji `BR-097`/`BR-098` i dangling references w
+`ERROR_CODES.md` nie zostałyby znalezione bez tego pełnego przejścia — a
+byłyby dużo droższe do naprawienia po rozpoczęciu implementacji backendu
+(zmiana numeru reguły w działającym kodzie/testach kosztuje więcej niż w
+dokumentacji). Pełny raport z odpowiedzią na pytanie o gotowość do
+implementacji: patrz artefakt/raport końcowy tego kroku.
+
+---
+
+## Zadanie 7 (Przygotowanie projektu) i Zadanie 8 (Walidacja infrastruktury) — nota
+
+Między "Zadanie 6" a poniższym wpisem powstał pełny szkielet backendu
+(NestJS, 18 modułów, RBAC, Event Bus) i frontendu (React) w `apps/api` i
+`apps/web`, oraz przeszedł walidację statyczną (Node.js/npm/Docker
+niedostępne w środowisku wykonania — real `npm install`/build/Docker
+pozostają niepotwierdzone realnym uruchomieniem). Oba kroki były
+implementacyjne/weryfikacyjne, nie architektoniczne — nie doczekały się
+własnych wpisów w tym dzienniku w czasie rzeczywistym. Odnotowane tutaj
+retrospektywnie, żeby historia była kompletna przed zamrożeniem
+architektury poniżej. Pełne raporty z obu kroków (lista modułów,
+znalezione i naprawione błędy, trzy pytania końcowe Zadania 8) istnieją
+poza tym plikiem — ten wpis jest wyłącznie wskaźnikiem, że luka w
+numeracji "Zadanie 6 → Zadanie 9" jest zamierzona, nie pominięciem.
+
+---
+
+## Zadanie 9 — Zamrożenie architektury
+
+**Kontekst:** Raport gotowości z Zadania 8 zostawił trzy otwarte decyzje
+architektoniczne, każda blokująca inny wycinek implementacji: (1) brak
+backendu Portalu Klienta — tylko strony-placeholdery po stronie frontendu;
+(2) nierozstrzygnięta nullability `Case.description`/`requestedResolution`
+wobec udokumentowanego przepływu, który tworzy sprawę bez opisu usterki;
+(3) trzy `@@unique` ze schematu (`Setting`, `NotificationTemplate`, `Role`)
+strukturalnie nie działające tak, jak zakładają dokumenty. Celem tego
+kroku było podjęcie wszystkich trzech decyzji **ostatecznie** — po tym
+wpisie żadna z nich nie powinna już się zmienić bez nowego, świadomego
+powodu.
+
+### 1. Architektura Portalu Klienta
+
+**Decyzja:** Nowy `PortalModule` (`apps/api/src/modules/portal/`),
+integrujący się z `CasesModule` (przez wyeksportowany `CasesRepository`)
+i `DocumentsModule` (przez wyeksportowany `DocumentsService`) zamiast
+duplikować dostęp do Prisma.
+
+**Model dostępu:** numer sprawy + kod dostępu (`POST /portal/login`) lub
+numer sprawy + token bezpiecznego linku (`POST /portal/login/token`,
+jednorazowy — BR-077). Udane logowanie wydaje **osobny** JWT
+(`JWT_PORTAL_SECRET` ≠ sekret pracowniczy), payload ograniczony do
+`{ caseId, type: 'portal' }` — nigdy `userId`. `PortalAccessGuard`
+(odpowiednik `JwtAuthGuard`, celowo NIE dzieli z nim strategii Passport —
+RBAC.md §1.2, inny profil zagrożeń) weryfikuje ten token na każdym
+kolejnym żądaniu i wstrzykuje `caseId` przez `@PortalCaseId()` — klient
+fizycznie nie może zapytać o inną sprawę niż ta, dla której dostał token.
+
+**Blokada logowania (BR-078):** `PortalLoginThrottleService`, licznik w
+Redis (`portal-login:{caseNumber}:{ip}`, TTL 15 min, próg 5 nieudanych
+prób) — pierwsze realne wykorzystanie Redisa w tym projekcie poza samą
+konfiguracją infrastruktury (Zadanie 7 już to przewidywało w komentarzu
+`redis.module.ts`).
+
+**Endpointy:**
+- Strona pracownicza (generuj/unieważnij dostęp), już istniejąca w
+  `CasesController`, doprecyzowana o realną logikę: `POST /cases/:id/portal/enable`
+  (generuje i zwraca kod dostępu **jeden raz**, `bcrypt.hash` do
+  `clientAccessCodeHash`), `POST /cases/:id/portal/secure-link` (analogicznie
+  dla tokenu), `POST /cases/:id/portal/disable` (unieważnia oba naraz).
+  Wcześniej (Zadanie 7/8) był to goły przełącznik boolowski bez faktycznego
+  generowania poświadczeń — bez tego Portal nie miał jak nigdy dostać
+  pierwszego kodu do zalogowania.
+- Strona kliencka: `GET /portal/case` (status zmapowany na 5 etapów
+  publicznych, BR-081 — `PortalMapper`, odpowiednik `public-status-mapper.js`
+  z prototypu), `GET /portal/case/history` (filtr `visibleForCustomer=true`,
+  BR-079), `GET /portal/case/documents` (filtr `visibility=Public` **i**
+  `status=Aktywny` — dokument błędny, BR-020, też nie powinien trafić do
+  klienta, czego BR-080 wprost nie precyzowało), `POST /portal/case/messages`.
+
+**Nowy kod błędu:** `PORTAL-006` (sesja Portalu nieprawidłowa/wygasła) —
+`PortalAccessGuard` pożyczał wcześniej `AUTH-003`, który `ERROR_CODES.md`
+opisuje jawnie jako moduł "uwierzytelnianie (**pracownicy**)" — niespójność
+znaleziona i naprawiona w trakcie tego samego kroku, nie osobnym audytem.
+
+**Świadomie NIE zaimplementowane** (logika biznesowa, poza zakresem tego
+zadania): `CaseHistory` (`PortalEnabled`/`PortalDisabled`/`MessageSent`)
+i zdarzenia domenowe (`case.portal_enabled` itd.) dla żadnej z powyższych
+akcji — oznaczone `TODO` w kodzie z odniesieniem do konkretnej pozycji
+`WORKFLOW.md` §6.
+
+### 2. `Case.description` / `requestedResolution` — decyzja końcowa: **nullable**
+
+**Decyzja:** Oba pola stają się `String?` w `schema.prisma`. `NULL`
+oznacza "nie dotyczy tej sprawy" (wyłącznie ścieżka `BezposrednioDoProducenta`
+z monitoringiem, `WORKFLOW.md` §3.2), nie "dane nieznane". Warstwa
+aplikacji nadal wymaga obu pól dla każdej innej ścieżki — nowa reguła
+**BR-105** (`BUSINESS_RULES.md`, nowa sekcja 26).
+
+**Odrzucona alternatywa:** synteza tekstu-placeholdera (np. "Zgłoszenie
+monitorowane — szczegóły zbiera producent"). Odrzucona świadomie —
+wstawienie fikcyjnego tekstu do pola, które w każdym innym kontekście
+niesie prawdziwy opis usterki klienta, zafałszowałoby dane w przyszłych
+raportach/eksportach/wyszukiwaniu pełnotekstowym bez żadnej korzyści
+(nic nie odróżniałoby "prawdziwego" opisu od wstawionego automatycznie,
+poza pamięcią osoby czytającej kod). `NULL` jest tu uczciwszym
+i tańszym rozwiązaniem.
+
+### 3. `@@unique` z nullable `companyId` — decyzja końcowa: ręczny indeks `NULLS NOT DISTINCT`
+
+**Kontekst:** `Setting.[companyId,key]`, `NotificationTemplate.[companyId,code,channel]`,
+`Role.[companyId,code]` — we wszystkich trzech `companyId=null` oznacza
+"wpis globalny/systemowy", na czym opiera się logika rozwiązywania w
+kodzie (`NOTIFICATIONS.md` §2.2, `seed.ts`). Postgres traktuje `NULL` jako
+różny od `NULL` w standardowym indeksie unikalnym — `@@unique` w Prismie
+**nie blokował** dwóch globalnych wpisów o tym samym kluczu.
+
+**Rozważone opcje:**
+- **(A) Indeks częściowy / `NULLS NOT DISTINCT` (Postgres 15+, projekt
+  używa 16 — `docker-compose.yml`), dopisywany ręcznie do migracji.**
+- (B) Sentinel-rekord `Company` o stałym, znanym `id` zamiast `null`,
+  reprezentujący "firmę systemową".
+- (C) Osobne tabele `GlobalSetting`/`GlobalNotificationTemplate`/
+  `GlobalRole` równoległe do istniejących, bez `companyId` w ogóle.
+
+**Decyzja: (A).** Zerowy wpływ na już napisaną i zatwierdzoną dokumentację
+(„`companyId=null` = globalne" pozostaje prawdziwe wszędzie, gdzie już
+jest opisane — `DATABASE.md`, `RBAC.md`, `NOTIFICATIONS.md`), zerowy wpływ
+na już napisany kod scaffoldu (`seed.ts`, `SettingsRepository` itd. — poza
+jedną koniecznością opisaną niżej), i to utrwalony, dobrze znany wzorzec
+dla dokładnie tego ograniczenia Prismy (dokumentacja Prismy wprost opisuje
+customizację wygenerowanych migracji dla przypadków, których nie modeluje
+natywnie). (B) i (C) zostały odrzucone — obie zmieniłyby model pojęciowy
+("firma" przestaje być wyłącznie realnym najemcą; albo trzy tabele
+zamiast jednej) w momencie, gdy priorytetem jest zamrożenie, nie kolejna
+przebudowa.
+
+**Konsekwencja w `schema.prisma`:** wszystkie trzy `@@unique` zastąpione
+`@@index` (wyłącznie wydajność) + komentarz w schemacie odsyłający do
+`DATABASE.md`. **Wymagany krok operacyjny przed pierwszą migracją:**
+`prisma migrate dev --create-only`, następnie ręczne dopisanie do
+wygenerowanego `.sql`:
+```sql
+CREATE UNIQUE INDEX role_company_code_key ON "Role" ("companyId", "code") NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX notification_template_company_code_channel_key ON "NotificationTemplate" ("companyId", "code", "channel") NULLS NOT DISTINCT;
+CREATE UNIQUE INDEX setting_company_key_key ON "Setting" ("companyId", "key") NULLS NOT DISTINCT;
+```
+(zamiast zwykłych `CREATE UNIQUE INDEX` bez `NULLS NOT DISTINCT`, które
+Prisma wygenerowałaby dla zwykłego `@@unique` i które **nie** rozwiązałyby
+problemu). **Konsekwencja w kodzie:** `SettingsRepository.upsertForCompany`
+przepisany z `prisma.setting.upsert({ where: { companyId_key: {...} } })`
+(Prisma już nie generuje tego złożonego klucza bez `@@unique`) na
+`findFirst` + `update`/`create` — jedyne miejsce w już napisanym
+scaffoldzie, które faktycznie używało usuniętego klucza.
+
+### 4. Końcowy audyt
+
+Wykonany jako część tego kroku, nie osobno:
+- Wszystkie importy backendu (438) rozwiązują się do istniejących plików.
+- DI: `PortalModule` → `CasesModule`/`DocumentsModule`/`UsersModule`
+  (jednokierunkowo, bez cykli); własna, druga rejestracja `JwtModule`
+  (analogicznie do `AuthModule`) z osobnym sekretem.
+- `schema.prisma`: 62/62 nawiasów, 31 modeli / 23 enumy (bez zmian
+  liczbowych — Zadanie 9 zmieniło nullability i typ dwóch ograniczeń, nie
+  dodało/usunęło modeli ani enumów).
+- Kod błędu `PORTAL-006` dodany zarówno do `error-codes.const.ts`
+  (backend), jak i do `docs/architecture/ERROR_CODES.md` (dokumentacja) —
+  w tej samej zmianie, żeby nie powtórzyć wzorca "dokumentacja i kod się
+  rozjeżdżają", który poprzednie zadania wielokrotnie znajdowały i naprawiały.
+
+**Świadomie pozostawione otwarte (nie są decyzjami architektonicznymi,
+tylko pracą implementacyjną odłożoną celowo poza ten krok):** `CaseHistory`/
+zdarzenia domenowe dla akcji Portalu (patrz pkt 1), mechanizm resetu hasła
+pracownika (`user.password_reset.employee` — treść, nie architektura),
+sekcja `EVENTS.md` §5.4 dla modułu `User`/`Auth`, potwierdzenie biznesowe
+ról `Serwis`/`Odczyt`. Żadne z nich nie wymaga decyzji o KSZTAŁCIE modelu
+danych ani API — to konkretna logika do napisania w ramach implementacji
+poszczególnych modułów, zgodnie z już zamrożoną architekturą.
+
+**Uzasadnienie całościowe:** Trzy decyzje z tego kroku łączy jedna cecha —
+każda była realnym pytaniem bez oczywistej odpowiedzi (stąd pozostały
+otwarte w Zadaniu 8), a nie brakującym, ale jednoznacznym elementem.
+Rozwiązanie (A) dla `@@unique` i `nullable` dla `Case.description` mają
+wspólną logikę: wybieraj opcję, która nie wymaga przepisywania już
+zatwierdzonej, spójnej dokumentacji, chyba że jest ku temu wyraźny powód —
+"zamrożenie" nie powinno samo w sobie stać się źródłem kolejnej rundy
+niespójności.
+
+---
 
 ## Proces pracy: iteracyjne etapy z akceptacją i dziennikiem decyzji
 

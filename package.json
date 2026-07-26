@@ -1,0 +1,43 @@
+{
+  "name": "smartrma",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SmartRMA AI — monorepo (apps/api: NestJS backend, apps/web: React frontend)",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/setup-env.js",
+    "dev": "concurrently -k -n API,WEB -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run start:dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build:api": "npm run build --workspace apps/api",
+    "build:web": "npm run build --workspace apps/web",
+    "lint": "npm run lint --workspace apps/api && npm run lint --workspace apps/web",
+    "format": "prettier --write \"apps/**/src/**/*.{ts,tsx}\"",
+    "prisma:generate": "npm run prisma:generate --workspace apps/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace apps/api",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.7",
+    "prettier": "^3.3.2",
+    "prisma": "^5.20.0",
+    "ts-node": "^10.9.2"
+  },
+  "prisma": {
+    "schema": "apps/api/prisma/schema.prisma",
+    "seed": "ts-node --project apps/api/tsconfig.json apps/api/prisma/seed.ts"
+  },
+  "lint-staged": {
+    "apps/**/src/**/*.{ts,tsx}": [
+      "prettier --write"
+    ]
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

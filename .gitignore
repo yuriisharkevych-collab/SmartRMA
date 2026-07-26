@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Prisma
+apps/api/prisma/migrations/dev.db
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Editors / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Testing
+coverage/
+
+# Docker
+docker-data/
+
+# Husky internal runtime dir (created by `husky` on `npm install`, never hand-edited)
+.husky/_/

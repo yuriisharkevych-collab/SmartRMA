@@ -1,0 +1,75 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-smartrma}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-smartrma}
+      POSTGRES_DB: ${POSTGRES_DB:-smartrma}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./docker-data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartrma}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - ./docker-data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # `api`/`web` mają `profiles: [full]` — bez tego bare `docker compose up -d`
+  # uruchamiałby wszystkie cztery serwisy, wliczając produkcyjne build API/web,
+  # podczas gdy standardowy przepływ dev to: Docker WYŁĄCZNIE dla db+redis
+  # (`docker compose up -d`), a api/web lokalnie z hot-reloadem (`npm run dev`).
+  # Pełny stack w Dockerze: `docker compose --profile full up -d --build`.
+  api:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-smartrma}:${POSTGRES_PASSWORD:-smartrma}@db:5432/${POSTGRES_DB:-smartrma}?schema=public
+      REDIS_URL: redis://redis:6379
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-changeme-access-secret}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-changeme-refresh-secret}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      JWT_PORTAL_SECRET: ${JWT_PORTAL_SECRET:-changeme-portal-secret}
+      JWT_PORTAL_EXPIRES_IN: ${JWT_PORTAL_EXPIRES_IN:-30m}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    profiles: ["full"]
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000/api
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api

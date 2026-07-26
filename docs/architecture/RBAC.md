@@ -83,6 +83,40 @@ rekordem `Role`/`UserRoleAssignment`**, tylko osobnym mechanizmem dostępu
 **Zakres dostępu Klienta** (opisany tabelarycznie, analogicznie do reszty
 tego dokumentu, mimo że nie jest to macierz `Permission`): patrz §3a.
 
+#### 1.2.1 Implementacja backendu (decyzja końcowa, Zadanie 9)
+
+Trzy punkty powyżej są teraz skonkretyzowane w `apps/api/src/modules/portal/`:
+
+- **Mechanizm sesji** — po udanym logowaniu (`POST /portal/login` kodem
+  lub `POST /portal/login/token` linkiem) backend wydaje **osobny** JWT
+  (sekret `JWT_PORTAL_SECRET` ≠ `JWT_ACCESS_SECRET` pracowników, domyślnie
+  30 min), z payloadem ograniczonym do `{ caseId, type: 'portal' }` —
+  nigdy `userId`, bo klient nie ma tożsamości w systemie (pkt 1 wyżej).
+  "Brak trwałej sesji" oznacza właśnie to: krótkie, bezstanowe okno
+  dostępu do jednej sprawy, nie sesję serwerową z refresh tokenem jak u
+  pracownika (`AuthModule`).
+- **`PortalAccessGuard`** — odpowiednik `JwtAuthGuard`, ale CELOWO odrębny
+  (weryfikuje token ręcznie przez `JwtService`, nie przez drugą strategię
+  Passport) — dokładnie realizuje pkt 3 (inny profil zagrożeń, inny kod).
+  Endpointy Portalu są oznaczone `@Public()` (pomijają `JwtAuthGuard`
+  pracowniczy) i osobno zabezpieczone tym guardem.
+- **Blokada po 5 próbach (pkt 3, BR-078)** — `PortalLoginThrottleService`,
+  licznik w Redis per `caseNumber` + adres IP, TTL 15 minut. Serwerowa, nie
+  w `localStorage` przeglądarki (jak w prototypie, tam świadomie
+  oznaczone jako niewystarczające produkcyjnie).
+- **Izolacja rekordowa (pkt 2)** — każdy endpoint poza logowaniem czyta
+  `caseId` wyłącznie z payloadu tokenu (`@PortalCaseId()`), nigdy z
+  parametru URL — klient fizycznie nie może podać innego `caseId`, nawet
+  gdyby spróbował (bez tokenu wydanego dla TEJ sprawy guard odrzuci
+  żądanie).
+- **Endpointy:** `POST /portal/login`, `POST /portal/login/token`,
+  `GET /portal/case`, `GET /portal/case/history` (filtr
+  `visibleForCustomer=true`, BR-079), `GET /portal/case/documents` (filtr
+  `visibility=Public` i `status=Aktywny`, BR-080/BR-020),
+  `POST /portal/case/messages` (RBAC.md §3a "Wysyłanie wiadomości").
+  Generowanie/unieważnianie dostępu (kod/link) to osobne, pracownicze
+  endpointy pod `cases.portal.manage` — patrz `WORKFLOW.md` §6 poz. 13/14/21.
+
 ---
 
 ## 2. Pełna lista uprawnień (`Permission`)
@@ -95,7 +129,7 @@ Konwencja nazewnictwa: `moduł.encja.akcja` lub `moduł.akcja`.
 |---|---|
 | `cases.view` | Przeglądanie listy i szczegółów spraw |
 | `cases.create` | Rejestracja nowej reklamacji |
-| `cases.edit` | Edycja danych sprawy (opis, oczekiwane rozwiązanie, priorytet) |
+| `cases.edit` | Edycja danych sprawy (opis, oczekiwane rozwiązanie, priorytet, ręczna edycja `nextAction`/`nextActionDueDate` niezależna od zmiany statusu — `WORKFLOW.md` §6 poz. 22) |
 | `cases.status.change` | Zmiana statusu sprawy zgodnie z dozwolonymi przejściami (`WORKFLOW.md`) |
 | `cases.decision.set` | Ustawienie decyzji (naprawa/wymiana/odrzucenie) |
 | `cases.decision.approve` | Zatwierdzenie decyzji **wymagających dodatkowej odpowiedzialności** (zwrot środków, sprawy rękojmi, sprawy nietypowe) |
