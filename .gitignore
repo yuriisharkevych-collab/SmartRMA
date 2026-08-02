@@ -32,5 +32,13 @@ coverage/
 # Docker
 docker-data/
 
+# Stray tsc build artifacts (vite.config.ts gets compiled in place on some setups)
+*.tsbuildinfo
+apps/web/vite.config.js
+apps/web/vite.config.d.ts
+
+# Uploaded files (IStorageService, dysk lokalny MVP — DECISIONS.md)
+apps/api/uploads/
+
 # Husky internal runtime dir (created by `husky` on `npm install`, never hand-edited)
 .husky/_/

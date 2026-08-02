@@ -3,7 +3,10 @@ import { CaseHistoryAction, DocumentStatus, DocumentVisibility, Prisma } from '@
 import { randomUUID } from 'node:crypto';
 import { AuditRepository } from '../audit/audit.repository';
 import { CasesService } from '../cases/cases.service';
-import { DocumentMarkedInvalidPayload, DocumentUploadedPayload } from '../../events/contracts/document.events';
+import {
+  DocumentMarkedInvalidPayload,
+  DocumentUploadedPayload,
+} from '../../events/contracts/document.events';
 import { DomainEvent } from '../../events/domain-event.base';
 import { EVENT_BUS, IEventBus } from '../../events/event-bus.interface';
 import { EVENT_NAMES } from '../../events/event-names.const';
@@ -13,7 +16,15 @@ import { DocumentsRepository } from './documents.repository';
 import { DocumentEntity } from './entities/document.entity';
 import { DocumentMapper } from './mappers/document.mapper';
 
-const DOCUMENT_AUDIT_FIELDS = ['fileName', 'fileType', 'mimeType', 'fileSize', 'storagePath', 'category', 'visibility'] as const;
+const DOCUMENT_AUDIT_FIELDS = [
+  'fileName',
+  'fileType',
+  'mimeType',
+  'fileSize',
+  'storagePath',
+  'category',
+  'visibility',
+] as const;
 
 function pick(obj: object, keys: readonly string[]): Prisma.InputJsonValue {
   const o = obj as Record<string, unknown>;
@@ -72,9 +83,28 @@ export class DocumentsService {
     return DocumentMapper.toEntityList(await this.documentsRepository.findAllForCase(caseId));
   }
 
-  async getDocument(caseId: string, documentId: string, companyId: string): Promise<DocumentEntity> {
+  async getDocument(
+    caseId: string,
+    documentId: string,
+    companyId: string,
+  ): Promise<DocumentEntity> {
     await this.assertCaseAccessible(caseId, companyId);
     return DocumentMapper.toEntity(await this.findDocumentOrThrow(documentId, caseId));
+  }
+
+  /** `storagePath` celowo nie wchodzi w `DocumentEntity` (szczegół implementacyjny `IStorageService`, nie do wystawiania przez API) — ten wariant istnieje wyłącznie dla kontrolera strumieniującego binarium, te same kontrole dostępu co `getDocument()`. */
+  async getDocumentFile(
+    caseId: string,
+    documentId: string,
+    companyId: string,
+  ): Promise<{ storagePath: string; mimeType: string; fileName: string }> {
+    await this.assertCaseAccessible(caseId, companyId);
+    const document = await this.findDocumentOrThrow(documentId, caseId);
+    return {
+      storagePath: document.storagePath,
+      mimeType: document.mimeType,
+      fileName: document.fileName,
+    };
   }
 
   /**
@@ -86,7 +116,12 @@ export class DocumentsService {
    * `Document` + `CaseHistory(DocumentAdded)` + `AuditLog` atomowo;
    * `document.uploaded` publikowane DOPIERO po commicie.
    */
-  async uploadDocument(caseId: string, uploadedById: string, companyId: string, dto: CreateDocumentDto): Promise<DocumentEntity> {
+  async uploadDocument(
+    caseId: string,
+    uploadedById: string,
+    companyId: string,
+    dto: CreateDocumentDto,
+  ): Promise<DocumentEntity> {
     const caseEntity = await this.assertCaseAccessible(caseId, companyId);
     if (dto.caseItemId && !caseEntity.items.some((item) => item.id === dto.caseItemId)) {
       throw new NotFoundException();
@@ -98,12 +133,24 @@ export class DocumentsService {
       // WORKFLOW.md §6 poz. 18 — visibleForCustomer WYŁĄCZNIE gdy Document.visibility=Public (BR-079/BR-080).
       const historyEntry = await this.casesService.appendCaseHistory(
         caseId,
-        { userId: uploadedById, action: CaseHistoryAction.DocumentAdded, newValue: document.fileName, visibleForCustomer: document.visibility === DocumentVisibility.Public },
+        {
+          userId: uploadedById,
+          action: CaseHistoryAction.DocumentAdded,
+          newValue: document.fileName,
+          visibleForCustomer: document.visibility === DocumentVisibility.Public,
+        },
         tx,
       );
 
       await this.auditRepository.create(
-        { companyId, userId: uploadedById, action: 'DOCUMENT_UPLOADED', entityType: 'Document', entityId: document.id, newValue: pick(document, DOCUMENT_AUDIT_FIELDS) },
+        {
+          companyId,
+          userId: uploadedById,
+          action: 'DOCUMENT_UPLOADED',
+          entityType: 'Document',
+          entityId: document.id,
+          newValue: pick(document, DOCUMENT_AUDIT_FIELDS),
+        },
         tx,
       );
 
@@ -118,7 +165,14 @@ export class DocumentsService {
         aggregateId: document.id,
         actorUserId: uploadedById,
         correlationId: randomUUID(),
-        payload: { documentId: document.id, caseItemId: document.caseItemId, category: document.category, visibility: document.visibility, fileType: document.fileType, caseHistoryId: historyEntry.id },
+        payload: {
+          documentId: document.id,
+          caseItemId: document.caseItemId,
+          category: document.category,
+          visibility: document.visibility,
+          fileType: document.fileType,
+          caseHistoryId: historyEntry.id,
+        },
       }),
     );
 
@@ -131,7 +185,13 @@ export class DocumentsService {
    * `Bledny`, zwraca go bez zmian (bez podwójnego wpisu audytu/historii/
    * zdarzenia), wzorzec z `CasesService.cancel/archive` (Zadanie 16).
    */
-  async markInvalid(caseId: string, documentId: string, companyId: string, actorUserId: string, reason: string): Promise<DocumentEntity> {
+  async markInvalid(
+    caseId: string,
+    documentId: string,
+    companyId: string,
+    actorUserId: string,
+    reason: string,
+  ): Promise<DocumentEntity> {
     await this.assertCaseAccessible(caseId, companyId);
     const before = await this.findDocumentOrThrow(documentId, caseId);
 
@@ -144,12 +204,26 @@ export class DocumentsService {
 
       const historyEntry = await this.casesService.appendCaseHistory(
         caseId,
-        { userId: actorUserId, action: CaseHistoryAction.DocumentMarkedInvalid, previousValue: before.status, newValue: reason, visibleForCustomer: before.visibility === DocumentVisibility.Public },
+        {
+          userId: actorUserId,
+          action: CaseHistoryAction.DocumentMarkedInvalid,
+          previousValue: before.status,
+          newValue: reason,
+          visibleForCustomer: before.visibility === DocumentVisibility.Public,
+        },
         tx,
       );
 
       await this.auditRepository.create(
-        { companyId, userId: actorUserId, action: 'DOCUMENT_MARKED_INVALID', entityType: 'Document', entityId: documentId, previousValue: { status: before.status } as Prisma.InputJsonValue, newValue: { status: document.status, reason } as Prisma.InputJsonValue },
+        {
+          companyId,
+          userId: actorUserId,
+          action: 'DOCUMENT_MARKED_INVALID',
+          entityType: 'Document',
+          entityId: documentId,
+          previousValue: { status: before.status } as Prisma.InputJsonValue,
+          newValue: { status: document.status, reason } as Prisma.InputJsonValue,
+        },
         tx,
       );
 
@@ -180,7 +254,7 @@ export class DocumentsService {
     return caseEntity;
   }
 
-  /** Goły `NotFoundException()` — brak kodu DOCUMENT-*/FILE-* dla "nie znaleziono" w ERROR_CODES.md (ten sam, już zaakceptowany brak co w innych modułach). Sprawdza też, że dokument należy do PODANEJ sprawy (spójność URL zagnieżdżonego `/cases/:caseId/documents/:documentId`). */
+  /** Goły `NotFoundException()` — brak kodu DOCUMENT-* / FILE-* dla "nie znaleziono" w ERROR_CODES.md (ten sam, już zaakceptowany brak co w innych modułach). Sprawdza też, że dokument należy do PODANEJ sprawy (spójność URL zagnieżdżonego `/cases/:caseId/documents/:documentId`). */
   private async findDocumentOrThrow(documentId: string, caseId: string) {
     const document = await this.documentsRepository.findById(documentId);
     if (!document || document.caseId !== caseId) {

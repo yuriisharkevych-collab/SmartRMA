@@ -6,6 +6,8 @@ import { PERMISSIONS } from '../../rbac/constants/permissions.const';
 import { RequirePermissions } from '../../rbac/decorators/require-permissions.decorator';
 import { CreateManufacturerDto } from './dto/create-manufacturer.dto';
 import { UpdateManufacturerDto } from './dto/update-manufacturer.dto';
+import { UpdateManufacturerAutomationDto } from './dto/update-manufacturer-automation.dto';
+import { UpdateManufacturerLogisticsDto } from './dto/update-manufacturer-logistics.dto';
 import { UpdateManufacturerSlaDto } from './dto/update-manufacturer-sla.dto';
 import { ManufacturerEntity } from './entities/manufacturer.entity';
 import { ManufacturersService } from './manufacturers.service';
@@ -53,5 +55,24 @@ export class ManufacturersController {
     @Body() dto: UpdateManufacturerSlaDto,
   ): Promise<ManufacturerEntity> {
     return this.manufacturersService.updateSla(id, dto);
+  }
+
+  /** `ManufacturerLogistics` — osobny endpoint (nie zagnieżdżony w `PATCH /:id`), bo to osobna tabela 1:1 tworzona leniwie, dokładnie jak `/sla` wyżej. */
+  @Put(':id/logistics')
+  @RequirePermissions(PERMISSIONS.MANUFACTURERS_MANAGE)
+  updateLogistics(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateManufacturerLogisticsDto,
+  ): Promise<ManufacturerEntity> {
+    return this.manufacturersService.updateLogistics(id, dto);
+  }
+
+  @Put(':id/automation')
+  @RequirePermissions(PERMISSIONS.MANUFACTURERS_MANAGE)
+  updateAutomation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateManufacturerAutomationDto,
+  ): Promise<ManufacturerEntity> {
+    return this.manufacturersService.updateAutomation(id, dto);
   }
 }

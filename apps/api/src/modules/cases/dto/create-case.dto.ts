@@ -5,6 +5,7 @@ import {
   ArrayNotEmpty,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsOptional,
   IsString,
@@ -17,6 +18,15 @@ class CreateCaseItemDto {
   @ApiProperty() @IsUUID() productId!: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() manufacturerId?: string;
   @ApiProperty() @IsString() description!: string;
+
+  /** Dane egzemplarza (prototyp `case-new.html`: p-serial/p-frame/p-purchaseDate/p-proof). Wymagalność zależy od producenta (CASE-004/005/006) — nie da się jej wyrazić w DTO, bo zależy od innego rekordu. */
+  @ApiPropertyOptional() @IsOptional() @IsString() serialNumber?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() frameNumber?: string;
+  @ApiPropertyOptional({ description: 'ISO 8601 (YYYY-MM-DD).' })
+  @IsOptional()
+  @IsDateString()
+  purchaseDate?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() purchaseProofNumber?: string;
 }
 
 /**
@@ -39,8 +49,14 @@ export class CreateCaseDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() ownerId?: string;
 
   @ApiProperty({ enum: ComplaintType }) @IsEnum(ComplaintType) complaintType!: ComplaintType;
-  @ApiPropertyOptional({ enum: SubmissionMode }) @IsOptional() @IsEnum(SubmissionMode) submissionMode?: SubmissionMode;
-  @ApiPropertyOptional({ enum: ComplaintSource }) @IsOptional() @IsEnum(ComplaintSource) source?: ComplaintSource;
+  @ApiPropertyOptional({ enum: SubmissionMode })
+  @IsOptional()
+  @IsEnum(SubmissionMode)
+  submissionMode?: SubmissionMode;
+  @ApiPropertyOptional({ enum: ComplaintSource })
+  @IsOptional()
+  @IsEnum(ComplaintSource)
+  source?: ComplaintSource;
 
   @ApiPropertyOptional() @IsOptional() @IsString() requestedResolution?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;

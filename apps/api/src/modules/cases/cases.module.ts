@@ -2,6 +2,8 @@ import { forwardRef, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
 import { CompaniesModule } from '../companies/companies.module';
 import { CustomersModule } from '../customers/customers.module';
+import { DocumentsModule } from '../documents/documents.module';
+import { ManufacturersModule } from '../manufacturers/manufacturers.module';
 import { OrdersModule } from '../orders/orders.module';
 import { ProductsModule } from '../products/products.module';
 import { UsersModule } from '../users/users.module';
@@ -28,9 +30,29 @@ import { NotesRepository } from './notes.repository';
  * dla `AuthModule`↔`UsersModule`.
  */
 @Module({
-  imports: [AuditModule, CustomersModule, CompaniesModule, ProductsModule, OrdersModule, forwardRef(() => UsersModule)],
+  imports: [
+    AuditModule,
+    CustomersModule,
+    CompaniesModule,
+    ProductsModule,
+    OrdersModule,
+    ManufacturersModule,
+    forwardRef(() => UsersModule),
+    // `DocumentsModule` importuje `CasesModule` (potrzebuje `CasesService`), a teraz
+    // `CasesService` potrzebuje `DocumentsRepository` do kontroli CASE-002 — cykl na
+    // poziomie MODUŁÓW, rozwiązany `forwardRef` po obu stronach. Graf PROVIDERÓW
+    // pozostaje acykliczny: `DocumentsRepository → PrismaService`, bez powrotu do Cases.
+    forwardRef(() => DocumentsModule),
+  ],
   controllers: [CasesController],
-  providers: [CasesService, CasesRepository, CaseItemsRepository, CaseHistoryRepository, NotesRepository, MessagesRepository],
-  exports: [CasesService, CasesRepository],
+  providers: [
+    CasesService,
+    CasesRepository,
+    CaseItemsRepository,
+    CaseHistoryRepository,
+    NotesRepository,
+    MessagesRepository,
+  ],
+  exports: [CasesService, CasesRepository, CaseHistoryRepository, MessagesRepository],
 })
 export class CasesModule {}

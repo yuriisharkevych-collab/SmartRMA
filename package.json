@@ -18,6 +18,7 @@
     "format": "prettier --write \"apps/**/src/**/*.{ts,tsx}\"",
     "prisma:generate": "npm run prisma:generate --workspace apps/api",
     "prisma:migrate": "npm run prisma:migrate --workspace apps/api",
+    "seed:admin": "npm run seed:admin --workspace apps/api",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -26,7 +27,8 @@
     "lint-staged": "^15.2.7",
     "prettier": "^3.3.2",
     "prisma": "^5.20.0",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
   },
   "prisma": {
     "schema": "apps/api/prisma/schema.prisma",

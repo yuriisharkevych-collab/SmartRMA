@@ -8,6 +8,7 @@ import { AssignRolesDto } from './dto/assign-roles.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { DeactivateUserResponseEntity } from './entities/deactivate-user-response.entity';
+import { LoginEventEntity } from './entities/login-event.entity';
 import { UserEntity } from './entities/user.entity';
 import { UsersService } from './users.service';
 
@@ -28,8 +29,16 @@ export class UsersController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.USERS_VIEW)
-  @ApiOperation({ summary: 'Lista użytkowników firmy', description: 'RBAC.md §3: Administrator — pełny dostęp; Kierownik — tylko pracownicy własnego oddziału (nieegzekwowane na poziomie zapytania, patrz raport gotowości).' })
-  @ApiResponse({ status: 200, description: 'Lista użytkowników (bez passwordHash).', type: [UserEntity] })
+  @ApiOperation({
+    summary: 'Lista użytkowników firmy',
+    description:
+      'RBAC.md §3: Administrator — pełny dostęp; Kierownik — tylko pracownicy własnego oddziału (nieegzekwowane na poziomie zapytania, patrz raport gotowości).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista użytkowników (bez passwordHash).',
+    type: [UserEntity],
+  })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.view`.' })
   findAll(@CurrentUser() user: AuthenticatedUser): Promise<UserEntity[]> {
     return this.usersService.findAllForCompany(user.companyId);
@@ -56,7 +65,11 @@ export class UsersController {
   @ApiBody({ type: CreateUserDto })
   @ApiResponse({ status: 201, description: 'Użytkownik utworzony.', type: UserEntity })
   @ApiResponse({ status: 409, description: 'USER-001 — adres e-mail już zajęty.' })
-  @ApiResponse({ status: 422, description: 'VALIDATION-001/002, AUTH-004 (hasło poniżej 8 znaków), RBAC-004 (pusta lista ról).' })
+  @ApiResponse({
+    status: 422,
+    description:
+      'VALIDATION-001/002, AUTH-004 (hasło poniżej 8 znaków), RBAC-004 (pusta lista ról).',
+  })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.create`.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateUserDto): Promise<UserEntity> {
     return this.usersService.create(user.companyId, dto);
@@ -66,12 +79,16 @@ export class UsersController {
   @RequirePermissions(PERMISSIONS.USERS_EDIT)
   @ApiOperation({
     summary: 'Edycja danych użytkownika',
-    description: 'Nie zmienia hasła ani ról — patrz POST /users/:id/reset-password i PUT /users/:id/roles (osobne uprawnienia w RBAC.md).',
+    description:
+      'Nie zmienia hasła ani ról — patrz POST /users/:id/reset-password i PUT /users/:id/roles (osobne uprawnienia w RBAC.md).',
   })
   @ApiBody({ type: UpdateUserDto })
   @ApiResponse({ status: 200, description: 'Użytkownik zaktualizowany.', type: UserEntity })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
-  @ApiResponse({ status: 409, description: 'USER-001 — nowy adres e-mail już zajęty przez innego użytkownika.' })
+  @ApiResponse({
+    status: 409,
+    description: 'USER-001 — nowy adres e-mail już zajęty przez innego użytkownika.',
+  })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.edit`.' })
   update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto): Promise<UserEntity> {
     return this.usersService.update(id, dto);
@@ -85,7 +102,11 @@ export class UsersController {
       'Zawsze dozwolona — jeśli użytkownik jest właścicielem otwartych spraw, odpowiedź niesie ' +
       '`warnings: ["USER-003"]` (kod informacyjny, nie blokujący, ERROR_CODES.md).',
   })
-  @ApiResponse({ status: 201, description: 'Konto dezaktywowane, ewentualnie z ostrzeżeniem.', type: DeactivateUserResponseEntity })
+  @ApiResponse({
+    status: 201,
+    description: 'Konto dezaktywowane, ewentualnie z ostrzeżeniem.',
+    type: DeactivateUserResponseEntity,
+  })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.deactivate`.' })
   deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<DeactivateUserResponseEntity> {
@@ -102,22 +123,62 @@ export class UsersController {
       'implementacją") — ten endpoint pozostaje placeholderem (zwraca hasło tymczasowe wprost), nie był ' +
       'częścią listy CRUD tego zadania. Patrz raport końcowy.',
   })
-  @ApiResponse({ status: 201, description: 'Tymczasowe hasło wygenerowane i zahashowane (placeholder).' })
+  @ApiResponse({
+    status: 201,
+    description: 'Tymczasowe hasło wygenerowane i zahashowane (placeholder).',
+  })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.resetPassword`.' })
   resetPassword(@Param('id', ParseUUIDPipe) id: string): Promise<{ temporaryPassword: string }> {
     return this.usersService.resetPassword(id);
   }
 
+  /** Odwrotność `deactivate` — prototypowy przełącznik „Konto aktywne" działa w obie strony. To samo uprawnienie co dezaktywacja. */
+  @Post(':id/activate')
+  @RequirePermissions(PERMISSIONS.USERS_DEACTIVATE)
+  @ApiOperation({
+    summary: 'Ponowna aktywacja konta',
+    description: 'Idempotentna — konto już aktywne zwracane jest bez zmian.',
+  })
+  @ApiResponse({ status: 201, description: 'Konto aktywne.', type: UserEntity })
+  @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
+  @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.deactivate`.' })
+  activate(@Param('id', ParseUUIDPipe) id: string): Promise<UserEntity> {
+    return this.usersService.activate(id);
+  }
+
+  /** `LoginEvent` (BR-089) — historia logowań konta, wraz z próbami nieudanymi. */
+  @Get(':id/login-events')
+  @RequirePermissions(PERMISSIONS.USERS_VIEW)
+  @ApiOperation({
+    summary: 'Historia logowań użytkownika',
+    description: 'Ostatnie 20 prób (udanych i nieudanych), najnowsze pierwsze.',
+  })
+  @ApiResponse({ status: 200, description: 'Lista zdarzeń logowania.', type: [LoginEventEntity] })
+  @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.view`.' })
+  findLoginEvents(@Param('id', ParseUUIDPipe) id: string): Promise<LoginEventEntity[]> {
+    return this.usersService.findLoginEvents(id);
+  }
+
   @Put(':id/roles')
   @RequirePermissions(PERMISSIONS.USERS_ROLES_ASSIGN)
-  @ApiOperation({ summary: 'Zastąpienie pełnego zestawu ról użytkownika', description: 'Wymaga co najmniej jednej roli (RBAC-004) — osobne uprawnienie od `users.edit` (RBAC.md §2).' })
+  @ApiOperation({
+    summary: 'Zastąpienie pełnego zestawu ról użytkownika',
+    description:
+      'Wymaga co najmniej jednej roli (RBAC-004) — osobne uprawnienie od `users.edit` (RBAC.md §2).',
+  })
   @ApiBody({ type: AssignRolesDto })
   @ApiResponse({ status: 200, description: 'Role zaktualizowane.', type: UserEntity })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
-  @ApiResponse({ status: 422, description: 'RBAC-004 — pusta lista ról odrzucona już na poziomie DTO.' })
+  @ApiResponse({
+    status: 422,
+    description: 'RBAC-004 — pusta lista ról odrzucona już na poziomie DTO.',
+  })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.roles.assign`.' })
-  assignRoles(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignRolesDto): Promise<UserEntity> {
+  assignRoles(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignRolesDto,
+  ): Promise<UserEntity> {
     return this.usersService.assignRoles(id, dto.roleIds);
   }
 }

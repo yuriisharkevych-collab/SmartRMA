@@ -21,7 +21,10 @@ export class ManufacturersRepository {
     companyId: string,
     data: Omit<Prisma.ManufacturerUncheckedCreateInput, 'companyId'>,
   ): Promise<ManufacturerWithRelations> {
-    return this.prisma.manufacturer.create({ data: { ...data, companyId }, include: WITH_RELATIONS });
+    return this.prisma.manufacturer.create({
+      data: { ...data, companyId },
+      include: WITH_RELATIONS,
+    });
   }
 
   update(id: string, data: Prisma.ManufacturerUpdateInput): Promise<ManufacturerWithRelations> {
@@ -40,6 +43,43 @@ export class ManufacturersRepository {
     return this.prisma.manufacturer.update({
       where: { id: manufacturerId },
       data: { sla: { upsert: { create: data, update: data } } },
+      include: WITH_RELATIONS,
+    });
+  }
+
+  /** `ManufacturerLogistics` to relacja 1:1 tworzona leniwie — `upsert` obsługuje jednocześnie pierwszą konfigurację i późniejszą edycję (wzorzec z `upsertSla`). */
+  upsertLogistics(
+    manufacturerId: string,
+    data: Prisma.ManufacturerLogisticsUpdateWithoutManufacturerInput,
+  ): Promise<ManufacturerWithRelations> {
+    return this.prisma.manufacturer.update({
+      where: { id: manufacturerId },
+      data: {
+        logistics: {
+          upsert: {
+            create: data as Prisma.ManufacturerLogisticsCreateWithoutManufacturerInput,
+            update: data,
+          },
+        },
+      },
+      include: WITH_RELATIONS,
+    });
+  }
+
+  upsertAutomation(
+    manufacturerId: string,
+    data: Prisma.ManufacturerAutomationUpdateWithoutManufacturerInput,
+  ): Promise<ManufacturerWithRelations> {
+    return this.prisma.manufacturer.update({
+      where: { id: manufacturerId },
+      data: {
+        automation: {
+          upsert: {
+            create: data as Prisma.ManufacturerAutomationCreateWithoutManufacturerInput,
+            update: data,
+          },
+        },
+      },
       include: WITH_RELATIONS,
     });
   }

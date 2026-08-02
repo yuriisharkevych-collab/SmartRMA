@@ -16,6 +16,7 @@ npm install
 docker compose up -d     # Postgres + Redis
 cd apps/api
 npx prisma migrate dev   # tworzy bazę + uruchamia prisma/seed.ts (role/uprawnienia)
+npm run seed:admin       # tworzy pierwszą Company + konto Administratora
 npm run start:dev
 ```
 
@@ -24,6 +25,16 @@ npm run start:dev
 — nie trzeba go kopiować ręcznie.
 
 Swagger: `http://localhost:3000/api/docs`. Health check: `http://localhost:3000/health`.
+
+### Pierwsze konto (Administrator)
+
+`prisma/seed.ts` zasiewa wyłącznie katalog uprawnień/ról — celowo NIE tworzy
+żadnej `Company` ani `User` (patrz komentarz w tym pliku). `npm run seed:admin`
+([`scripts/create-admin.ts`](scripts/create-admin.ts)) domyka tę lukę:
+tworzy jedną `Company` i konto Administratora, domyślnie
+`admin@smartrma.local` / `ChangeMe123!` (nadpisywalne `ADMIN_EMAIL` /
+`ADMIN_PASSWORD` / `ADMIN_COMPANY_NAME` w `.env`). Idempotentny — bezpieczny
+do wielokrotnego uruchamiania, nie nadpisuje istniejącego hasła.
 
 ## Struktura
 

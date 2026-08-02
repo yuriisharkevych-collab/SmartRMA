@@ -1,9 +1,9 @@
-import { FormEvent, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isApiError } from '@/api/client';
 import { useAuth } from '@/hooks/useAuth';
 
-/** Odpowiednik `index.html` (ekran logowania) z prototypu — AUTH-001 przy błędnych danych. */
+/** Odpowiednik `index.html` — bez selektora roli (prototypowy mechanizm symulacji RBAC przez `localStorage`, zastąpiony prawdziwym logowaniem/JWT). AUTH-001 przy błędnych danych. */
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -20,43 +20,67 @@ export function LoginPage() {
       await login(email, password);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(isApiError(err) ? err.response?.data.error.message ?? 'Błąd logowania.' : 'Błąd logowania.');
+      setError(
+        isApiError(err)
+          ? (err.response?.data.error.message ?? 'Błąd logowania.')
+          : 'Błąd logowania.',
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold">Logowanie</h1>
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      <label className="flex flex-col gap-1 text-sm">
-        E-mail
-        <input
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded border border-gray-300 px-3 py-2"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Hasło
-        <input
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded border border-gray-300 px-3 py-2"
-        />
-      </label>
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded bg-gray-900 px-3 py-2 text-sm text-white disabled:opacity-50"
-      >
-        {submitting ? 'Logowanie…' : 'Zaloguj się'}
-      </button>
-    </form>
+    <div className="login-page">
+      <div className="login-card">
+        <div className="login-brand">
+          <div className="sidebar-brand-mark">R</div>
+          <div className="sidebar-brand-text" style={{ fontSize: 16 }}>
+            Smart<span>RMA</span> AI
+          </div>
+        </div>
+
+        <h1 className="login-title">Zaloguj się</h1>
+        <p className="login-subtitle">Wprowadź dane, aby uzyskać dostęp do panelu reklamacji.</p>
+
+        <form className="login-form" onSubmit={handleSubmit}>
+          {error && (
+            <p className="field-error" style={{ display: 'block' }}>
+              {error}
+            </p>
+          )}
+          <div className="field">
+            <label htmlFor="email">Adres e-mail</label>
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="username"
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="password">Hasło</label>
+            <input
+              id="password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn btn-primary w-full"
+            style={{ justifyContent: 'center', padding: 11 }}
+            disabled={submitting}
+          >
+            {submitting ? 'Logowanie…' : 'Zaloguj się'}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }

@@ -3,9 +3,9 @@ import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AuthLayout } from '@/layouts/AuthLayout';
 import { PortalLayout } from '@/layouts/PortalLayout';
-import { AuditLogPage } from '@/pages/AuditLogPage';
 import { CaseDetailPage } from '@/pages/CaseDetailPage';
 import { CaseNewPage } from '@/pages/CaseNewPage';
+import { CasePrintPage } from '@/pages/CasePrintPage';
 import { CasesListPage } from '@/pages/CasesListPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -41,10 +41,13 @@ export const router = createBrowserRouter([
           { path: '/manufacturers', element: <ManufacturersPage /> },
           { path: '/users', element: <UsersPage /> },
           { path: '/settings', element: <SettingsPage /> },
-          { path: '/audit-log', element: <AuditLogPage /> },
           { path: '/reports', element: <ReportsPage /> },
         ],
       },
+      // Wydruk potwierdzenia — celowo POZA `AppLayout`: strona ma się drukować bez
+      // sidebaru i topbaru, dokładnie jak `case-print.html` był osobnym dokumentem
+      // w prototypie. Nadal pod `ProtectedRoute`, bo pobiera dane sprawy z API.
+      { path: '/cases/:id/print', element: <CasePrintPage /> },
     ],
   },
   {

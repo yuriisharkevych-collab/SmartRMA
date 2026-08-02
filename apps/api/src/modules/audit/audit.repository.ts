@@ -38,15 +38,7 @@ export class AuditRepository {
    * transakcji (Companies/Customers/Products/Orders).
    */
   create(
-    data: {
-      companyId?: string | null;
-      userId?: string | null;
-      action: string;
-      entityType: string;
-      entityId?: string | null;
-      previousValue?: Prisma.InputJsonValue | null;
-      newValue?: Prisma.InputJsonValue | null;
-    },
+    data: Prisma.AuditLogUncheckedCreateInput,
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<AuditLog> {
     return client.auditLog.create({ data });

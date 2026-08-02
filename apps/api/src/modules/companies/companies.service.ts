@@ -40,7 +40,7 @@ function pick(obj: object, keys: readonly string[]): Prisma.InputJsonValue {
  * create/view-many/deactivate/reactivate dla Company — patrz raport końcowy
  * Zadania 12. Shop natomiast ma pełne CRUD + deaktywację, zgodnie z `shops.manage`.
  *
- * Brak kodów COMPANY-*/SHOP-* w ERROR_CODES.md — "nie znaleziono" rzuca gołym
+ * Brak kodów COMPANY-* / SHOP-* w ERROR_CODES.md — "nie znaleziono" rzuca gołym
  * `NotFoundException()`, dokładnie jak `DocumentsService.findById` (ten sam,
  * już zaakceptowany brak, patrz raport końcowy).
  */
@@ -90,7 +90,9 @@ export class CompaniesService {
   }
 
   async findShops(companyId: string): Promise<ShopEntity[]> {
-    return CompanyMapper.shopsToEntities(await this.companiesRepository.findShopsByCompany(companyId));
+    return CompanyMapper.shopsToEntities(
+      await this.companiesRepository.findShopsByCompany(companyId),
+    );
   }
 
   /** Zadanie 15 (Orders) — weryfikacja referencji `Order.shopId` przed zapisem, reużywając istniejący existence-check zamiast duplikować go w module Orders. */
@@ -99,7 +101,11 @@ export class CompaniesService {
     return CompanyMapper.shopToEntity(shop);
   }
 
-  async createShop(companyId: string, dto: CreateShopDto, actorUserId: string): Promise<ShopEntity> {
+  async createShop(
+    companyId: string,
+    dto: CreateShopDto,
+    actorUserId: string,
+  ): Promise<ShopEntity> {
     const shop = await this.companiesRepository.createShop(companyId, dto);
 
     await this.auditRepository.create({

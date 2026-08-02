@@ -5,6 +5,8 @@ import {
   ComplaintSource,
   ComplaintType,
   Decision,
+  DocumentCategory,
+  DocumentStatus,
   MessageChannel,
   MessageDirection,
   SenderType,
@@ -19,6 +21,8 @@ import { EVENT_NAMES } from '../../events/event-names.const';
 import { OrdersService } from '../orders/orders.service';
 import { ProductsService } from '../products/products.service';
 import { PERMISSIONS } from '../../rbac/constants/permissions.const';
+import { DocumentsRepository } from '../documents/documents.repository';
+import { ManufacturersService } from '../manufacturers/manufacturers.service';
 import { UsersService } from '../users/users.service';
 import { CaseHistoryRepository } from './case-history.repository';
 import { CasesRepository } from './cases.repository';
@@ -29,6 +33,24 @@ import { NotesRepository } from './notes.repository';
 
 /** Marker unikalny per test — pozwala sprawdzić, że repozytoria dostają DOKŁADNIE ten `tx`, którym `$transaction` wywołał callback (nie `this.prisma`). */
 const TX_MARKER = { __tx: true } as const;
+
+/**
+ * Pozycja Z przypisanym producentem — domyślny `buildCase()` ma
+ * `manufacturerId: null`, przy którym kontrola CASE-002 słusznie się pomija
+ * (nie ma czyich wymagań sprawdzać). Testy wymagań producenta muszą użyć tej
+ * wersji, inaczej sprawdzałyby ścieżkę „brak producenta", a nie regułę.
+ */
+const ITEMS_WITH_MANUFACTURER = [
+  {
+    id: 'item-1',
+    caseId: 'case-1',
+    orderItemId: null,
+    productId: 'product-1',
+    manufacturerId: 'manufacturer-1',
+    description: 'Rysa',
+    quantity: 1,
+  },
+] as unknown as CaseWithItems['items'];
 
 function buildCase(overrides: Partial<CaseWithItems> = {}): CaseWithItems {
   return {
@@ -65,17 +87,45 @@ function buildCase(overrides: Partial<CaseWithItems> = {}): CaseWithItems {
     closedAt: null,
     cancelledAt: null,
     archivedAt: null,
-    items: [{ id: 'item-1', caseId: 'case-1', orderItemId: null, productId: 'product-1', manufacturerId: null, description: 'Rysa', quantity: 1 }],
+    items: [
+      {
+        id: 'item-1',
+        caseId: 'case-1',
+        orderItemId: null,
+        productId: 'product-1',
+        manufacturerId: null,
+        description: 'Rysa',
+        quantity: 1,
+      },
+    ],
     ...overrides,
   } as unknown as CaseWithItems;
 }
 
 describe('CasesService', () => {
-  let prisma: jest.Mocked<Pick<PrismaService, '$transaction'>>;
+  // `jest.Mock` zamiast `jest.Mocked<Pick<PrismaService, '$transaction'>>` — `$transaction`
+  // ma w typach Prismy dwie przeciążone sygnatury (tablica operacji / callback), których
+  // `jest.Mocked` nie potrafi odwzorować. Atrapa i tak trafia do serwisu przez
+  // `as unknown as PrismaService`, więc ścisły typ na deklaracji niczego nie chronił.
+  let prisma: { $transaction: jest.Mock };
   let casesRepository: jest.Mocked<
-    Pick<CasesRepository, 'findAllForCompany' | 'search' | 'findById' | 'findByIdForUpdate' | 'countCreatedInYear' | 'create' | 'update' | 'updateStatus' | 'setDecision' | 'assignOwner'>
+    Pick<
+      CasesRepository,
+      | 'findAllForCompany'
+      | 'search'
+      | 'findById'
+      | 'findByIdForUpdate'
+      | 'countCreatedInYear'
+      | 'create'
+      | 'update'
+      | 'updateStatus'
+      | 'setDecision'
+      | 'assignOwner'
+    >
   >;
-  let caseHistoryRepository: jest.Mocked<Pick<CaseHistoryRepository, 'addEntry' | 'findByCaseId' | 'findLastStatusBeforeWaiting'>>;
+  let caseHistoryRepository: jest.Mocked<
+    Pick<CaseHistoryRepository, 'addEntry' | 'findByCaseId' | 'findLastStatusBeforeWaiting'>
+  >;
   let notesRepository: jest.Mocked<Pick<NotesRepository, 'create' | 'findByCaseId'>>;
   let messagesRepository: jest.Mocked<Pick<MessagesRepository, 'create' | 'findByCaseId'>>;
   let auditRepository: jest.Mocked<Pick<AuditRepository, 'create'>>;
@@ -84,6 +134,8 @@ describe('CasesService', () => {
   let productsService: jest.Mocked<Pick<ProductsService, 'findById'>>;
   let ordersService: jest.Mocked<Pick<OrdersService, 'findOrderItemById'>>;
   let usersService: jest.Mocked<Pick<UsersService, 'findById'>>;
+  let manufacturersService: jest.Mocked<Pick<ManufacturersService, 'findById'>>;
+  let documentsRepository: jest.Mocked<Pick<DocumentsRepository, 'findAllForCase'>>;
   let eventBus: jest.Mocked<IEventBus>;
   let service: CasesService;
 
@@ -106,7 +158,10 @@ describe('CasesService', () => {
       findByCaseId: jest.fn(),
       findLastStatusBeforeWaiting: jest.fn().mockResolvedValue(null),
     };
-    notesRepository = { create: jest.fn().mockResolvedValue({ id: 'note-1' }), findByCaseId: jest.fn() };
+    notesRepository = {
+      create: jest.fn().mockResolvedValue({ id: 'note-1' }),
+      findByCaseId: jest.fn(),
+    };
     messagesRepository = { create: jest.fn(), findByCaseId: jest.fn() };
     auditRepository = { create: jest.fn() };
     customersService = { findById: jest.fn().mockResolvedValue({ id: 'customer-1' }) };
@@ -114,6 +169,19 @@ describe('CasesService', () => {
     productsService = { findById: jest.fn().mockResolvedValue({ id: 'product-1' }) };
     ordersService = { findOrderItemById: jest.fn().mockResolvedValue({ id: 'order-item-1' }) };
     usersService = { findById: jest.fn().mockResolvedValue({ id: 'user-2' }) };
+    // Domyślnie producent NIC nie wymaga — poszczególne testy podmieniają to,
+    // żeby sprawdzić CASE-004/005/006 i CASE-002.
+    manufacturersService = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'manufacturer-1',
+        requiresSerialNumber: false,
+        requiresFrameNumber: false,
+        requiresProofOfPurchase: false,
+        minPhotos: 0,
+        requiresVideo: false,
+      }),
+    };
+    documentsRepository = { findAllForCase: jest.fn().mockResolvedValue([]) };
     eventBus = { publish: jest.fn(), publishAll: jest.fn() };
 
     service = new CasesService(
@@ -128,6 +196,8 @@ describe('CasesService', () => {
       productsService as unknown as ProductsService,
       ordersService as unknown as OrdersService,
       usersService as unknown as UsersService,
+      manufacturersService as unknown as ManufacturersService,
+      documentsRepository as unknown as DocumentsRepository,
       eventBus,
     );
   });
@@ -140,6 +210,173 @@ describe('CasesService', () => {
     items: [{ productId: 'product-1', description: 'Rysa' }],
   };
 
+  /**
+   * Wymagania producenta (`Manufacturer.requiresXxx`, `minPhotos`,
+   * `requiresVideo`) muszą być egzekwowane PO STRONIE SERWERA — wcześniej
+   * były tylko zapisywane w bazie i sprawdzane w formularzu, więc dało się
+   * je ominąć wywołaniem API z pominięciem UI.
+   */
+  describe('wymagania producenta', () => {
+    beforeEach(() => {
+      productsService.findById.mockResolvedValue({
+        id: 'product-1',
+        manufacturerId: 'manufacturer-1',
+      } as never);
+    });
+
+    it('CASE-004 — brak numeru seryjnego, gdy producent go wymaga', async () => {
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: true,
+        requiresFrameNumber: false,
+        requiresProofOfPurchase: false,
+        minPhotos: 0,
+        requiresVideo: false,
+      } as never);
+
+      await expect(service.create('company-1', createDto, 'user-1')).rejects.toMatchObject({
+        code: 'CASE-004',
+      });
+      expect(casesRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('CASE-005 — brak numeru ramy, gdy producent go wymaga', async () => {
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: false,
+        requiresFrameNumber: true,
+        requiresProofOfPurchase: false,
+        minPhotos: 0,
+        requiresVideo: false,
+      } as never);
+
+      await expect(service.create('company-1', createDto, 'user-1')).rejects.toMatchObject({
+        code: 'CASE-005',
+      });
+    });
+
+    it('CASE-006 — brak dowodu zakupu, gdy producent go wymaga', async () => {
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: false,
+        requiresFrameNumber: false,
+        requiresProofOfPurchase: true,
+        minPhotos: 0,
+        requiresVideo: false,
+      } as never);
+
+      await expect(service.create('company-1', createDto, 'user-1')).rejects.toMatchObject({
+        code: 'CASE-006',
+      });
+    });
+
+    it('przepuszcza, gdy komplet danych jest podany', async () => {
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: true,
+        requiresFrameNumber: true,
+        requiresProofOfPurchase: true,
+        minPhotos: 0,
+        requiresVideo: false,
+      } as never);
+      casesRepository.create.mockResolvedValue(buildCase());
+
+      await expect(
+        service.create(
+          'company-1',
+          {
+            ...createDto,
+            items: [
+              {
+                productId: 'product-1',
+                description: 'Rysa',
+                serialNumber: 'SN-1',
+                frameNumber: 'FR-1',
+                purchaseProofNumber: 'FV/1',
+              },
+            ],
+          },
+          'user-1',
+        ),
+      ).resolves.toBeDefined();
+    });
+
+    it('CASE-002 — blokuje przejście wymagające kompletu dokumentów i wylicza braki', async () => {
+      const before = buildCase({
+        status: CaseStatus.Weryfikacja,
+        complaintType: ComplaintType.Warranty,
+        items: ITEMS_WITH_MANUFACTURER,
+      });
+      casesRepository.findByIdForUpdate.mockResolvedValue(before);
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: false,
+        requiresFrameNumber: false,
+        requiresProofOfPurchase: false,
+        minPhotos: 2,
+        requiresVideo: true,
+      } as never);
+      documentsRepository.findAllForCase.mockResolvedValue([]);
+
+      await expect(
+        service.changeStatus('case-1', CaseStatus.GotowaDoWysylki, 'user-1', [
+          PERMISSIONS.CASES_STATUS_CHANGE,
+        ]),
+      ).rejects.toMatchObject({ code: 'CASE-002' });
+      expect(casesRepository.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('CASE-002 — dokument oznaczony jako błędny NIE zalicza wymogu (BR-020)', async () => {
+      const before = buildCase({
+        status: CaseStatus.Weryfikacja,
+        complaintType: ComplaintType.Warranty,
+        items: ITEMS_WITH_MANUFACTURER,
+      });
+      casesRepository.findByIdForUpdate.mockResolvedValue(before);
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: false,
+        requiresFrameNumber: false,
+        requiresProofOfPurchase: false,
+        minPhotos: 1,
+        requiresVideo: false,
+      } as never);
+      documentsRepository.findAllForCase.mockResolvedValue([
+        { category: DocumentCategory.Photo, status: DocumentStatus.Bledny },
+      ] as never);
+
+      await expect(
+        service.changeStatus('case-1', CaseStatus.GotowaDoWysylki, 'user-1', [
+          PERMISSIONS.CASES_STATUS_CHANGE,
+        ]),
+      ).rejects.toMatchObject({ code: 'CASE-002' });
+    });
+
+    it('CASE-002 — przepuszcza, gdy komplet aktywnych dokumentów jest dołączony', async () => {
+      const before = buildCase({
+        status: CaseStatus.Weryfikacja,
+        complaintType: ComplaintType.Warranty,
+        items: ITEMS_WITH_MANUFACTURER,
+      });
+      casesRepository.findByIdForUpdate.mockResolvedValue(before);
+      casesRepository.updateStatus.mockResolvedValue(
+        buildCase({ status: CaseStatus.GotowaDoWysylki }),
+      );
+      manufacturersService.findById.mockResolvedValue({
+        requiresSerialNumber: false,
+        requiresFrameNumber: false,
+        requiresProofOfPurchase: false,
+        minPhotos: 1,
+        requiresVideo: true,
+      } as never);
+      documentsRepository.findAllForCase.mockResolvedValue([
+        { category: DocumentCategory.Photo, status: DocumentStatus.Aktywny },
+        { category: DocumentCategory.Video, status: DocumentStatus.Aktywny },
+      ] as never);
+
+      await expect(
+        service.changeStatus('case-1', CaseStatus.GotowaDoWysylki, 'user-1', [
+          PERMISSIONS.CASES_STATUS_CHANGE,
+        ]),
+      ).resolves.toBeDefined();
+      expect(casesRepository.updateStatus).toHaveBeenCalled();
+    });
+  });
+
   describe('findById', () => {
     it('rzuca CASE-012, gdy sprawa nie istnieje (odczyt zwykły, bez blokady)', async () => {
       casesRepository.findById.mockResolvedValue(null);
@@ -151,18 +388,30 @@ describe('CasesService', () => {
   describe('create', () => {
     it('rzuca CASE-007, gdy BezposrednioDoProducenta łączy się ze StatutoryWarranty (BR-097)', async () => {
       await expect(
-        service.create('company-1', { ...createDto, complaintType: ComplaintType.StatutoryWarranty, submissionMode: SubmissionMode.BezposrednioDoProducenta }, 'user-1'),
+        service.create(
+          'company-1',
+          {
+            ...createDto,
+            complaintType: ComplaintType.StatutoryWarranty,
+            submissionMode: SubmissionMode.BezposrednioDoProducenta,
+          },
+          'user-1',
+        ),
       ).rejects.toMatchObject({ code: 'CASE-007' });
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('rzuca VALIDATION-001, gdy brak description poza ścieżką monitorowaną (BR-105)', async () => {
-      await expect(service.create('company-1', { ...createDto, description: '' }, 'user-1')).rejects.toMatchObject({ code: 'VALIDATION-001' });
+      await expect(
+        service.create('company-1', { ...createDto, description: '' }, 'user-1'),
+      ).rejects.toMatchObject({ code: 'VALIDATION-001' });
     });
 
     it('weryfikuje ownerId, gdy podane — 404, gdy użytkownik nie istnieje', async () => {
       usersService.findById.mockRejectedValue(new Error('not found'));
-      await expect(service.create('company-1', { ...createDto, ownerId: 'brak' }, 'user-1')).rejects.toThrow();
+      await expect(
+        service.create('company-1', { ...createDto, ownerId: 'brak' }, 'user-1'),
+      ).rejects.toThrow();
       expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
@@ -180,9 +429,21 @@ describe('CasesService', () => {
 
       expect(result.id).toBe('case-1');
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-      expect(casesRepository.create).toHaveBeenCalledWith('company-1', expect.any(String), expect.any(Object), TX_MARKER);
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith('case-1', expect.objectContaining({ action: CaseHistoryAction.CaseCreated }), TX_MARKER);
-      expect(auditRepository.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'CASE_CREATED' }), TX_MARKER);
+      expect(casesRepository.create).toHaveBeenCalledWith(
+        'company-1',
+        expect.any(String),
+        expect.any(Object),
+        TX_MARKER,
+      );
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({ action: CaseHistoryAction.CaseCreated }),
+        TX_MARKER,
+      );
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'CASE_CREATED' }),
+        TX_MARKER,
+      );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.CASE_CREATED);
     });
@@ -190,25 +451,41 @@ describe('CasesService', () => {
     it('CASE-013 — rzuca po wyczerpaniu retry na kolizję numeru sprawy (P2002), każda próba to osobna transakcja', async () => {
       const conflict = Object.assign(new Error('unique'), { code: 'P2002' });
       casesRepository.create.mockRejectedValue(conflict);
-      await expect(service.create('company-1', createDto, 'user-1')).rejects.toMatchObject({ code: 'CASE-013' });
+      await expect(service.create('company-1', createDto, 'user-1')).rejects.toMatchObject({
+        code: 'CASE-013',
+      });
       expect(prisma.$transaction).toHaveBeenCalledTimes(3);
     });
   });
 
   describe('update', () => {
     it('CASE-008 — rzuca, gdy sprawa jest w statusie końcowym (odczytana pod blokadą)', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Zamknieta }));
-      await expect(service.update('case-1', { priority: CasePriority.Wysoki }, 'user-1')).rejects.toMatchObject({ code: 'CASE-008' });
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.Zamknieta }),
+      );
+      await expect(
+        service.update('case-1', { priority: CasePriority.Wysoki }, 'user-1'),
+      ).rejects.toMatchObject({ code: 'CASE-008' });
     });
 
     it('zapisuje CaseHistory(PriorityChanged) wewnątrz tej samej transakcji, gdy priority się zmienia', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ priority: CasePriority.Normalny }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ priority: CasePriority.Normalny }),
+      );
       casesRepository.update.mockResolvedValue(buildCase({ priority: CasePriority.Wysoki }));
 
       await service.update('case-1', { priority: CasePriority.Wysoki }, 'user-1');
 
-      expect(casesRepository.update).toHaveBeenCalledWith('case-1', { priority: CasePriority.Wysoki }, TX_MARKER);
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith('case-1', expect.objectContaining({ action: CaseHistoryAction.PriorityChanged }), TX_MARKER);
+      expect(casesRepository.update).toHaveBeenCalledWith(
+        'case-1',
+        { priority: CasePriority.Wysoki },
+        TX_MARKER,
+      );
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({ action: CaseHistoryAction.PriorityChanged }),
+        TX_MARKER,
+      );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.CASE_UPDATED);
     });
@@ -218,7 +495,11 @@ describe('CasesService', () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(before);
       casesRepository.update.mockResolvedValue(before);
 
-      await service.update('case-1', { description: before.description }, 'user-1');
+      // `?? undefined` — `Case.description` jest nullable (BR-105, ścieżka monitorowana),
+      // a `UpdateCaseDto.description` to `string | undefined`. Intencja testu (ta sama
+      // wartość co w bazie → brak wpisu audytu) jest zachowana: `diffChangedFields`
+      // pomija zarówno `undefined`, jak i wartość równą bieżącej.
+      await service.update('case-1', { description: before.description ?? undefined }, 'user-1');
 
       expect(auditRepository.create).not.toHaveBeenCalled();
       expect(eventBus.publish).not.toHaveBeenCalled();
@@ -228,18 +509,28 @@ describe('CasesService', () => {
   describe('changeStatus', () => {
     it('CASE-001 — rzuca dla przejścia nieosiągalnego z bieżącego statusu (odczyt pod blokadą)', async () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Nowa }));
-      await expect(service.changeStatus('case-1', CaseStatus.Zamknieta, 'user-1', [PERMISSIONS.CASES_STATUS_CHANGE])).rejects.toMatchObject({ code: 'CASE-001' });
+      await expect(
+        service.changeStatus('case-1', CaseStatus.Zamknieta, 'user-1', [
+          PERMISSIONS.CASES_STATUS_CHANGE,
+        ]),
+      ).rejects.toMatchObject({ code: 'CASE-001' });
     });
 
     it('RBAC-001 — rzuca, gdy brak DOKŁADNEGO uprawnienia wymaganego dla TEGO przejścia', async () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Nowa }));
-      await expect(service.changeStatus('case-1', CaseStatus.Przyjeta, 'user-1', [PERMISSIONS.CASES_CANCEL])).rejects.toMatchObject({ code: 'RBAC-001' });
+      await expect(
+        service.changeStatus('case-1', CaseStatus.Przyjeta, 'user-1', [PERMISSIONS.CASES_CANCEL]),
+      ).rejects.toMatchObject({ code: 'RBAC-001' });
     });
 
     it('CASE-009 — rzuca przy próbie przejścia w RealizacjaDecyzji bez ustawionej decyzji', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta, decision: null }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta, decision: null }),
+      );
       await expect(
-        service.changeStatus('case-1', CaseStatus.RealizacjaDecyzji, 'user-1', [PERMISSIONS.CASES_DECISION_SET]),
+        service.changeStatus('case-1', CaseStatus.RealizacjaDecyzji, 'user-1', [
+          PERMISSIONS.CASES_DECISION_SET,
+        ]),
       ).rejects.toMatchObject({ code: 'CASE-009' });
     });
 
@@ -247,36 +538,65 @@ describe('CasesService', () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Nowa }));
       casesRepository.updateStatus.mockResolvedValue(buildCase({ status: CaseStatus.Przyjeta }));
 
-      await service.changeStatus('case-1', CaseStatus.Przyjeta, 'user-1', [PERMISSIONS.CASES_STATUS_CHANGE]);
+      await service.changeStatus('case-1', CaseStatus.Przyjeta, 'user-1', [
+        PERMISSIONS.CASES_STATUS_CHANGE,
+      ]);
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(casesRepository.findByIdForUpdate).toHaveBeenCalledWith('case-1', TX_MARKER);
-      expect(casesRepository.updateStatus).toHaveBeenCalledWith('case-1', CaseStatus.Przyjeta, expect.any(Object), TX_MARKER);
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+      expect(casesRepository.updateStatus).toHaveBeenCalledWith(
         'case-1',
-        expect.objectContaining({ action: CaseHistoryAction.StatusChanged, previousValue: CaseStatus.Nowa, newValue: CaseStatus.Przyjeta }),
+        CaseStatus.Przyjeta,
+        expect.any(Object),
         TX_MARKER,
       );
-      expect(auditRepository.create).toHaveBeenCalledWith(expect.objectContaining({ action: 'CASE_STATUS_CHANGED' }), TX_MARKER);
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({
+          action: CaseHistoryAction.StatusChanged,
+          previousValue: CaseStatus.Nowa,
+          newValue: CaseStatus.Przyjeta,
+        }),
+        TX_MARKER,
+      );
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'CASE_STATUS_CHANGED' }),
+        TX_MARKER,
+      );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.CASE_STATUS_CHANGED);
     });
 
     it('przejście do Zamknieta zapisuje CaseHistoryAction.CaseClosed (nie generyczny StatusChanged) i ustawia closedAt', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.GotowaDoOdbioru }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.GotowaDoOdbioru }),
+      );
       casesRepository.updateStatus.mockResolvedValue(buildCase({ status: CaseStatus.Zamknieta }));
 
-      await service.changeStatus('case-1', CaseStatus.Zamknieta, 'user-1', [PERMISSIONS.CASES_STATUS_CHANGE]);
+      await service.changeStatus('case-1', CaseStatus.Zamknieta, 'user-1', [
+        PERMISSIONS.CASES_STATUS_CHANGE,
+      ]);
 
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith('case-1', expect.objectContaining({ action: CaseHistoryAction.CaseClosed }), TX_MARKER);
-      expect(casesRepository.updateStatus).toHaveBeenCalledWith('case-1', CaseStatus.Zamknieta, expect.objectContaining({ closedAt: expect.any(Date) }), TX_MARKER);
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({ action: CaseHistoryAction.CaseClosed }),
+        TX_MARKER,
+      );
+      expect(casesRepository.updateStatus).toHaveBeenCalledWith(
+        'case-1',
+        CaseStatus.Zamknieta,
+        expect.objectContaining({ closedAt: expect.any(Date) }),
+        TX_MARKER,
+      );
     });
   });
 
   describe('cancel', () => {
     it('CASE-011 — rzuca bez powodu', async () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Nowa }));
-      await expect(service.cancel('case-1', '', 'user-1', [PERMISSIONS.CASES_CANCEL])).rejects.toMatchObject({ code: 'CASE-011' });
+      await expect(
+        service.cancel('case-1', '', 'user-1', [PERMISSIONS.CASES_CANCEL]),
+      ).rejects.toMatchObject({ code: 'CASE-011' });
     });
 
     it('z powodem: zapisuje Note z powodem ORAZ CaseHistory(CaseCancelled), wewnątrz tej samej transakcji', async () => {
@@ -285,15 +605,26 @@ describe('CasesService', () => {
 
       await service.cancel('case-1', 'Klient zrezygnował', 'user-1', [PERMISSIONS.CASES_CANCEL]);
 
-      expect(notesRepository.create).toHaveBeenCalledWith('case-1', 'user-1', expect.stringContaining('Klient zrezygnował'), TX_MARKER);
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith('case-1', expect.objectContaining({ action: CaseHistoryAction.CaseCancelled }), TX_MARKER);
+      expect(notesRepository.create).toHaveBeenCalledWith(
+        'case-1',
+        'user-1',
+        expect.stringContaining('Klient zrezygnował'),
+        TX_MARKER,
+      );
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({ action: CaseHistoryAction.CaseCancelled }),
+        TX_MARKER,
+      );
     });
 
     it('IDEMPOTENTNE — jeśli sprawa jest już Anulowana, zwraca ją bez zmian: brak CASE-001, brak audytu, brak zdarzenia', async () => {
       const alreadyCancelled = buildCase({ status: CaseStatus.Anulowana });
       casesRepository.findByIdForUpdate.mockResolvedValue(alreadyCancelled);
 
-      const result = await service.cancel('case-1', 'powtórne żądanie', 'user-1', [PERMISSIONS.CASES_CANCEL]);
+      const result = await service.cancel('case-1', 'powtórne żądanie', 'user-1', [
+        PERMISSIONS.CASES_CANCEL,
+      ]);
 
       expect(result.status).toBe(CaseStatus.Anulowana);
       expect(casesRepository.updateStatus).not.toHaveBeenCalled();
@@ -316,42 +647,77 @@ describe('CasesService', () => {
     });
 
     it('z Zamknieta: legalne, zapisuje CaseArchived i publikuje case.status_changed', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Zamknieta }));
-      casesRepository.updateStatus.mockResolvedValue(buildCase({ status: CaseStatus.Zarchiwizowana }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.Zamknieta }),
+      );
+      casesRepository.updateStatus.mockResolvedValue(
+        buildCase({ status: CaseStatus.Zarchiwizowana }),
+      );
 
       const result = await service.archive('case-1', 'user-1', [PERMISSIONS.CASES_ARCHIVE]);
 
       expect(result.status).toBe(CaseStatus.Zarchiwizowana);
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith('case-1', expect.objectContaining({ action: CaseHistoryAction.CaseArchived }), TX_MARKER);
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({ action: CaseHistoryAction.CaseArchived }),
+        TX_MARKER,
+      );
     });
   });
 
   describe('setDecision', () => {
     it('CASE-010 — rzuca przy próbie ustawienia ZwrotSrodkow bez cases.decision.approve', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta }),
+      );
       await expect(
-        service.setDecision('case-1', Decision.ZwrotSrodkow, 'user-1', [PERMISSIONS.CASES_DECISION_SET]),
+        service.setDecision('case-1', Decision.ZwrotSrodkow, 'user-1', [
+          PERMISSIONS.CASES_DECISION_SET,
+        ]),
       ).rejects.toMatchObject({ code: 'CASE-010' });
     });
 
     it('CASE-010 — rzuca dla ścieżki rękojmi (OczekiwanieNaDecyzjeKierownika) bez approve', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeKierownika, complaintType: ComplaintType.StatutoryWarranty }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({
+          status: CaseStatus.OczekiwanieNaDecyzjeKierownika,
+          complaintType: ComplaintType.StatutoryWarranty,
+        }),
+      );
       await expect(
         service.setDecision('case-1', Decision.Naprawa, 'user-1', [PERMISSIONS.CASES_DECISION_SET]),
       ).rejects.toMatchObject({ code: 'CASE-010' });
     });
 
     it('ustawia decision pod blokadą wiersza, requiresManagerApproval=true dla ZwrotSrodkow, publikuje case.decision_set', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta }));
-      casesRepository.setDecision.mockResolvedValue(buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta, decision: Decision.ZwrotSrodkow }));
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.OczekiwanieNaDecyzjeProducenta }),
+      );
+      casesRepository.setDecision.mockResolvedValue(
+        buildCase({
+          status: CaseStatus.OczekiwanieNaDecyzjeProducenta,
+          decision: Decision.ZwrotSrodkow,
+        }),
+      );
 
-      await service.setDecision('case-1', Decision.ZwrotSrodkow, 'user-1', [PERMISSIONS.CASES_DECISION_APPROVE]);
+      await service.setDecision('case-1', Decision.ZwrotSrodkow, 'user-1', [
+        PERMISSIONS.CASES_DECISION_APPROVE,
+      ]);
 
       expect(casesRepository.findByIdForUpdate).toHaveBeenCalledWith('case-1', TX_MARKER);
-      expect(casesRepository.setDecision).toHaveBeenCalledWith('case-1', Decision.ZwrotSrodkow, 'user-1', true, TX_MARKER);
+      expect(casesRepository.setDecision).toHaveBeenCalledWith(
+        'case-1',
+        Decision.ZwrotSrodkow,
+        'user-1',
+        true,
+        TX_MARKER,
+      );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.CASE_DECISION_SET);
-      expect(published.payload).toMatchObject({ decision: Decision.ZwrotSrodkow, requiresManagerApproval: true });
+      expect(published.payload).toMatchObject({
+        decision: Decision.ZwrotSrodkow,
+        requiresManagerApproval: true,
+      });
     });
   });
 
@@ -363,8 +729,12 @@ describe('CasesService', () => {
     });
 
     it('CASE-008 — rzuca dla sprawy w statusie końcowym', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Anulowana }));
-      await expect(service.assignOwner('case-1', 'user-2', 'user-1')).rejects.toMatchObject({ code: 'CASE-008' });
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.Anulowana }),
+      );
+      await expect(service.assignOwner('case-1', 'user-2', 'user-1')).rejects.toMatchObject({
+        code: 'CASE-008',
+      });
     });
 
     it('zapisuje CaseHistory(OwnerChanged, visibleForCustomer=false — BR-104) i publikuje case.owner_changed', async () => {
@@ -376,7 +746,10 @@ describe('CasesService', () => {
       expect(usersService.findById).toHaveBeenCalledWith('user-2');
       expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
         'case-1',
-        expect.objectContaining({ action: CaseHistoryAction.OwnerChanged, visibleForCustomer: false }),
+        expect.objectContaining({
+          action: CaseHistoryAction.OwnerChanged,
+          visibleForCustomer: false,
+        }),
         TX_MARKER,
       );
       const published = eventBus.publish.mock.calls[0][0];
@@ -387,16 +760,29 @@ describe('CasesService', () => {
 
   describe('addNote', () => {
     it('CASE-008 — rzuca dla sprawy w statusie końcowym', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Zarchiwizowana }));
-      await expect(service.addNote('case-1', 'user-1', 'Tresc')).rejects.toMatchObject({ code: 'CASE-008' });
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.Zarchiwizowana }),
+      );
+      await expect(service.addNote('case-1', 'user-1', 'Tresc')).rejects.toMatchObject({
+        code: 'CASE-008',
+      });
     });
 
     it('zapisuje Note, CaseHistory(NoteAdded) i publikuje case.note_added', async () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(buildCase());
       await service.addNote('case-1', 'user-1', 'Tresc notatki');
 
-      expect(notesRepository.create).toHaveBeenCalledWith('case-1', 'user-1', 'Tresc notatki', TX_MARKER);
-      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith('case-1', expect.objectContaining({ action: CaseHistoryAction.NoteAdded, visibleForCustomer: false }), TX_MARKER);
+      expect(notesRepository.create).toHaveBeenCalledWith(
+        'case-1',
+        'user-1',
+        'Tresc notatki',
+        TX_MARKER,
+      );
+      expect(caseHistoryRepository.addEntry).toHaveBeenCalledWith(
+        'case-1',
+        expect.objectContaining({ action: CaseHistoryAction.NoteAdded, visibleForCustomer: false }),
+        TX_MARKER,
+      );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.CASE_NOTE_ADDED);
       expect(published.payload).toMatchObject({ noteId: 'note-1' });
@@ -405,8 +791,15 @@ describe('CasesService', () => {
 
   describe('sendMessage', () => {
     it('CASE-008 — rzuca dla sprawy w statusie końcowym', async () => {
-      casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Zamknieta }));
-      await expect(service.sendMessage('case-1', 'user-1', { channel: MessageChannel.Email, content: 'Tresc' })).rejects.toMatchObject({ code: 'CASE-008' });
+      casesRepository.findByIdForUpdate.mockResolvedValue(
+        buildCase({ status: CaseStatus.Zamknieta }),
+      );
+      await expect(
+        service.sendMessage('case-1', 'user-1', {
+          channel: MessageChannel.Email,
+          content: 'Tresc',
+        }),
+      ).rejects.toMatchObject({ code: 'CASE-008' });
     });
 
     it('wymusza senderType=Employee/direction=Outbound i publikuje case.message_added', async () => {
@@ -424,11 +817,17 @@ describe('CasesService', () => {
         readAt: null,
       });
 
-      await service.sendMessage('case-1', 'user-1', { channel: MessageChannel.Email, content: 'Tresc' });
+      await service.sendMessage('case-1', 'user-1', {
+        channel: MessageChannel.Email,
+        content: 'Tresc',
+      });
 
       expect(messagesRepository.create).toHaveBeenCalledWith(
         'case-1',
-        expect.objectContaining({ senderType: SenderType.Employee, direction: MessageDirection.Outbound }),
+        expect.objectContaining({
+          senderType: SenderType.Employee,
+          direction: MessageDirection.Outbound,
+        }),
         TX_MARKER,
       );
       const published = eventBus.publish.mock.calls[0][0];
@@ -441,7 +840,9 @@ describe('CasesService', () => {
       casesRepository.findByIdForUpdate.mockResolvedValue(buildCase({ status: CaseStatus.Nowa }));
       casesRepository.updateStatus.mockResolvedValue(buildCase({ status: CaseStatus.Przyjeta }));
 
-      await service.changeStatus('case-1', CaseStatus.Przyjeta, 'user-1', [PERMISSIONS.CASES_STATUS_CHANGE]);
+      await service.changeStatus('case-1', CaseStatus.Przyjeta, 'user-1', [
+        PERMISSIONS.CASES_STATUS_CHANGE,
+      ]);
 
       expect(casesRepository.findByIdForUpdate).toHaveBeenCalledWith('case-1', TX_MARKER);
       expect(casesRepository.findById).not.toHaveBeenCalled();

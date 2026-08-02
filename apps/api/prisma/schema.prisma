@@ -176,9 +176,14 @@ enum DocumentStatus {
 enum DocumentCategory {
   Confirmation
   Photo
+  PurchaseProof // paragon/faktura - wydzielone z "Other", bo Manufacturer.requiresProofOfPurchase
+                // (CASE-006) musi umieć sprawdzić, czy dowód zakupu W OGÓLE został dołączony;
+                // bez własnej kategorii nie da się tego odróżnić od dowolnego innego załącznika
   Manufacturer
   Protocol
   Decision
+  Video // filmy - `DocumentType.MP4` istniał od początku, ale nie było kategorii,
+        // do której dałoby się je sensownie zaklasyfikować przy uploadzie
   Other
 }
 
@@ -540,6 +545,11 @@ model Manufacturer {
   company      Company    @relation(fields: [companyId], references: [id])
 
   submissionMethod SubmissionMethod @default(Email)
+  // Adres, na który wysyła się zgłoszenie reklamacyjne - ODRĘBNY od
+  // Contractor.contactEmail (ogólny kontakt handlowy). Wielu producentów ma
+  // osobną skrzynkę reklamacyjną (rma@, serwis@) i wysłanie zgłoszenia na
+  // adres handlowy kończy się brakiem odpowiedzi.
+  complaintEmail          String?
   portalUrl               String?
   portalLogin             String?
   portalPasswordEncrypted String? // BACKEND TODO: szyfrowanie aplikacyjne (nie hash - hasło musi być odzyskiwalne do logowania w portalu producenta), nigdy jawnie w API/UI poza formularzem edycji
@@ -551,6 +561,13 @@ model Manufacturer {
   requiresSerialNumber    Boolean @default(false)
   requiresFrameNumber     Boolean @default(false)
   requiresProofOfPurchase Boolean @default(true)
+
+  // Wymagania EGZEKWOWALNE (CASE-002) - odróżnione od notatek opisowych
+  // powyżej, które są tylko podpowiedzią dla pracownika. `minPhotos=0`
+  // oznacza brak wymogu; `maxPhotos` pozostaje górnym limitem.
+  minPhotos               Int     @default(0)
+  requiresVideo           Boolean @default(false)
+
   maxPhotos               Int     @default(6)
   maxAttachmentSizeMb     Int     @default(15)
 
@@ -809,6 +826,13 @@ model Case {
   @@index([status])
   @@index([ownerId])
   @@index([createdAt])
+  // KAŻDE zapytanie raportowe filtruje po firmie ORAZ zakresie dat. Osobne indeksy
+  // na `companyId` i `createdAt` zmuszają Postgresa do wyboru jednego z nich i
+  // odfiltrowania reszty; indeks złożony obsługuje oba warunki naraz.
+  @@index([companyId, createdAt])
+  // Raporty pracowników i sklepów grupują po tych kolumnach w obrębie firmy.
+  @@index([companyId, ownerId])
+  @@index([companyId, shopId])
 }
 
 // Pozycja reklamacji - jeden Case może dotyczyć wielu produktów/egzemplarzy
@@ -843,11 +867,32 @@ model CaseItem {
   description  String  // opis usterki TEJ pozycji
   quantity     Int     @default(1)
 
+  // Dane KONKRETNEGO egzemplarza, którego dotyczy zgłoszenie. Nullable, bo
+  // nie każdy produkt je ma (BR-074 - Product to typ/model, nie egzemplarz)
+  // i nie każdy producent ich wymaga (Manufacturer.requiresSerialNumber/
+  // requiresFrameNumber/requiresProofOfPurchase decydują, czy są obowiązkowe
+  // - CASE-004/005/006).
+  //
+  // Celowo DUBLUJĄ pola o tych samych nazwach na OrderItem: tam opisują
+  // egzemplarz sprzedany (fakt handlowy, niezmienny), tutaj egzemplarz
+  // zgłoszony przez klienta. Gdy sprawa jest dowiązana do zamówienia
+  // (orderItemId), zwykle są zgodne - ale klient potrafi zgłosić reklamację
+  // bez odnalezionego zamówienia, a wtedy to jedyne miejsce, gdzie te dane
+  // w ogóle istnieją. Były w prototypie (`case-new.html`: p-serial, p-frame,
+  // p-purchaseDate, p-proof) od początku; brak ich w schemacie był luką.
+  serialNumber        String?
+  frameNumber         String?
+  purchaseDate        DateTime?
+  purchaseProofNumber String?
+
   replacementProduct ReplacementProduct?
   documents          Document[]
 
   @@index([caseId])
   @@index([productId])
+  // Raporty grupują pozycje po producencie ("najczęściej reklamowani producenci",
+  // skuteczność producenta) — bez tego każdy taki raport robi pełny skan CaseItem.
+  @@index([manufacturerId])
 }
 
 // Historia sprawy - niemodyfikowalny dziennik biznesowy (odrębny od

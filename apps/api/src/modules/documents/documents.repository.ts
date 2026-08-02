@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Document, DocumentCategory, DocumentStatus, DocumentType, DocumentVisibility, Prisma } from '@prisma/client';
+import {
+  Document,
+  DocumentCategory,
+  DocumentStatus,
+  DocumentType,
+  DocumentVisibility,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type PrismaClientLike = Prisma.TransactionClient | PrismaService;
@@ -16,8 +23,9 @@ type PrismaClientLike = Prisma.TransactionClient | PrismaService;
 export class DocumentsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAllForCase(caseId: string): Promise<Document[]> {
-    return this.prisma.document.findMany({ where: { caseId }, orderBy: { uploadedAt: 'desc' } });
+  /** `client` opcjonalny — `CasesService` czyta załączniki wewnątrz transakcji zmiany statusu (CASE-002), więc musi widzieć ten sam, zablokowany stan sprawy. */
+  findAllForCase(caseId: string, client: PrismaClientLike = this.prisma): Promise<Document[]> {
+    return client.document.findMany({ where: { caseId }, orderBy: { uploadedAt: 'desc' } });
   }
 
   findById(id: string): Promise<Document | null> {

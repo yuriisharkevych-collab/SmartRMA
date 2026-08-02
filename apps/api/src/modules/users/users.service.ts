@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import { CasesRepository } from '../cases/cases.repository';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
@@ -6,14 +7,30 @@ import { PasswordService } from '../auth/services/password.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { DeactivateUserResponseEntity } from './entities/deactivate-user-response.entity';
+import { LoginEventEntity } from './entities/login-event.entity';
 import { UserEntity } from './entities/user.entity';
 import { UserMapper } from './mappers/user.mapper';
 import { UsersRepository } from './users.repository';
 
 /**
- * USER-00x (ERROR_CODES.md). `LoginEvent`/audyt zmian konta (BR-088/089) —
- * TODO: nie podłączony, poza zakresem Zadania 2 (implementuje wyłącznie
- * CRUD Users, nie moduł audytu — analogicznie do adnotacji w AuthService).
+ * Alfabet bez znaków mylących w druku/dyktowaniu przez telefon (0/O, 1/l/I) —
+ * hasło tymczasowe pracownik zwykle przepisuje ręcznie.
+ * `randomInt` z `node:crypto` zamiast `Math.random()`: CSPRNG, bez modulo bias.
+ */
+const TEMP_PASSWORD_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+
+function generateTemporaryPassword(length = 14): string {
+  let password = '';
+  for (let i = 0; i < length; i += 1) {
+    password += TEMP_PASSWORD_ALPHABET[randomInt(TEMP_PASSWORD_ALPHABET.length)];
+  }
+  return password;
+}
+
+/**
+ * USER-00x (ERROR_CODES.md). `LoginEvent` (BR-089) podłączony przy module
+ * Użytkownicy — patrz `AuthService`. Audyt zmian konta (BR-088) nadal poza
+ * zakresem tego modułu.
  *
  * `PasswordService` wstrzyknięty zwyczajnie (bez `@Inject(forwardRef())`) —
  * moduły mają cykl importów (`users.module.ts` ↔ `auth.module.ts`,
@@ -44,7 +61,11 @@ export class UsersService {
   async create(companyId: string, dto: CreateUserDto): Promise<UserEntity> {
     const existing = await this.usersRepository.findByEmail(dto.email);
     if (existing) {
-      throw new AppException(ERROR_CODES.USER_001.code, ERROR_CODES.USER_001.message, ERROR_CODES.USER_001.status);
+      throw new AppException(
+        ERROR_CODES.USER_001.code,
+        ERROR_CODES.USER_001.message,
+        ERROR_CODES.USER_001.status,
+      );
     }
 
     const passwordHash = await this.passwordService.hash(dto.password);
@@ -67,7 +88,11 @@ export class UsersService {
     if (dto.email) {
       const existing = await this.usersRepository.findByEmail(dto.email);
       if (existing && existing.id !== id) {
-        throw new AppException(ERROR_CODES.USER_001.code, ERROR_CODES.USER_001.message, ERROR_CODES.USER_001.status);
+        throw new AppException(
+          ERROR_CODES.USER_001.code,
+          ERROR_CODES.USER_001.message,
+          ERROR_CODES.USER_001.status,
+        );
       }
     }
 
@@ -95,6 +120,31 @@ export class UsersService {
     };
   }
 
+  /**
+   * Ponowna aktywacja konta. Prototyp miał w modalu jeden przełącznik „Konto
+   * aktywne" działający w obie strony, a API znało wyłącznie dezaktywację —
+   * bez tego wyłączonego konta nie dało się już włączyć z poziomu aplikacji.
+   * Idempotentna: konto już aktywne zwraca się bez zmian.
+   */
+  async activate(id: string): Promise<UserEntity> {
+    const existing = await this.findByIdOrThrow(id);
+    if (existing.active) return UserMapper.toEntity(existing);
+    return UserMapper.toEntity(await this.usersRepository.update(id, { active: true }));
+  }
+
+  /** `LoginEvent` (BR-089) — historia logowań konta, w tym próby nieudane. Gated `users.view` w kontrolerze. */
+  async findLoginEvents(id: string): Promise<LoginEventEntity[]> {
+    await this.findByIdOrThrow(id);
+    const events = await this.usersRepository.findLoginEvents(id);
+    return events.map((e) => ({
+      id: e.id,
+      ipAddress: e.ipAddress,
+      userAgent: e.userAgent,
+      success: e.success,
+      createdAt: e.createdAt,
+    }));
+  }
+
   /** RBAC-004 (min. 1 rola) egzekwowane już przez `AssignRolesDto` (`@ArrayNotEmpty()`) — pusta tablica nigdy nie dociera tutaj. */
   async assignRoles(id: string, roleIds: string[]): Promise<UserEntity> {
     await this.findByIdOrThrow(id);
@@ -108,13 +158,19 @@ export class UsersService {
    * resetujący e-mailem) jest JAWNIE nierozstrzygnięty w `NOTIFICATIONS.md`
    * §9 ("do potwierdzenia z zespołem bezpieczeństwa przed implementacją") —
    * zaimplementowanie tu wymagałoby podjęcia tej decyzji samodzielnie, czego
-   * zadanie wprost zabrania. Pozostawione jak w Zadaniu 7 (placeholder
-   * zwracający hasło tymczasowe wprost), wyłącznie przełączone na
-   * `PasswordService` (zakaz własnych implementacji `bcrypt`).
+   * zadanie wprost zabrania. Pozostawione jak w Zadaniu 7 (hasło tymczasowe
+   * zwracane wprost), wyłącznie przełączone na `PasswordService` (zakaz
+   * własnych implementacji `bcrypt`).
+   *
+   * POPRAWKA BEZPIECZEŃSTWA: hasło generował wcześniej
+   * `Math.random().toString(36)` — generator NIE kryptograficzny, o stanie
+   * możliwym do odtworzenia z kilku kolejnych wywołań, dający raptem ~10
+   * znaków z alfabetu [0-9a-z]. Teraz `crypto.randomBytes` (patrz
+   * `generateTemporaryPassword` niżej).
    */
   async resetPassword(id: string): Promise<{ temporaryPassword: string }> {
     await this.findByIdOrThrow(id);
-    const temporaryPassword = Math.random().toString(36).slice(-10);
+    const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await this.passwordService.hash(temporaryPassword);
     await this.usersRepository.updatePasswordHash(id, passwordHash);
     return { temporaryPassword };
@@ -123,7 +179,11 @@ export class UsersService {
   private async findByIdOrThrow(id: string) {
     const user = await this.usersRepository.findById(id);
     if (!user) {
-      throw new AppException(ERROR_CODES.USER_002.code, ERROR_CODES.USER_002.message, ERROR_CODES.USER_002.status);
+      throw new AppException(
+        ERROR_CODES.USER_002.code,
+        ERROR_CODES.USER_002.message,
+        ERROR_CODES.USER_002.status,
+      );
     }
     return user;
   }

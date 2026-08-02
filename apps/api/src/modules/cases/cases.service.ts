@@ -1,9 +1,11 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import {
   CaseHistoryAction,
   CaseStatus,
   ComplaintType,
+  DocumentCategory,
+  DocumentStatus,
   Decision,
   MessageChannel,
   MessageDirection,
@@ -14,11 +16,16 @@ import {
 import { randomUUID } from 'node:crypto';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
-import { generatePortalAccessCode, generatePortalSecureToken } from '../../common/utils/portal-credentials.util';
+import {
+  generatePortalAccessCode,
+  generatePortalSecureToken,
+} from '../../common/utils/portal-credentials.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditRepository } from '../audit/audit.repository';
 import { CompaniesService } from '../companies/companies.service';
 import { CustomersService } from '../customers/customers.service';
+import { DocumentsRepository } from '../documents/documents.repository';
+import { ManufacturersService } from '../manufacturers/manufacturers.service';
 import {
   CaseCreatedPayload,
   CaseDecisionSetPayload,
@@ -61,7 +68,9 @@ const BCRYPT_ROUNDS = 10;
 const CASE_NUMBER_MAX_ATTEMPTS = 3;
 
 function isUniqueConstraintViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002';
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: string }).code === 'P2002'
+  );
 }
 
 /** Tylko pola faktycznie przesłane w `patch` i różne od `before` — wzorzec z `CompaniesService` (pola `Case.update` są proste stringi/enum, bez Date/Decimal). */
@@ -112,6 +121,10 @@ export class CasesService {
     private readonly productsService: ProductsService,
     private readonly ordersService: OrdersService,
     private readonly usersService: UsersService,
+    private readonly manufacturersService: ManufacturersService,
+    /** Tylko odczyt załączników dla CASE-002 — patrz `assertRequiredDocuments`. */
+    @Inject(forwardRef(() => DocumentsRepository))
+    private readonly documentsRepository: DocumentsRepository,
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
   ) {}
 
@@ -138,18 +151,35 @@ export class CasesService {
   async create(companyId: string, dto: CreateCaseDto, actorUserId: string): Promise<CaseEntity> {
     const submissionMode = dto.submissionMode ?? SubmissionMode.PrzezSklep;
 
-    if (submissionMode === SubmissionMode.BezposrednioDoProducenta && dto.complaintType !== ComplaintType.Warranty) {
-      throw new AppException(ERROR_CODES.CASE_007.code, ERROR_CODES.CASE_007.message, ERROR_CODES.CASE_007.status);
+    if (
+      submissionMode === SubmissionMode.BezposrednioDoProducenta &&
+      dto.complaintType !== ComplaintType.Warranty
+    ) {
+      throw new AppException(
+        ERROR_CODES.CASE_007.code,
+        ERROR_CODES.CASE_007.message,
+        ERROR_CODES.CASE_007.status,
+      );
     }
 
     // WORKFLOW.md §3.2 — ścieżka monitorowana: description/requestedResolution pozostają NULL (producent zbiera je bezpośrednio), nawet jeśli klient je podał.
     const isMinimalMonitoredCase = submissionMode === SubmissionMode.BezposrednioDoProducenta;
     if (!isMinimalMonitoredCase) {
       if (!dto.description?.trim()) {
-        throw new AppException(ERROR_CODES.VALIDATION_001.code, ERROR_CODES.VALIDATION_001.message, ERROR_CODES.VALIDATION_001.status, { field: 'description' });
+        throw new AppException(
+          ERROR_CODES.VALIDATION_001.code,
+          ERROR_CODES.VALIDATION_001.message,
+          ERROR_CODES.VALIDATION_001.status,
+          { field: 'description' },
+        );
       }
       if (!dto.requestedResolution?.trim()) {
-        throw new AppException(ERROR_CODES.VALIDATION_001.code, ERROR_CODES.VALIDATION_001.message, ERROR_CODES.VALIDATION_001.status, { field: 'requestedResolution' });
+        throw new AppException(
+          ERROR_CODES.VALIDATION_001.code,
+          ERROR_CODES.VALIDATION_001.message,
+          ERROR_CODES.VALIDATION_001.status,
+          { field: 'requestedResolution' },
+        );
       }
     }
 
@@ -157,27 +187,42 @@ export class CasesService {
     if (dto.shopId) await this.companiesService.findShopById(dto.shopId);
     if (dto.ownerId) await this.usersService.findById(dto.ownerId);
     for (const item of dto.items) {
-      await this.productsService.findById(item.productId);
+      const product = await this.productsService.findById(item.productId);
       if (item.orderItemId) await this.ordersService.findOrderItemById(item.orderItemId);
+      // CASE-004/005/006 — wymagania KONKRETNEGO producenta tej pozycji.
+      // `manufacturerId` z DTO ma pierwszeństwo (pracownik mógł nadpisać sugestię, BR-072),
+      // w przeciwnym razie producent wynika z pozycji katalogu.
+      await this.assertManufacturerRequirements(
+        item.manufacturerId ?? product.manufacturerId,
+        item,
+      );
     }
 
-    const { caseRecord, historyEntry } = await this.createWithUniqueCaseNumber(companyId, {
-      shopId: dto.shopId ?? null,
-      customerId: dto.customerId,
-      ownerId: dto.ownerId ?? null,
-      complaintType: dto.complaintType,
-      submissionMode,
-      source: dto.source,
-      requestedResolution: isMinimalMonitoredCase ? null : dto.requestedResolution,
-      description: isMinimalMonitoredCase ? null : dto.description,
-      customerStatement: dto.customerStatement,
-      deliveryAddress: dto.deliveryAddress,
-      courierRequested: dto.courierRequested,
-      preparationFeeAccepted: dto.preparationFeeAccepted,
-      clientPortalEnabled: dto.clientPortalEnabled,
-      nextAction: DEFAULT_NEXT_ACTION[CaseStatus.Nowa],
-      items: dto.items,
-    }, actorUserId);
+    const { caseRecord, historyEntry } = await this.createWithUniqueCaseNumber(
+      companyId,
+      {
+        shopId: dto.shopId ?? null,
+        customerId: dto.customerId,
+        ownerId: dto.ownerId ?? null,
+        complaintType: dto.complaintType,
+        submissionMode,
+        source: dto.source,
+        requestedResolution: isMinimalMonitoredCase ? null : (dto.requestedResolution ?? null),
+        description: isMinimalMonitoredCase ? null : (dto.description ?? null),
+        customerStatement: dto.customerStatement,
+        deliveryAddress: dto.deliveryAddress,
+        courierRequested: dto.courierRequested,
+        preparationFeeAccepted: dto.preparationFeeAccepted,
+        clientPortalEnabled: dto.clientPortalEnabled,
+        nextAction: DEFAULT_NEXT_ACTION[CaseStatus.Nowa],
+        // `purchaseDate` przychodzi jako string ISO (`@IsDateString`) — Prisma oczekuje `Date`.
+        items: dto.items.map((item) => ({
+          ...item,
+          purchaseDate: item.purchaseDate ? new Date(item.purchaseDate) : null,
+        })),
+      },
+      actorUserId,
+    );
 
     await this.eventBus.publish(
       new DomainEvent<CaseCreatedPayload>({
@@ -214,14 +259,28 @@ export class CasesService {
       if (changedFields.includes('priority')) {
         await this.caseHistoryRepository.addEntry(
           id,
-          { userId: actorUserId, action: CaseHistoryAction.PriorityChanged, previousValue: before.priority, newValue: updated.priority, visibleForCustomer: false },
+          {
+            userId: actorUserId,
+            action: CaseHistoryAction.PriorityChanged,
+            previousValue: before.priority,
+            newValue: updated.priority,
+            visibleForCustomer: false,
+          },
           tx,
         );
       }
 
       if (changedFields.length > 0) {
         await this.auditRepository.create(
-          { companyId: before.companyId, userId: actorUserId, action: 'CASE_UPDATED', entityType: 'Case', entityId: id, previousValue: pick(before, changedFields), newValue: pick(updated, changedFields) },
+          {
+            companyId: before.companyId,
+            userId: actorUserId,
+            action: 'CASE_UPDATED',
+            entityType: 'Case',
+            entityId: id,
+            previousValue: pick(before, changedFields),
+            newValue: pick(updated, changedFields),
+          },
           tx,
         );
       }
@@ -247,18 +306,33 @@ export class CasesService {
   }
 
   /** `cases.status.change` (bramka generyczna — legalność/permission per-przejście z `case-status.rules.ts`, patrz `performTransition`). */
-  async changeStatus(id: string, status: CaseStatus, actorUserId: string, actorPermissions: string[]): Promise<CaseEntity> {
+  async changeStatus(
+    id: string,
+    status: CaseStatus,
+    actorUserId: string,
+    actorPermissions: string[],
+  ): Promise<CaseEntity> {
     return this.performTransition(id, status, actorUserId, actorPermissions);
   }
 
   /** `cases.cancel`. CASE-011 (powód wymagany). Idempotentne: jeśli sprawa jest już Anulowana, zwraca ją bez zmian (bez CASE-001, bez podwójnego audytu/zdarzenia). */
-  async cancel(id: string, reason: string, actorUserId: string, actorPermissions: string[]): Promise<CaseEntity> {
-    return this.performTransition(id, CaseStatus.Anulowana, actorUserId, actorPermissions, { reason, idempotentIfAlready: true });
+  async cancel(
+    id: string,
+    reason: string,
+    actorUserId: string,
+    actorPermissions: string[],
+  ): Promise<CaseEntity> {
+    return this.performTransition(id, CaseStatus.Anulowana, actorUserId, actorPermissions, {
+      reason,
+      idempotentIfAlready: true,
+    });
   }
 
   /** `cases.archive` — wyłącznie z `Zamknieta`. Idempotentne: jeśli sprawa jest już Zarchiwizowana, zwraca ją bez zmian. */
   async archive(id: string, actorUserId: string, actorPermissions: string[]): Promise<CaseEntity> {
-    return this.performTransition(id, CaseStatus.Zarchiwizowana, actorUserId, actorPermissions, { idempotentIfAlready: true });
+    return this.performTransition(id, CaseStatus.Zarchiwizowana, actorUserId, actorPermissions, {
+      idempotentIfAlready: true,
+    });
   }
 
   /** `cases.infoRequest.send` (WORKFLOW.md §4, §6 poz. 4) — wariant przejścia w `OczekiwanieNaKlienta` z wpisem `InfoRequested` zamiast generycznego `StatusChanged`. */
@@ -268,7 +342,13 @@ export class CasesService {
     actorUserId: string,
     actorPermissions: string[],
   ): Promise<CaseEntity> {
-    return this.performTransition(id, CaseStatus.OczekiwanieNaKlienta, actorUserId, actorPermissions, dto);
+    return this.performTransition(
+      id,
+      CaseStatus.OczekiwanieNaKlienta,
+      actorUserId,
+      actorPermissions,
+      dto,
+    );
   }
 
   /**
@@ -279,47 +359,76 @@ export class CasesService {
    * `Case` — ustawienie decyzji i zmiana statusu tej samej sprawy nie mogą
    * przeplatać się nieprzewidywalnie.
    */
-  async setDecision(id: string, decision: Decision, actorUserId: string, actorPermissions: string[]): Promise<CaseEntity> {
-    const { updated, historyEntry, requiresManagerApproval } = await this.withLockedCase(id, async (tx, before) => {
-      this.assertCaseIsActive(before);
+  async setDecision(
+    id: string,
+    decision: Decision,
+    actorUserId: string,
+    actorPermissions: string[],
+  ): Promise<CaseEntity> {
+    const { updated, historyEntry, requiresManagerApproval } = await this.withLockedCase(
+      id,
+      async (tx, before) => {
+        this.assertCaseIsActive(before);
 
-      const requiredPermission = resolveDecisionPermission(before.status, decision);
-      const hasRequired =
-        requiredPermission === PERMISSIONS.CASES_DECISION_APPROVE
-          ? actorPermissions.includes(PERMISSIONS.CASES_DECISION_APPROVE)
-          : actorPermissions.includes(PERMISSIONS.CASES_DECISION_SET) || actorPermissions.includes(PERMISSIONS.CASES_DECISION_APPROVE);
+        const requiredPermission = resolveDecisionPermission(before.status, decision);
+        const hasRequired =
+          requiredPermission === PERMISSIONS.CASES_DECISION_APPROVE
+            ? actorPermissions.includes(PERMISSIONS.CASES_DECISION_APPROVE)
+            : actorPermissions.includes(PERMISSIONS.CASES_DECISION_SET) ||
+              actorPermissions.includes(PERMISSIONS.CASES_DECISION_APPROVE);
 
-      if (!hasRequired) {
-        throw requiredPermission === PERMISSIONS.CASES_DECISION_APPROVE
-          ? new AppException(ERROR_CODES.CASE_010.code, ERROR_CODES.CASE_010.message, ERROR_CODES.CASE_010.status)
-          : new AppException(ERROR_CODES.RBAC_001.code, ERROR_CODES.RBAC_001.message, ERROR_CODES.RBAC_001.status);
-      }
+        if (!hasRequired) {
+          throw requiredPermission === PERMISSIONS.CASES_DECISION_APPROVE
+            ? new AppException(
+                ERROR_CODES.CASE_010.code,
+                ERROR_CODES.CASE_010.message,
+                ERROR_CODES.CASE_010.status,
+              )
+            : new AppException(
+                ERROR_CODES.RBAC_001.code,
+                ERROR_CODES.RBAC_001.message,
+                ERROR_CODES.RBAC_001.status,
+              );
+        }
 
-      // STATE_MACHINE.md (reguła dodatkowa) — ZwrotSrodkow wymaga zawsze approve; `requiresManagerApproval` odzwierciedla to trwale na rekordzie (WORKFLOW.md §8).
-      const requiresManagerApproval = decision === Decision.ZwrotSrodkow;
-      const updated = await this.casesRepository.setDecision(id, decision, actorUserId, requiresManagerApproval, tx);
+        // STATE_MACHINE.md (reguła dodatkowa) — ZwrotSrodkow wymaga zawsze approve; `requiresManagerApproval` odzwierciedla to trwale na rekordzie (WORKFLOW.md §8).
+        const requiresManagerApproval = decision === Decision.ZwrotSrodkow;
+        const updated = await this.casesRepository.setDecision(
+          id,
+          decision,
+          actorUserId,
+          requiresManagerApproval,
+          tx,
+        );
 
-      const historyEntry = await this.caseHistoryRepository.addEntry(
-        id,
-        { userId: actorUserId, action: CaseHistoryAction.DecisionSet, previousValue: before.decision, newValue: decision, visibleForCustomer: true },
-        tx,
-      );
+        const historyEntry = await this.caseHistoryRepository.addEntry(
+          id,
+          {
+            userId: actorUserId,
+            action: CaseHistoryAction.DecisionSet,
+            previousValue: before.decision,
+            newValue: decision,
+            visibleForCustomer: true,
+          },
+          tx,
+        );
 
-      await this.auditRepository.create(
-        {
-          companyId: before.companyId,
-          userId: actorUserId,
-          action: 'CASE_DECISION_SET',
-          entityType: 'Case',
-          entityId: id,
-          previousValue: { decision: before.decision } as Prisma.InputJsonValue,
-          newValue: { decision, requiresManagerApproval } as Prisma.InputJsonValue,
-        },
-        tx,
-      );
+        await this.auditRepository.create(
+          {
+            companyId: before.companyId,
+            userId: actorUserId,
+            action: 'CASE_DECISION_SET',
+            entityType: 'Case',
+            entityId: id,
+            previousValue: { decision: before.decision } as Prisma.InputJsonValue,
+            newValue: { decision, requiresManagerApproval } as Prisma.InputJsonValue,
+          },
+          tx,
+        );
 
-      return { updated, historyEntry, requiresManagerApproval };
-    });
+        return { updated, historyEntry, requiresManagerApproval };
+      },
+    );
 
     await this.eventBus.publish(
       new DomainEvent<CaseDecisionSetPayload>({
@@ -329,7 +438,12 @@ export class CasesService {
         aggregateId: id,
         actorUserId,
         correlationId: randomUUID(),
-        payload: { decision, decisionByUserId: actorUserId, requiresManagerApproval, caseHistoryId: historyEntry.id },
+        payload: {
+          decision,
+          decisionByUserId: actorUserId,
+          requiresManagerApproval,
+          caseHistoryId: historyEntry.id,
+        },
       }),
     );
 
@@ -345,24 +459,41 @@ export class CasesService {
   async assignOwner(id: string, ownerId: string, actorUserId: string): Promise<CaseEntity> {
     await this.usersService.findById(ownerId);
 
-    const { updated, historyEntry, previousOwnerId } = await this.withLockedCase(id, async (tx, before) => {
-      this.assertCaseIsActive(before);
+    const { updated, historyEntry, previousOwnerId } = await this.withLockedCase(
+      id,
+      async (tx, before) => {
+        this.assertCaseIsActive(before);
 
-      const updated = await this.casesRepository.assignOwner(id, ownerId, tx);
+        const updated = await this.casesRepository.assignOwner(id, ownerId, tx);
 
-      const historyEntry = await this.caseHistoryRepository.addEntry(
-        id,
-        { userId: actorUserId, action: CaseHistoryAction.OwnerChanged, previousValue: before.ownerId, newValue: ownerId, visibleForCustomer: false },
-        tx,
-      );
+        const historyEntry = await this.caseHistoryRepository.addEntry(
+          id,
+          {
+            userId: actorUserId,
+            action: CaseHistoryAction.OwnerChanged,
+            previousValue: before.ownerId,
+            newValue: ownerId,
+            visibleForCustomer: false,
+          },
+          tx,
+        );
 
-      await this.auditRepository.create(
-        { companyId: before.companyId, userId: actorUserId, action: 'CASE_OWNER_CHANGED', entityType: 'Case', entityId: id, previousValue: { ownerId: before.ownerId } as Prisma.InputJsonValue, newValue: { ownerId } as Prisma.InputJsonValue },
-        tx,
-      );
+        await this.auditRepository.create(
+          {
+            companyId: before.companyId,
+            userId: actorUserId,
+            action: 'CASE_OWNER_CHANGED',
+            entityType: 'Case',
+            entityId: id,
+            previousValue: { ownerId: before.ownerId } as Prisma.InputJsonValue,
+            newValue: { ownerId } as Prisma.InputJsonValue,
+          },
+          tx,
+        );
 
-      return { updated, historyEntry, previousOwnerId: before.ownerId };
-    });
+        return { updated, historyEntry, previousOwnerId: before.ownerId };
+      },
+    );
 
     await this.eventBus.publish(
       new DomainEvent<CaseOwnerChangedPayload>({
@@ -395,7 +526,13 @@ export class CasesService {
    */
   async appendCaseHistory(
     caseId: string,
-    data: { userId?: string | null; action: CaseHistoryAction; previousValue?: string | null; newValue?: string | null; visibleForCustomer?: boolean },
+    data: {
+      userId?: string | null;
+      action: CaseHistoryAction;
+      previousValue?: string | null;
+      newValue?: string | null;
+      visibleForCustomer?: boolean;
+    },
     tx?: Prisma.TransactionClient,
   ): Promise<{ id: string }> {
     const entry = await this.caseHistoryRepository.addEntry(caseId, data, tx);
@@ -404,21 +541,33 @@ export class CasesService {
 
   /** `notes.create`. CASE-008 jeśli sprawa w statusie końcowym. */
   async addNote(caseId: string, userId: string, content: string): Promise<NoteEntity> {
-    const { note, historyEntry, companyId } = await this.withLockedCase(caseId, async (tx, caseRecord) => {
-      this.assertCaseIsActive(caseRecord);
+    const { note, historyEntry, companyId } = await this.withLockedCase(
+      caseId,
+      async (tx, caseRecord) => {
+        this.assertCaseIsActive(caseRecord);
 
-      const note = await this.notesRepository.create(caseId, userId, content, tx);
+        const note = await this.notesRepository.create(caseId, userId, content, tx);
 
-      const historyEntry = await this.caseHistoryRepository.addEntry(
-        caseId,
-        { userId, action: CaseHistoryAction.NoteAdded, visibleForCustomer: false },
-        tx,
-      );
+        const historyEntry = await this.caseHistoryRepository.addEntry(
+          caseId,
+          { userId, action: CaseHistoryAction.NoteAdded, visibleForCustomer: false },
+          tx,
+        );
 
-      await this.auditRepository.create({ companyId: caseRecord.companyId, userId, action: 'CASE_NOTE_ADDED', entityType: 'Note', entityId: note.id }, tx);
+        await this.auditRepository.create(
+          {
+            companyId: caseRecord.companyId,
+            userId,
+            action: 'CASE_NOTE_ADDED',
+            entityType: 'Note',
+            entityId: note.id,
+          },
+          tx,
+        );
 
-      return { note, historyEntry, companyId: caseRecord.companyId };
-    });
+        return { note, historyEntry, companyId: caseRecord.companyId };
+      },
+    );
 
     await this.eventBus.publish(
       new DomainEvent<CaseNoteAddedPayload>({
@@ -454,25 +603,48 @@ export class CasesService {
     senderUserId: string,
     dto: { channel: MessageChannel; subject?: string; content: string },
   ): Promise<MessageEntity> {
-    const { message, historyEntry, companyId } = await this.withLockedCase(caseId, async (tx, caseRecord) => {
-      this.assertCaseIsActive(caseRecord);
+    const { message, historyEntry, companyId } = await this.withLockedCase(
+      caseId,
+      async (tx, caseRecord) => {
+        this.assertCaseIsActive(caseRecord);
 
-      const message = await this.messagesRepository.create(
-        caseId,
-        { senderType: SenderType.Employee, senderUserId, direction: MessageDirection.Outbound, channel: dto.channel, subject: dto.subject, content: dto.content },
-        tx,
-      );
+        const message = await this.messagesRepository.create(
+          caseId,
+          {
+            senderType: SenderType.Employee,
+            senderUserId,
+            direction: MessageDirection.Outbound,
+            channel: dto.channel,
+            subject: dto.subject,
+            content: dto.content,
+          },
+          tx,
+        );
 
-      const historyEntry = await this.caseHistoryRepository.addEntry(
-        caseId,
-        { userId: senderUserId, action: CaseHistoryAction.MessageSent, visibleForCustomer: false },
-        tx,
-      );
+        const historyEntry = await this.caseHistoryRepository.addEntry(
+          caseId,
+          {
+            userId: senderUserId,
+            action: CaseHistoryAction.MessageSent,
+            visibleForCustomer: false,
+          },
+          tx,
+        );
 
-      await this.auditRepository.create({ companyId: caseRecord.companyId, userId: senderUserId, action: 'CASE_MESSAGE_ADDED', entityType: 'Message', entityId: message.id }, tx);
+        await this.auditRepository.create(
+          {
+            companyId: caseRecord.companyId,
+            userId: senderUserId,
+            action: 'CASE_MESSAGE_ADDED',
+            entityType: 'Message',
+            entityId: message.id,
+          },
+          tx,
+        );
 
-      return { message, historyEntry, companyId: caseRecord.companyId };
-    });
+        return { message, historyEntry, companyId: caseRecord.companyId };
+      },
+    );
 
     await this.eventBus.publish(
       new DomainEvent<CaseMessageAddedPayload>({
@@ -482,7 +654,12 @@ export class CasesService {
         aggregateId: caseId,
         actorUserId: senderUserId,
         correlationId: randomUUID(),
-        payload: { messageId: message.id, channel: message.channel, direction: message.direction, caseHistoryId: historyEntry.id },
+        payload: {
+          messageId: message.id,
+          channel: message.channel,
+          direction: message.direction,
+          caseHistoryId: historyEntry.id,
+        },
       }),
     );
 
@@ -516,7 +693,9 @@ export class CasesService {
   }
 
   async returnReplacement(caseItemId: string, conditionOnReturn?: string) {
-    return CaseMapper.replacementToEntity(await this.casesRepository.returnReplacement(caseItemId, conditionOnReturn));
+    return CaseMapper.replacementToEntity(
+      await this.casesRepository.returnReplacement(caseItemId, conditionOnReturn),
+    );
   }
 
   async findLogistics(caseId: string) {
@@ -538,7 +717,11 @@ export class CasesService {
     return this.prisma.$transaction(async (tx) => {
       const caseRecord = await this.casesRepository.findByIdForUpdate(caseId, tx);
       if (!caseRecord) {
-        throw new AppException(ERROR_CODES.CASE_012.code, ERROR_CODES.CASE_012.message, ERROR_CODES.CASE_012.status);
+        throw new AppException(
+          ERROR_CODES.CASE_012.code,
+          ERROR_CODES.CASE_012.message,
+          ERROR_CODES.CASE_012.status,
+        );
       }
       return work(tx, caseRecord);
     });
@@ -558,7 +741,12 @@ export class CasesService {
     targetStatus: CaseStatus,
     actorUserId: string,
     actorPermissions: string[],
-    options: { reason?: string; requestedItems?: string[]; messageText?: string; idempotentIfAlready?: boolean } = {},
+    options: {
+      reason?: string;
+      requestedItems?: string[];
+      messageText?: string;
+      idempotentIfAlready?: boolean;
+    } = {},
   ): Promise<CaseEntity> {
     const result = await this.withLockedCase(caseId, async (tx, caseRecord) => {
       if (options.idempotentIfAlready && caseRecord.status === targetStatus) {
@@ -567,26 +755,53 @@ export class CasesService {
 
       let statusBeforeWaiting: CaseStatus | null = null;
       if (caseRecord.status === CaseStatus.OczekiwanieNaKlienta) {
-        statusBeforeWaiting = await this.caseHistoryRepository.findLastStatusBeforeWaiting(caseRecord.id, tx);
+        statusBeforeWaiting = await this.caseHistoryRepository.findLastStatusBeforeWaiting(
+          caseRecord.id,
+          tx,
+        );
       }
 
       const transition = findTransition(caseRecord.status, targetStatus, { statusBeforeWaiting });
       if (!transition) {
-        throw new AppException(ERROR_CODES.CASE_001.code, ERROR_CODES.CASE_001.message, ERROR_CODES.CASE_001.status);
+        throw new AppException(
+          ERROR_CODES.CASE_001.code,
+          ERROR_CODES.CASE_001.message,
+          ERROR_CODES.CASE_001.status,
+        );
       }
 
       const requiredPermission = resolveTransitionPermission(transition, caseRecord.decision);
       if (!actorPermissions.includes(requiredPermission)) {
-        throw new AppException(ERROR_CODES.RBAC_001.code, ERROR_CODES.RBAC_001.message, ERROR_CODES.RBAC_001.status, { meta: { requiredPermission } });
+        throw new AppException(
+          ERROR_CODES.RBAC_001.code,
+          ERROR_CODES.RBAC_001.message,
+          ERROR_CODES.RBAC_001.status,
+          { meta: { requiredPermission } },
+        );
       }
 
       if (transition.requiredCheck === 'CASE-009' && !caseRecord.decision) {
-        throw new AppException(ERROR_CODES.CASE_009.code, ERROR_CODES.CASE_009.message, ERROR_CODES.CASE_009.status);
+        throw new AppException(
+          ERROR_CODES.CASE_009.code,
+          ERROR_CODES.CASE_009.message,
+          ERROR_CODES.CASE_009.status,
+        );
       }
-      // CASE-002 (kompletność dokumentacji, transition.requiredCheck==='CASE-002') celowo NIE egzekwowane — poza zakresem MVP, patrz komentarz klasy.
+      // CASE-002 — kompletność dokumentacji wymaganej przez producenta.
+      // Sprawdzane WYŁĄCZNIE na przejściach, które `STATE_MACHINE.md` tak oznacza
+      // (`requiredCheck === 'CASE-002'`) — czyli tam, gdzie sprawa faktycznie rusza
+      // dalej w proces. Wcześniej ta kontrola nie istniała: ustawienia producenta
+      // dawało się zapisać, ale nic nie pilnowało, czy komplet dokumentów jest.
+      if (transition.requiredCheck === 'CASE-002') {
+        await this.assertRequiredDocuments(caseRecord, tx);
+      }
 
       if (targetStatus === CaseStatus.Anulowana && !options.reason?.trim()) {
-        throw new AppException(ERROR_CODES.CASE_011.code, ERROR_CODES.CASE_011.message, ERROR_CODES.CASE_011.status);
+        throw new AppException(
+          ERROR_CODES.CASE_011.code,
+          ERROR_CODES.CASE_011.message,
+          ERROR_CODES.CASE_011.status,
+        );
       }
 
       const timestamps: { closedAt?: Date; cancelledAt?: Date; archivedAt?: Date } = {};
@@ -594,25 +809,54 @@ export class CasesService {
       if (targetStatus === CaseStatus.Anulowana) timestamps.cancelledAt = new Date();
       if (targetStatus === CaseStatus.Zarchiwizowana) timestamps.archivedAt = new Date();
 
-      const isInfoRequest = targetStatus === CaseStatus.OczekiwanieNaKlienta && !!options.requestedItems && !!options.messageText;
+      const isInfoRequest =
+        targetStatus === CaseStatus.OczekiwanieNaKlienta &&
+        !!options.requestedItems &&
+        !!options.messageText;
       const nextAction = DEFAULT_NEXT_ACTION[targetStatus];
 
-      const updated = await this.casesRepository.updateStatus(caseId, targetStatus, { ...timestamps, nextAction }, tx);
+      const updated = await this.casesRepository.updateStatus(
+        caseId,
+        targetStatus,
+        { ...timestamps, nextAction },
+        tx,
+      );
 
       // WORKFLOW.md §5 — powód anulowania zapisany jako Note (druga z dwóch udokumentowanych opcji); CaseHistory.newValue niesie spójnie nazwę statusu docelowego we wszystkich przejściach, nie powód.
       if (targetStatus === CaseStatus.Anulowana && options.reason) {
-        await this.notesRepository.create(caseId, actorUserId, `Powód anulowania: ${options.reason}`, tx);
+        await this.notesRepository.create(
+          caseId,
+          actorUserId,
+          `Powód anulowania: ${options.reason}`,
+          tx,
+        );
       }
 
-      const historyAction = isInfoRequest ? CaseHistoryAction.InfoRequested : historyActionForStatusChange(targetStatus);
+      const historyAction = isInfoRequest
+        ? CaseHistoryAction.InfoRequested
+        : historyActionForStatusChange(targetStatus);
       const historyEntry = await this.caseHistoryRepository.addEntry(
         caseId,
-        { userId: actorUserId, action: historyAction, previousValue: caseRecord.status, newValue: targetStatus, visibleForCustomer: targetStatus !== CaseStatus.Zarchiwizowana },
+        {
+          userId: actorUserId,
+          action: historyAction,
+          previousValue: caseRecord.status,
+          newValue: targetStatus,
+          visibleForCustomer: targetStatus !== CaseStatus.Zarchiwizowana,
+        },
         tx,
       );
 
       await this.auditRepository.create(
-        { companyId: caseRecord.companyId, userId: actorUserId, action: 'CASE_STATUS_CHANGED', entityType: 'Case', entityId: caseId, previousValue: { status: caseRecord.status } as Prisma.InputJsonValue, newValue: { status: targetStatus } as Prisma.InputJsonValue },
+        {
+          companyId: caseRecord.companyId,
+          userId: actorUserId,
+          action: 'CASE_STATUS_CHANGED',
+          entityType: 'Case',
+          entityId: caseId,
+          previousValue: { status: caseRecord.status } as Prisma.InputJsonValue,
+          newValue: { status: targetStatus } as Prisma.InputJsonValue,
+        },
         tx,
       );
 
@@ -640,7 +884,11 @@ export class CasesService {
           aggregateId: caseId,
           actorUserId,
           correlationId: randomUUID(),
-          payload: { requestedItems: options.requestedItems!, messageText: options.messageText!, caseHistoryId: result.historyEntry.id },
+          payload: {
+            requestedItems: options.requestedItems!,
+            messageText: options.messageText!,
+            caseHistoryId: result.historyEntry.id,
+          },
         }),
       );
     } else {
@@ -652,7 +900,13 @@ export class CasesService {
           aggregateId: caseId,
           actorUserId,
           correlationId: randomUUID(),
-          payload: { previousStatus: result.previousStatus, newStatus: targetStatus, complaintType: result.complaintType, automatic: false, caseHistoryId: result.historyEntry.id },
+          payload: {
+            previousStatus: result.previousStatus,
+            newStatus: targetStatus,
+            complaintType: result.complaintType,
+            automatic: false,
+            caseHistoryId: result.historyEntry.id,
+          },
         }),
       );
     }
@@ -668,18 +922,36 @@ export class CasesService {
   ): Promise<{ caseRecord: CaseWithItems; historyEntry: { id: string } }> {
     const year = new Date().getFullYear();
     for (let attempt = 0; attempt < CASE_NUMBER_MAX_ATTEMPTS; attempt += 1) {
-      const sequence = (await this.casesRepository.countCreatedInYear(companyId, year)) + 1 + attempt;
+      const sequence =
+        (await this.casesRepository.countCreatedInYear(companyId, year)) + 1 + attempt;
       const caseNumber = `RMA/${year}/${String(sequence).padStart(5, '0')}`;
       try {
         return await this.prisma.$transaction(async (tx) => {
           const caseRecord = await this.casesRepository.create(companyId, caseNumber, data, tx);
           const historyEntry = await this.caseHistoryRepository.addEntry(
             caseRecord.id,
-            { userId: actorUserId, action: CaseHistoryAction.CaseCreated, newValue: caseRecord.status, visibleForCustomer: true },
+            {
+              userId: actorUserId,
+              action: CaseHistoryAction.CaseCreated,
+              newValue: caseRecord.status,
+              visibleForCustomer: true,
+            },
             tx,
           );
           await this.auditRepository.create(
-            { companyId, userId: actorUserId, action: 'CASE_CREATED', entityType: 'Case', entityId: caseRecord.id, newValue: { caseNumber: caseRecord.caseNumber, complaintType: caseRecord.complaintType, submissionMode: caseRecord.submissionMode, status: caseRecord.status } as Prisma.InputJsonValue },
+            {
+              companyId,
+              userId: actorUserId,
+              action: 'CASE_CREATED',
+              entityType: 'Case',
+              entityId: caseRecord.id,
+              newValue: {
+                caseNumber: caseRecord.caseNumber,
+                complaintType: caseRecord.complaintType,
+                submissionMode: caseRecord.submissionMode,
+                status: caseRecord.status,
+              } as Prisma.InputJsonValue,
+            },
             tx,
           );
           return { caseRecord, historyEntry };
@@ -687,26 +959,148 @@ export class CasesService {
       } catch (error) {
         if (!isUniqueConstraintViolation(error) || attempt === CASE_NUMBER_MAX_ATTEMPTS - 1) {
           if (isUniqueConstraintViolation(error)) {
-            throw new AppException(ERROR_CODES.CASE_013.code, ERROR_CODES.CASE_013.message, ERROR_CODES.CASE_013.status);
+            throw new AppException(
+              ERROR_CODES.CASE_013.code,
+              ERROR_CODES.CASE_013.message,
+              ERROR_CODES.CASE_013.status,
+            );
           }
           throw error;
         }
       }
     }
-    throw new AppException(ERROR_CODES.CASE_013.code, ERROR_CODES.CASE_013.message, ERROR_CODES.CASE_013.status);
+    throw new AppException(
+      ERROR_CODES.CASE_013.code,
+      ERROR_CODES.CASE_013.message,
+      ERROR_CODES.CASE_013.status,
+    );
   }
 
   /** BR-103/CASE-008 — sprawa w statusie końcowym nie może być dalej modyfikowana. Przejścia statusu SAME są policzone przez tabelę przejść (Zamknieta→Zarchiwizowana jest legalny), więc ta bramka NIE jest wołana w `performTransition`. */
   private assertCaseIsActive(caseRecord: CaseWithItems): void {
     if (!isActiveStatus(caseRecord.status)) {
-      throw new AppException(ERROR_CODES.CASE_008.code, ERROR_CODES.CASE_008.message, ERROR_CODES.CASE_008.status);
+      throw new AppException(
+        ERROR_CODES.CASE_008.code,
+        ERROR_CODES.CASE_008.message,
+        ERROR_CODES.CASE_008.status,
+      );
+    }
+  }
+
+  /**
+   * CASE-002 — komplet załączników wymaganych przez producenta pozycji:
+   * minimalna liczba zdjęć (`minPhotos`), film (`requiresVideo`) oraz dowód
+   * zakupu jako PLIK, gdy producent go wymaga, a przy pozycji nie ma numeru
+   * faktury/paragonu.
+   *
+   * Liczone są wyłącznie dokumenty AKTYWNE — plik oznaczony jako błędny
+   * (BR-020) nie może „zaliczać" wymogu. Komunikat wylicza konkretne braki,
+   * żeby pracownik wiedział, czego dołożyć, zamiast dostać samo „brak
+   * wymaganych dokumentów".
+   */
+  private async assertRequiredDocuments(
+    caseRecord: CaseWithItems,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const documents = (await this.documentsRepository.findAllForCase(caseRecord.id, tx)).filter(
+      (d) => d.status === DocumentStatus.Aktywny,
+    );
+    const photos = documents.filter((d) => d.category === DocumentCategory.Photo).length;
+    const videos = documents.filter((d) => d.category === DocumentCategory.Video).length;
+    const proofs = documents.filter((d) => d.category === DocumentCategory.PurchaseProof).length;
+
+    const missing: string[] = [];
+
+    for (const item of caseRecord.items) {
+      if (!item.manufacturerId) continue;
+      const manufacturer = await this.manufacturersService.findById(item.manufacturerId);
+
+      if (manufacturer.minPhotos > 0 && photos < manufacturer.minPhotos) {
+        missing.push(`zdjęcia (wymagane ${manufacturer.minPhotos}, dołączono ${photos})`);
+      }
+      if (manufacturer.requiresVideo && videos === 0) {
+        missing.push('film z prezentacją usterki');
+      }
+      if (
+        manufacturer.requiresProofOfPurchase &&
+        proofs === 0 &&
+        !item.purchaseProofNumber?.trim()
+      ) {
+        missing.push('dowód zakupu (numer faktury lub skan)');
+      }
+    }
+
+    if (missing.length > 0) {
+      const unique = Array.from(new Set(missing));
+      throw new AppException(
+        ERROR_CODES.CASE_002.code,
+        `${ERROR_CODES.CASE_002.message} Brakuje: ${unique.join(', ')}.`,
+        ERROR_CODES.CASE_002.status,
+        { meta: { missing: unique } },
+      );
+    }
+  }
+
+  /**
+   * CASE-004/005/006 — wymagania producenta dotyczące DANYCH pozycji,
+   * sprawdzalne już w momencie rejestracji sprawy.
+   *
+   * Do tej pory te kody istniały wyłącznie w `ERROR_CODES.md`: ustawienia
+   * `Manufacturer.requiresXxx` dawało się zapisać, ale nic ich nie
+   * egzekwowało — walidacja żyła tylko w formularzu, więc wystarczyło
+   * ominąć UI, żeby założyć sprawę bez wymaganego numeru seryjnego.
+   * Reguła biznesowa musi żyć na serwerze, tak samo jak maszyna stanów.
+   */
+  private async assertManufacturerRequirements(
+    manufacturerId: string | null | undefined,
+    item: { serialNumber?: string; frameNumber?: string; purchaseProofNumber?: string },
+  ): Promise<void> {
+    if (!manufacturerId) return;
+    const manufacturer = await this.manufacturersService.findById(manufacturerId);
+
+    if (manufacturer.requiresSerialNumber && !item.serialNumber?.trim()) {
+      throw new AppException(
+        ERROR_CODES.CASE_004.code,
+        ERROR_CODES.CASE_004.message,
+        ERROR_CODES.CASE_004.status,
+        {
+          field: 'serialNumber',
+        },
+      );
+    }
+    if (manufacturer.requiresFrameNumber && !item.frameNumber?.trim()) {
+      throw new AppException(
+        ERROR_CODES.CASE_005.code,
+        ERROR_CODES.CASE_005.message,
+        ERROR_CODES.CASE_005.status,
+        {
+          field: 'frameNumber',
+        },
+      );
+    }
+    // Dowód zakupu można udokumentować numerem faktury ALBO załącznikiem — na etapie
+    // tworzenia sprawy załączników jeszcze nie ma, więc tutaj wystarcza numer; brak
+    // jednego i drugiego domyka kontrola dokumentów przy zmianie statusu (CASE-002).
+    if (manufacturer.requiresProofOfPurchase && !item.purchaseProofNumber?.trim()) {
+      throw new AppException(
+        ERROR_CODES.CASE_006.code,
+        ERROR_CODES.CASE_006.message,
+        ERROR_CODES.CASE_006.status,
+        {
+          field: 'purchaseProofNumber',
+        },
+      );
     }
   }
 
   private async findCaseOrThrow(id: string): Promise<CaseWithItems> {
     const caseRecord = await this.casesRepository.findById(id);
     if (!caseRecord) {
-      throw new AppException(ERROR_CODES.CASE_012.code, ERROR_CODES.CASE_012.message, ERROR_CODES.CASE_012.status);
+      throw new AppException(
+        ERROR_CODES.CASE_012.code,
+        ERROR_CODES.CASE_012.message,
+        ERROR_CODES.CASE_012.status,
+      );
     }
     return caseRecord;
   }

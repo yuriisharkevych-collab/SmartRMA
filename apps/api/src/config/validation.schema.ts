@@ -22,6 +22,11 @@ export const validationSchema = Joi.object({
 
   BCRYPT_ROUNDS: Joi.number().integer().min(4).max(15).default(10),
 
+  // Katalog na załączniki (IStorageService, dysk lokalny MVP). Ścieżka
+  // relatywna liczona od CWD procesu (czyli `apps/api` przy uruchomieniu
+  // przez skrypty npm) — ta sama konwencja co `.env` w @nestjs/config.
+  UPLOADS_DIR: Joi.string().default('uploads'),
+
   CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace')

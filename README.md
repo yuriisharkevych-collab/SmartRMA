@@ -21,11 +21,12 @@ prototype/                statyczny prototyp UX (HTML/CSS/JS) — punkt odniesie
 ```bash
 git clone <url> smartrma && cd smartrma
 npm install              # instaluje oba workspace'y + tworzy .env (root, apps/api,
-                          # apps/api/prisma, apps/web) z .env.example — automatycznie,
-                          # przez postinstall (scripts/setup-env.js), nic nie trzeba kopiować ręcznie
+                          # apps/web) z .env.example — automatycznie, przez postinstall
+                          # (scripts/setup-env.js), nic nie trzeba kopiować ręcznie
 docker compose up -d     # WYŁĄCZNIE Postgres + Redis (api/web NIE wchodzą w skład
                           # domyślnego `up` — patrz "Pełny Docker Compose" niżej)
 npx prisma migrate dev   # tworzy schemat bazy + uruchamia prisma/seed.ts (role/uprawnienia)
+npm run seed:admin       # tworzy pierwszą Company + konto Administratora (patrz niżej)
 npm run dev              # apps/api (:3000, Swagger /api/docs) + apps/web (:5173) razem
 ```
 
@@ -34,10 +35,27 @@ dewelopmentu (`changeme-*`) — wystarczą, żeby aplikacja wystartowała bez
 żadnej ręcznej konfiguracji; przed jakimkolwiek wdrożeniem poza lokalny
 komputer **muszą** zostać zastąpione realnymi sekretami.
 
-Każdy z czterech powyższych kroków jest idempotentny — ponowne
-`npm install`/`docker compose up -d`/`npx prisma migrate dev` po pierwszym
-uruchomieniu nic nie psuje (bootstrap `.env` nie nadpisuje istniejących
-plików, `migrate dev` bez zmian w schemacie po prostu nic nie robi).
+Każdy z pięciu powyższych kroków jest idempotentny — ponowne
+`npm install`/`docker compose up -d`/`npx prisma migrate dev`/`npm run seed:admin`
+po pierwszym uruchomieniu nic nie psuje (bootstrap `.env` nie nadpisuje
+istniejących plików, `migrate dev` bez zmian w schemacie po prostu nic nie
+robi, `seed:admin` pomija tworzenie, jeśli firma/użytkownik już istnieją).
+
+### Pierwsze logowanie
+
+`prisma/seed.ts` celowo NIE tworzy żadnej firmy ani użytkownika (zasiewa
+wyłącznie katalog uprawnień i ról systemowych) — bez osobnego kroku nie ma
+jak się zalogować (`POST /companies` nie istnieje, `POST /users` wymaga już
+zalogowanego Administratora). `npm run seed:admin` (patrz
+[`apps/api/scripts/create-admin.ts`](apps/api/scripts/create-admin.ts))
+zamyka tę lukę i tworzy:
+
+- e-mail: `admin@smartrma.local`
+- hasło: `ChangeMe123!`
+
+Nadpisywalne przed uruchomieniem zmiennymi `ADMIN_EMAIL` / `ADMIN_PASSWORD` /
+`ADMIN_COMPANY_NAME` w `.env`. Zmień hasło po pierwszym logowaniu — to konto
+ma pełne uprawnienia Administratora.
 
 ## Pełny Docker Compose (opcjonalnie — api/web też w kontenerach)
 

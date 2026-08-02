@@ -45,7 +45,7 @@ const BRAND_AUDIT_FIELDS = ['name', 'manufacturerId'] as const;
  * zapisem (żeby naruszenie FK kończyło się 404, nie surowym wyjątkiem
  * Prisma P2003) — nigdy bezpośrednio przez Prisma poza Repository.
  *
- * Brak kodów PRODUCT-*/BRAND-* w ERROR_CODES.md — "nie znaleziono" rzuca
+ * Brak kodów PRODUCT-* / BRAND-* w ERROR_CODES.md — "nie znaleziono" rzuca
  * gołym `NotFoundException()`, ten sam już zaakceptowany brak co w
  * `CompaniesService`/`CustomersService`.
  *
@@ -77,7 +77,11 @@ export class ProductsService {
     return ProductMapper.toEntityList(await this.productsRepository.search(companyId, query));
   }
 
-  async createProduct(companyId: string, dto: CreateProductDto, actorUserId: string): Promise<ProductEntity> {
+  async createProduct(
+    companyId: string,
+    dto: CreateProductDto,
+    actorUserId: string,
+  ): Promise<ProductEntity> {
     await this.manufacturersService.findById(dto.manufacturerId);
     if (dto.brandId) await this.findBrandOrThrow(dto.brandId);
 
@@ -107,7 +111,11 @@ export class ProductsService {
     return ProductMapper.toEntity(product);
   }
 
-  async updateProduct(id: string, dto: UpdateProductDto, actorUserId: string): Promise<ProductEntity> {
+  async updateProduct(
+    id: string,
+    dto: UpdateProductDto,
+    actorUserId: string,
+  ): Promise<ProductEntity> {
     const before = await this.findProductOrThrow(id);
     if (dto.manufacturerId) await this.manufacturersService.findById(dto.manufacturerId);
     if (dto.brandId) await this.findBrandOrThrow(dto.brandId);
@@ -148,14 +156,22 @@ export class ProductsService {
   }
 
   async listBrands(companyId: string): Promise<BrandEntity[]> {
-    return ProductMapper.brandsToEntities(await this.productsRepository.findAllBrandsForCompany(companyId));
+    return ProductMapper.brandsToEntities(
+      await this.productsRepository.findAllBrandsForCompany(companyId),
+    );
   }
 
   async searchBrands(companyId: string, query: string): Promise<BrandEntity[]> {
-    return ProductMapper.brandsToEntities(await this.productsRepository.searchBrands(companyId, query));
+    return ProductMapper.brandsToEntities(
+      await this.productsRepository.searchBrands(companyId, query),
+    );
   }
 
-  async createBrand(companyId: string, dto: CreateBrandDto, actorUserId: string): Promise<BrandEntity> {
+  async createBrand(
+    companyId: string,
+    dto: CreateBrandDto,
+    actorUserId: string,
+  ): Promise<BrandEntity> {
     await this.manufacturersService.findById(dto.manufacturerId);
     const brand = await this.productsRepository.createBrand(companyId, dto);
 

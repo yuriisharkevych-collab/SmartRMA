@@ -36,7 +36,13 @@ export class ProductsRepository {
 
   create(
     companyId: string,
-    data: { manufacturerId: string; name: string; sku?: string; category?: string; brandId?: string },
+    data: {
+      manufacturerId: string;
+      name: string;
+      sku?: string;
+      category?: string;
+      brandId?: string;
+    },
   ): Promise<Product> {
     return this.prisma.product.create({ data: { ...data, companyId } });
   }
@@ -53,7 +59,9 @@ export class ProductsRepository {
   }
 
   searchBrands(companyId: string, query: string): Promise<Brand[]> {
-    return this.prisma.brand.findMany({ where: { companyId, name: { contains: query, mode: 'insensitive' } } });
+    return this.prisma.brand.findMany({
+      where: { companyId, name: { contains: query, mode: 'insensitive' } },
+    });
   }
 
   findBrandById(id: string): Promise<Brand | null> {
@@ -69,7 +77,10 @@ export class ProductsRepository {
     return this.prisma.brand.create({ data: { ...data, companyId } });
   }
 
-  updateBrand(id: string, data: Partial<Pick<Brand, 'name' | 'manufacturerId'>>): Promise<Brand> {
+  updateBrand(
+    id: string,
+    data: Partial<Pick<Brand, 'name' | 'manufacturerId' | 'active'>>,
+  ): Promise<Brand> {
     return this.prisma.brand.update({ where: { id }, data });
   }
 }

@@ -37,11 +37,20 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Zalogowano — para tokenów.', type: AuthTokensEntity })
   @ApiResponse({ status: 401, description: 'AUTH-001 — nieprawidłowy e-mail lub hasło.' })
   @ApiResponse({ status: 403, description: 'AUTH-002 — konto nieaktywne (`User.active=false`).' })
-  @ApiResponse({ status: 422, description: 'VALIDATION-001/002 — brakujące pole / nieprawidłowy format e-mail.' })
-  login(@Body() _dto: LoginDto, @Req() req: Request & { user: UserWithRoles }): Promise<AuthTokensEntity> {
+  @ApiResponse({
+    status: 422,
+    description: 'VALIDATION-001/002 — brakujące pole / nieprawidłowy format e-mail.',
+  })
+  login(
+    @Body() _dto: LoginDto,
+    @Req() req: Request & { user: UserWithRoles },
+  ): Promise<AuthTokensEntity> {
     // `_dto` wyłącznie dla walidacji/Swagger — dane logowania weryfikuje LocalStrategy,
     // rezultat trafia do `req.user` (patrz LocalStrategy.validate).
-    return this.authService.login(req.user);
+    return this.authService.login(req.user, {
+      ipAddress: req.ip ?? null,
+      userAgent: req.get('user-agent') ?? null,
+    });
   }
 
   @Public()
@@ -56,13 +65,21 @@ export class AuthController {
       'przestaje działać od tego momentu (nadpisanie wpisu w Redis).',
   })
   @ApiBody({ type: RefreshTokenDto })
-  @ApiResponse({ status: 200, description: 'Odświeżono — nowa para tokenów.', type: AuthTokensEntity })
+  @ApiResponse({
+    status: 200,
+    description: 'Odświeżono — nowa para tokenów.',
+    type: AuthTokensEntity,
+  })
   @ApiResponse({
     status: 401,
-    description: 'AUTH-003 — token nieprawidłowy, wygasły, już zrotowany/wylogowany, lub konto nieaktywne.',
+    description:
+      'AUTH-003 — token nieprawidłowy, wygasły, już zrotowany/wylogowany, lub konto nieaktywne.',
   })
   @ApiResponse({ status: 422, description: 'VALIDATION-001 — brakujące pole `refreshToken`.' })
-  refresh(@Body() _dto: RefreshTokenDto, @CurrentRefreshToken() token: RefreshTokenContext): Promise<AuthTokensEntity> {
+  refresh(
+    @Body() _dto: RefreshTokenDto,
+    @CurrentRefreshToken() token: RefreshTokenContext,
+  ): Promise<AuthTokensEntity> {
     return this.authService.refresh(token.userId);
   }
 
@@ -79,9 +96,15 @@ export class AuthController {
   })
   @ApiBody({ type: RefreshTokenDto })
   @ApiResponse({ status: 204, description: 'Wylogowano.' })
-  @ApiResponse({ status: 401, description: 'AUTH-003 — token nieprawidłowy/wygasły/już nieaktywny.' })
+  @ApiResponse({
+    status: 401,
+    description: 'AUTH-003 — token nieprawidłowy/wygasły/już nieaktywny.',
+  })
   @ApiResponse({ status: 422, description: 'VALIDATION-001 — brakujące pole `refreshToken`.' })
-  async logout(@Body() _dto: RefreshTokenDto, @CurrentRefreshToken() token: RefreshTokenContext): Promise<void> {
+  async logout(
+    @Body() _dto: RefreshTokenDto,
+    @CurrentRefreshToken() token: RefreshTokenContext,
+  ): Promise<void> {
     await this.authService.logout(token.userId);
   }
 }

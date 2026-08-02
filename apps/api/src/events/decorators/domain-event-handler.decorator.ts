@@ -1,5 +1,8 @@
-import { OnEvent, OnEventMetadata } from '@nestjs/event-emitter';
+import { OnEvent } from '@nestjs/event-emitter';
 import { EventName } from '../event-names.const';
+
+/** `@nestjs/event-emitter` nie eksportuje publicznie typu opcji `OnEvent` (tylko `OnEventMetadata`, inny kształt) — wyprowadzone z sygnatury samej funkcji zamiast sięgać po nieeksportowany typ z `dist/`. */
+type OnEventOptions = Parameters<typeof OnEvent>[1];
 
 /**
  * Rejestr subskrybentów zdarzeń — cienka nakładka na `@OnEvent` z
@@ -19,5 +22,5 @@ import { EventName } from '../event-names.const';
  * subskrybuje dane zdarzenie (EVENTS.md §6.2: "publikuje wyłącznie moduł
  * będący właścicielem agregatu" — subskrybuje może dowolny inny moduł).
  */
-export const DomainEventHandler = (eventName: EventName, options?: OnEventMetadata) =>
+export const DomainEventHandler = (eventName: EventName, options?: OnEventOptions) =>
   OnEvent(eventName, options);

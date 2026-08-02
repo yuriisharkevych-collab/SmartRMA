@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { LoginEvent } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserWithRoles } from './mappers/user.mapper';
 
@@ -78,6 +79,33 @@ export class UsersRepository {
       where: { id },
       data: { lastLoginAt: new Date() },
       include: WITH_ROLES,
+    });
+  }
+
+  /**
+   * `LoginEvent` (DATABASE.md §9, BR-089) — dziennik prób logowania. Model
+   * istniał w schemacie od początku, ale nic do niego nie pisało
+   * (`AuthService` miał to jako TODO); domknięte przy module Użytkownicy,
+   * bo prototypowy modal „Historia" wprost pokazuje historię logowań.
+   *
+   * Zapisujemy też próby NIEUDANE (`success=false`) — bez nich dziennik nie
+   * daje się użyć do tego, po co się go trzyma (wykrycie prób dobrania się
+   * do konta).
+   */
+  recordLoginEvent(data: {
+    userId: string;
+    ipAddress?: string | null;
+    userAgent?: string | null;
+    success: boolean;
+  }): Promise<LoginEvent> {
+    return this.prisma.loginEvent.create({ data });
+  }
+
+  findLoginEvents(userId: string, take = 20): Promise<LoginEvent[]> {
+    return this.prisma.loginEvent.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take,
     });
   }
 }

@@ -2,10 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { DocumentStatus, DocumentVisibility, MessageChannel, MessageDirection, SenderType } from '@prisma/client';
+import {
+  DocumentStatus,
+  DocumentVisibility,
+  MessageChannel,
+  MessageDirection,
+  SenderType,
+} from '@prisma/client';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
+import { CaseHistoryRepository } from '../cases/case-history.repository';
 import { CasesRepository } from '../cases/cases.repository';
+import { MessagesRepository } from '../cases/messages.repository';
 import { DocumentsService } from '../documents/documents.service';
 import { UsersRepository } from '../users/users.repository';
 import { PortalLoginTokenDto } from './dto/portal-login-token.dto';
@@ -21,11 +29,25 @@ import { PortalLoginThrottleService } from './services/portal-login-throttle.ser
 /**
  * Integracja z `Cases`/`Documents` (Zadanie 9 pkt 1) idzie przez wyeksportowane
  * providery tych modułów, nie przez duplikowanie zapytań Prisma tutaj —
- * `PortalModule` importuje `CasesModule` (korzysta z `CasesRepository`) i
- * `DocumentsModule` (korzysta z `DocumentsService` — jedyne, co ten moduł
- * eksportuje, patrz `documents.module.ts`). Filtrowanie widoczności klienckiej
- * (BR-079/BR-080) żyje WYŁĄCZNIE tutaj — żadna z tych zależności nie wie
- * o istnieniu Portalu.
+ * `PortalModule` importuje `CasesModule` (korzysta z `CasesRepository`,
+ * `CaseHistoryRepository`, `MessagesRepository`) i `DocumentsModule`
+ * (korzysta z `DocumentsService` — jedyne, co ten moduł eksportuje, patrz
+ * `documents.module.ts`). Filtrowanie widoczności klienckiej (BR-079/BR-080)
+ * żyje WYŁĄCZNIE tutaj — żadna z tych zależności nie wie o istnieniu Portalu.
+ *
+ * Poprawka bootstrapu (pierwsza realna kompilacja projektu): ten plik
+ * pochodzi z Zadania 9, napisany PRZED pełną implementacją Cases/Documents
+ * (Zadania 16/17) — wołał `CasesRepository.findHistory`/`addMessage`
+ * (nigdy nieistniejące na tym repozytorium, historia/wiadomości mają
+ * własne wydzielone repozytoria) oraz `DocumentsService.findAllForCase`
+ * (przemianowane na `listDocuments(caseId, companyId)`). `CasesModule`
+ * eksportowało wtedy tylko `CasesService`/`CasesRepository` — rozszerzono
+ * `exports` o `CaseHistoryRepository`/`MessagesRepository`, żeby Portal
+ * mógł je wstrzyknąć bezpośrednio, tym samym wzorcem co istniejące już tu
+ * bezpośrednie wstrzyknięcie `CasesRepository` (a nie przez `CasesService`,
+ * bo `CasesService.sendMessage`/`findHistory` są napisane pod kontekst
+ * pracownika — stałe `SenderType.Employee`/wymagany `senderUserId`/asercja
+ * `assertCaseIsActive` — nie pod wiadomość klienta z Portalu).
  *
  * TODO przy implementacji logiki biznesowej: `CaseHistory` (`MessageSent`)
  * i zdarzenie `case.customer_replied` dla `sendMessage` (WORKFLOW.md §6
@@ -36,6 +58,8 @@ import { PortalLoginThrottleService } from './services/portal-login-throttle.ser
 export class PortalService {
   constructor(
     private readonly casesRepository: CasesRepository,
+    private readonly caseHistoryRepository: CaseHistoryRepository,
+    private readonly messagesRepository: MessagesRepository,
     private readonly documentsService: DocumentsService,
     private readonly usersRepository: UsersRepository,
     private readonly throttle: PortalLoginThrottleService,
@@ -50,18 +74,30 @@ export class PortalService {
     const caseRecord = await this.casesRepository.findByCaseNumber(dto.caseNumber);
     if (!caseRecord) {
       await this.throttle.recordFailure(dto.caseNumber, ip);
-      throw new AppException(ERROR_CODES.PORTAL_001.code, ERROR_CODES.PORTAL_001.message, ERROR_CODES.PORTAL_001.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_001.code,
+        ERROR_CODES.PORTAL_001.message,
+        ERROR_CODES.PORTAL_001.status,
+      );
     }
     if (!caseRecord.clientPortalEnabled) {
       await this.throttle.recordFailure(dto.caseNumber, ip);
-      throw new AppException(ERROR_CODES.PORTAL_002.code, ERROR_CODES.PORTAL_002.message, ERROR_CODES.PORTAL_002.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_002.code,
+        ERROR_CODES.PORTAL_002.message,
+        ERROR_CODES.PORTAL_002.status,
+      );
     }
     const codeMatches = caseRecord.clientAccessCodeHash
       ? await bcrypt.compare(dto.accessCode, caseRecord.clientAccessCodeHash)
       : false;
     if (!codeMatches) {
       await this.throttle.recordFailure(dto.caseNumber, ip);
-      throw new AppException(ERROR_CODES.PORTAL_001.code, ERROR_CODES.PORTAL_001.message, ERROR_CODES.PORTAL_001.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_001.code,
+        ERROR_CODES.PORTAL_001.message,
+        ERROR_CODES.PORTAL_001.status,
+      );
     }
 
     await this.throttle.reset(dto.caseNumber, ip);
@@ -76,15 +112,27 @@ export class PortalService {
     const caseRecord = await this.casesRepository.findByCaseNumber(dto.caseNumber);
     if (!caseRecord || !caseRecord.clientAccessTokenHash) {
       await this.throttle.recordFailure(dto.caseNumber, ip);
-      throw new AppException(ERROR_CODES.PORTAL_004.code, ERROR_CODES.PORTAL_004.message, ERROR_CODES.PORTAL_004.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_004.code,
+        ERROR_CODES.PORTAL_004.message,
+        ERROR_CODES.PORTAL_004.status,
+      );
     }
     if (caseRecord.clientAccessTokenUsed) {
-      throw new AppException(ERROR_CODES.PORTAL_005.code, ERROR_CODES.PORTAL_005.message, ERROR_CODES.PORTAL_005.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_005.code,
+        ERROR_CODES.PORTAL_005.message,
+        ERROR_CODES.PORTAL_005.status,
+      );
     }
     const tokenMatches = await bcrypt.compare(dto.token, caseRecord.clientAccessTokenHash);
     if (!tokenMatches) {
       await this.throttle.recordFailure(dto.caseNumber, ip);
-      throw new AppException(ERROR_CODES.PORTAL_004.code, ERROR_CODES.PORTAL_004.message, ERROR_CODES.PORTAL_004.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_004.code,
+        ERROR_CODES.PORTAL_004.message,
+        ERROR_CODES.PORTAL_004.status,
+      );
     }
 
     await this.throttle.reset(dto.caseNumber, ip);
@@ -94,30 +142,38 @@ export class PortalService {
 
   async getCaseView(caseId: string): Promise<PortalCaseViewEntity> {
     const caseRecord = await this.getCaseOrThrow(caseId);
-    const owner = caseRecord.ownerId ? await this.usersRepository.findById(caseRecord.ownerId) : null;
-    return PortalMapper.toCaseView(caseRecord, owner ? { firstName: owner.firstName, lastName: owner.lastName } : null);
+    const owner = caseRecord.ownerId
+      ? await this.usersRepository.findById(caseRecord.ownerId)
+      : null;
+    return PortalMapper.toCaseView(
+      caseRecord,
+      owner ? { firstName: owner.firstName, lastName: owner.lastName } : null,
+    );
   }
 
   /** BR-079 — wyłącznie `visibleForCustomer=true`. */
   async getHistory(caseId: string): Promise<PortalHistoryEntryEntity[]> {
     await this.getCaseOrThrow(caseId);
-    const entries = await this.casesRepository.findHistory(caseId);
+    const entries = await this.caseHistoryRepository.findByCaseId(caseId);
     return PortalMapper.toHistoryList(entries.filter((entry) => entry.visibleForCustomer));
   }
 
   /** BR-080 + BR-020 — wyłącznie `visibility=Public` i `status=Aktywny` (dokument błędny nie powinien trafić do klienta). */
   async getDocuments(caseId: string): Promise<PortalDocumentEntity[]> {
-    await this.getCaseOrThrow(caseId);
-    const documents = await this.documentsService.findAllForCase(caseId);
+    const caseRecord = await this.getCaseOrThrow(caseId);
+    const documents = await this.documentsService.listDocuments(caseId, caseRecord.companyId);
     return PortalMapper.toDocumentList(
-      documents.filter((doc) => doc.visibility === DocumentVisibility.Public && doc.status === DocumentStatus.Aktywny),
+      documents.filter(
+        (doc) =>
+          doc.visibility === DocumentVisibility.Public && doc.status === DocumentStatus.Aktywny,
+      ),
     );
   }
 
   /** RBAC.md §3a — tworzy WYŁĄCZNIE `Message`, nigdy nie zmienia innych danych sprawy. */
   async sendMessage(caseId: string, content: string): Promise<PortalMessageEntity> {
     await this.getCaseOrThrow(caseId);
-    const message = await this.casesRepository.addMessage(caseId, {
+    const message = await this.messagesRepository.create(caseId, {
       senderType: SenderType.Customer,
       direction: MessageDirection.Inbound,
       channel: MessageChannel.Portal,
@@ -131,7 +187,11 @@ export class PortalService {
     // Token ważny, ale sprawa zniknęła/portal wyłączono w międzyczasie — PORTAL-002,
     // nie CASE-012 (klient nie powinien dostać komunikatu formułowanego dla pracownika).
     if (!caseRecord || !caseRecord.clientPortalEnabled) {
-      throw new AppException(ERROR_CODES.PORTAL_002.code, ERROR_CODES.PORTAL_002.message, ERROR_CODES.PORTAL_002.status);
+      throw new AppException(
+        ERROR_CODES.PORTAL_002.code,
+        ERROR_CODES.PORTAL_002.message,
+        ERROR_CODES.PORTAL_002.status,
+      );
     }
     return caseRecord;
   }
