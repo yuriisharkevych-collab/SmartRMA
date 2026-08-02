@@ -164,9 +164,9 @@ export function buildOverviewCsv(o: ReportOverviewEntity): string {
       'FINANSE',
       ['Wskaźnik', 'Wartość'],
       [
-        ['Wartość reklamowanych produktów (zł)', o.finance.productValue],
+        ['Wartość reklamowanych produktów (zł)', o.finance.productValue.replace('.', ',')],
         ['Pozycje z ceną', `${o.finance.pricedItems} z ${o.finance.totalItems}`],
-        ['Koszty transportu (zł)', o.finance.logisticsCost],
+        ['Koszty transportu (zł)', o.finance.logisticsCost.replace('.', ',')],
         ['Wymiany', o.finance.replacements],
         ['Naprawy', o.finance.repairs],
         ['Zwroty środków', o.finance.refunds],
