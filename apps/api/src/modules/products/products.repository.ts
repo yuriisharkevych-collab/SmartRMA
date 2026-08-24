@@ -30,8 +30,9 @@ export class ProductsRepository {
     return this.prisma.product.findMany({ where, take: 50 });
   }
 
-  findById(id: string): Promise<Product | null> {
-    return this.prisma.product.findUnique({ where: { id } });
+  /** `companyId` obowiązkowy — bez niego administrator jednej firmy mógłby odczytać/edytować produkt innej firmy, znając samo UUID (IDOR, patrz audyt bezpieczeństwa). */
+  findById(id: string, companyId: string): Promise<Product | null> {
+    return this.prisma.product.findFirst({ where: { id, companyId } });
   }
 
   create(
@@ -64,8 +65,9 @@ export class ProductsRepository {
     });
   }
 
-  findBrandById(id: string): Promise<Brand | null> {
-    return this.prisma.brand.findUnique({ where: { id } });
+  /** `companyId` obowiązkowy — patrz `findById` wyżej (ten sam IDOR dla `Brand`). */
+  findBrandById(id: string, companyId: string): Promise<Brand | null> {
+    return this.prisma.brand.findFirst({ where: { id, companyId } });
   }
 
   /** Nieużywane dziś przez żaden serwis (dead code ze scaffoldu) — zostawione jako potencjalny helper dla przyszłego BR-076 (podpowiedź marki→producent w CaseItem). */
@@ -79,7 +81,23 @@ export class ProductsRepository {
 
   updateBrand(
     id: string,
-    data: Partial<Pick<Brand, 'name' | 'manufacturerId' | 'active'>>,
+    data: Partial<
+      Pick<
+        Brand,
+        | 'name'
+        | 'manufacturerId'
+        | 'active'
+        | 'requiresSerialNumber'
+        | 'requiresFrameNumber'
+        | 'requiresProofOfPurchase'
+        | 'minPhotos'
+        | 'requiresVideo'
+        | 'maxPhotos'
+        | 'maxAttachmentSizeMb'
+        | 'statusStaleDaysOverride'
+        | 'caseAgeStaleDaysOverride'
+      >
+    >,
   ): Promise<Brand> {
     return this.prisma.brand.update({ where: { id }, data });
   }

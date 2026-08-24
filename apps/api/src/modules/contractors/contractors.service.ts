@@ -10,11 +10,13 @@ export class ContractorsService {
   constructor(private readonly contractorsRepository: ContractorsRepository) {}
 
   async findAllForCompany(companyId: string): Promise<ContractorEntity[]> {
-    return ContractorMapper.toEntityList(await this.contractorsRepository.findAllForCompany(companyId));
+    return ContractorMapper.toEntityList(
+      await this.contractorsRepository.findAllForCompany(companyId),
+    );
   }
 
-  async findById(id: string): Promise<ContractorEntity> {
-    const contractor = await this.contractorsRepository.findById(id);
+  async findById(id: string, companyId: string): Promise<ContractorEntity> {
+    const contractor = await this.contractorsRepository.findById(id, companyId);
     if (!contractor) throw new NotFoundException();
     return ContractorMapper.toEntity(contractor);
   }
@@ -31,7 +33,8 @@ export class ContractorsService {
     return ContractorMapper.toEntity(await this.contractorsRepository.create(companyId, dto));
   }
 
-  async update(id: string, dto: UpdateContractorDto): Promise<ContractorEntity> {
+  async update(id: string, companyId: string, dto: UpdateContractorDto): Promise<ContractorEntity> {
+    await this.findById(id, companyId);
     return ContractorMapper.toEntity(await this.contractorsRepository.update(id, dto));
   }
 }

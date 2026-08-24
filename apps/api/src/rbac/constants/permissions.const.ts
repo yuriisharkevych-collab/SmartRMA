@@ -19,6 +19,11 @@ export const PERMISSIONS = {
   CASES_INFO_REQUEST_SEND: 'cases.infoRequest.send',
   CASES_PORTAL_MANAGE: 'cases.portal.manage',
   CASES_REPLACEMENT_MANAGE: 'cases.replacement.manage',
+  CASES_HANDOFF_SEND: 'cases.handoff.send',
+
+  // --- Status Workflow Refactor — katalog statusów reklamacji (per firma) ---
+  CASE_STATUSES_VIEW: 'caseStatuses.view',
+  CASE_STATUSES_MANAGE: 'caseStatuses.manage',
 
   // --- Documents / Notes / Messages ---
   DOCUMENTS_UPLOAD: 'documents.upload',
@@ -43,13 +48,19 @@ export const PERMISSIONS = {
   CONTRACTORS_MANAGE: 'contractors.manage',
   MANUFACTURERS_VIEW: 'manufacturers.view',
   MANUFACTURERS_MANAGE: 'manufacturers.manage',
+  MANUFACTURERS_DELETE: 'manufacturers.delete',
   BRANDS_MANAGE: 'brands.manage',
+
+  // --- Producent/Dystrybutor + Partnerzy B2B ---
+  PARTNERSHIPS_VIEW: 'partnerships.view',
+  PARTNERSHIPS_MANAGE: 'partnerships.manage',
 
   // --- Users / Roles ---
   USERS_VIEW: 'users.view',
   USERS_CREATE: 'users.create',
   USERS_EDIT: 'users.edit',
   USERS_DEACTIVATE: 'users.deactivate',
+  USERS_DELETE: 'users.delete',
   USERS_RESET_PASSWORD: 'users.resetPassword',
   USERS_ROLES_ASSIGN: 'users.roles.assign',
   ROLES_MANAGE: 'roles.manage',

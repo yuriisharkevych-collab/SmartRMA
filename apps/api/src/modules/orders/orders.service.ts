@@ -17,7 +17,13 @@ import { OrderEntity, OrderItemEntity } from './entities/order.entity';
 import { OrderMapper, OrderWithItems } from './mappers/order.mapper';
 import { OrdersRepository } from './orders.repository';
 
-const ORDER_AUDIT_FIELDS = ['shopId', 'customerId', 'orderNumber', 'orderDate', 'totalAmount'] as const;
+const ORDER_AUDIT_FIELDS = [
+  'shopId',
+  'customerId',
+  'orderNumber',
+  'orderDate',
+  'totalAmount',
+] as const;
 
 /** `Prisma.Decimal`/`Date` nie porównują się poprawnie przez `!==` (referencje, nie wartości) — normalizacja do prymitywu przed porównaniem/zapisem do JSON. */
 function normalize(value: unknown): unknown {
@@ -36,7 +42,9 @@ function toJsonValue(value: unknown): unknown {
 function diffChangedFields(before: object, patch: object): string[] {
   const b = before as Record<string, unknown>;
   const p = patch as Record<string, unknown>;
-  return Object.keys(p).filter((key) => p[key] !== undefined && normalize(p[key]) !== normalize(b[key]));
+  return Object.keys(p).filter(
+    (key) => p[key] !== undefined && normalize(p[key]) !== normalize(b[key]),
+  );
 }
 
 function pick(obj: object, keys: readonly string[]): Prisma.InputJsonValue {
@@ -85,8 +93,8 @@ export class OrdersService {
     return order ? OrderMapper.toEntity(order) : null;
   }
 
-  async findById(id: string): Promise<OrderEntity> {
-    const order = await this.findOrderOrThrow(id);
+  async findById(id: string, companyId: string): Promise<OrderEntity> {
+    const order = await this.findOrderOrThrow(id, companyId);
     return OrderMapper.toEntity(order);
   }
 
@@ -99,29 +107,42 @@ export class OrdersService {
   }
 
   /** Zadanie 16 (Cases) — weryfikacja referencji `CaseItem.orderItemId` przed zapisem sprawy, reużywając ten serwis zamiast duplikować existence-check. */
-  async findOrderItemById(id: string): Promise<OrderItemEntity> {
-    const item = await this.ordersRepository.findOrderItemById(id);
+  async findOrderItemById(id: string, companyId: string): Promise<OrderItemEntity> {
+    const item = await this.ordersRepository.findOrderItemById(id, companyId);
     if (!item) throw new NotFoundException();
     return OrderMapper.itemToEntity(item);
   }
 
-  async findAllForCustomer(customerId: string): Promise<OrderEntity[]> {
-    return OrderMapper.toEntityList(await this.ordersRepository.findAllForCustomer(customerId));
+  async findAllForCustomer(customerId: string, companyId: string): Promise<OrderEntity[]> {
+    return OrderMapper.toEntityList(
+      await this.ordersRepository.findAllForCustomer(customerId, companyId),
+    );
   }
 
-  async createOrder(companyId: string, dto: CreateOrderDto, actorUserId: string): Promise<OrderEntity> {
-    await this.customersService.findById(dto.customerId);
-    if (dto.shopId) await this.companiesService.findShopById(dto.shopId);
+  async createOrder(
+    companyId: string,
+    dto: CreateOrderDto,
+    actorUserId: string,
+  ): Promise<OrderEntity> {
+    await this.customersService.findById(dto.customerId, companyId);
+    if (dto.shopId) await this.companiesService.findShopById(dto.shopId, companyId);
     for (const item of dto.items) {
-      await this.productsService.findById(item.productId);
+      await this.productsService.findById(item.productId, companyId);
     }
 
     const existing = await this.ordersRepository.findByOrderNumber(companyId, dto.orderNumber);
     if (existing) {
-      throw new AppException(ERROR_CODES.ORDER_002.code, ERROR_CODES.ORDER_002.message, ERROR_CODES.ORDER_002.status);
+      throw new AppException(
+        ERROR_CODES.ORDER_002.code,
+        ERROR_CODES.ORDER_002.message,
+        ERROR_CODES.ORDER_002.status,
+      );
     }
 
-    const order = await this.ordersRepository.create(companyId, { ...dto, orderDate: new Date(dto.orderDate) });
+    const order = await this.ordersRepository.create(companyId, {
+      ...dto,
+      orderDate: new Date(dto.orderDate),
+    });
 
     await this.auditRepository.create({
       companyId,
@@ -147,15 +168,27 @@ export class OrdersService {
     return OrderMapper.toEntity(order);
   }
 
-  async updateOrder(id: string, dto: UpdateOrderDto, actorUserId: string): Promise<OrderEntity> {
-    const before = await this.findOrderOrThrow(id);
+  async updateOrder(
+    id: string,
+    companyId: string,
+    dto: UpdateOrderDto,
+    actorUserId: string,
+  ): Promise<OrderEntity> {
+    const before = await this.findOrderOrThrow(id, companyId);
 
-    if (dto.customerId) await this.customersService.findById(dto.customerId);
-    if (dto.shopId) await this.companiesService.findShopById(dto.shopId);
+    if (dto.customerId) await this.customersService.findById(dto.customerId, companyId);
+    if (dto.shopId) await this.companiesService.findShopById(dto.shopId, companyId);
     if (dto.orderNumber && dto.orderNumber !== before.orderNumber) {
-      const existing = await this.ordersRepository.findByOrderNumber(before.companyId, dto.orderNumber);
+      const existing = await this.ordersRepository.findByOrderNumber(
+        before.companyId,
+        dto.orderNumber,
+      );
       if (existing) {
-        throw new AppException(ERROR_CODES.ORDER_002.code, ERROR_CODES.ORDER_002.message, ERROR_CODES.ORDER_002.status);
+        throw new AppException(
+          ERROR_CODES.ORDER_002.code,
+          ERROR_CODES.ORDER_002.message,
+          ERROR_CODES.ORDER_002.status,
+        );
       }
     }
 
@@ -190,8 +223,8 @@ export class OrdersService {
     return OrderMapper.toEntity(updated);
   }
 
-  private async findOrderOrThrow(id: string): Promise<OrderWithItems> {
-    const order = await this.ordersRepository.findById(id);
+  private async findOrderOrThrow(id: string, companyId: string): Promise<OrderWithItems> {
+    const order = await this.ordersRepository.findById(id, companyId);
     if (!order) throw new NotFoundException();
     return order;
   }

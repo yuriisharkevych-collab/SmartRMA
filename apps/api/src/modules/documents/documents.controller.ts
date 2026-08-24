@@ -7,7 +7,6 @@ import {
   ParseUUIDPipe,
   Post,
   Res,
-  UnprocessableEntityException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -22,10 +21,13 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { AppException } from '../../common/exceptions/app.exception';
+import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { PERMISSIONS } from '../../rbac/constants/permissions.const';
 import { RequirePermissions } from '../../rbac/decorators/require-permissions.decorator';
 import { IStorageService, STORAGE_SERVICE } from '../../storage/storage.interface';
+import { DOCUMENT_MAX_SIZE_BYTES } from './document-upload.constants';
 import { DocumentsService } from './documents.service';
 import { MarkDocumentInvalidDto } from './dto/mark-invalid.dto';
 import { UploadDocumentDto } from './dto/upload-document.dto';
@@ -83,7 +85,7 @@ export class DocumentsController {
    */
   @Post()
   @RequirePermissions(PERMISSIONS.DOCUMENTS_UPLOAD)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: DOCUMENT_MAX_SIZE_BYTES } }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Dodanie załącznika do sprawy (lub jej pozycji)',
@@ -108,7 +110,11 @@ export class DocumentsController {
     @Body() dto: UploadDocumentDto,
   ): Promise<DocumentEntity> {
     if (!file) {
-      throw new UnprocessableEntityException('Plik jest wymagany.');
+      throw new AppException(
+        ERROR_CODES.VALIDATION_001.code,
+        'Plik jest wymagany.',
+        ERROR_CODES.VALIDATION_001.status,
+      );
     }
 
     const fileType = mimeToDocumentType(file.mimetype);

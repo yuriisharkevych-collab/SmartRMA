@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { LoginMethod } from '@prisma/client';
 
-/** Kształt zwracany przez API — NIGDY `passwordHash` (DATABASE.md zasada #3). */
+/** Kształt zwracany przez API — NIGDY `passwordHash`/`pinHash` (DATABASE.md zasada #3). */
 export class UserEntity {
   @ApiProperty() id!: string;
   @ApiProperty() companyId!: string;
@@ -8,6 +9,12 @@ export class UserEntity {
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
   @ApiProperty() email!: string;
+  @ApiProperty({
+    enum: LoginMethod,
+    description:
+      'Password (domyślny) albo Pin — patrz komentarz przy User.loginMethod w schema.prisma.',
+  })
+  loginMethod!: LoginMethod;
   @ApiProperty() active!: boolean;
   @ApiPropertyOptional({ nullable: true }) lastLoginAt!: Date | null;
   @ApiProperty() createdAt!: Date;

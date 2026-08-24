@@ -2,10 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { casesApi, type CaseSummary } from '@/api/cases.api';
+import { type Company, companiesApi } from '@/api/companies.api';
 import { LoadingIndicator } from '@/components/common/LoadingIndicator';
 import { ArrowLeftIcon } from '@/components/common/icons';
 import { useCaseLookups } from '@/hooks/useCaseLookups';
-import { SOURCE_LABELS } from '@/lib/case-labels';
+import { SOURCE_LABELS, formatCustomerAddress } from '@/lib/case-labels';
 import { COMPLAINT_TYPE_LABELS, formatDate } from '@/lib/case-filters';
 
 /**
@@ -31,6 +32,11 @@ export function CasePrintPage() {
   } = useQuery({
     queryKey: ['case', caseId],
     queryFn: () => casesApi.getById(caseId),
+    retry: false,
+  });
+  const { data: company } = useQuery({
+    queryKey: ['company-me'],
+    queryFn: companiesApi.me,
     retry: false,
   });
 
@@ -66,8 +72,18 @@ export function CasePrintPage() {
       </div>
 
       <div className="print-wrap">
-        <PrintCopy caseRecord={caseRecord} lookups={lookups} copyLabel="Egzemplarz dla klienta" />
-        <PrintCopy caseRecord={caseRecord} lookups={lookups} copyLabel="Egzemplarz dla sklepu" />
+        <PrintCopy
+          caseRecord={caseRecord}
+          lookups={lookups}
+          copyLabel="Egzemplarz dla klienta"
+          company={company}
+        />
+        <PrintCopy
+          caseRecord={caseRecord}
+          lookups={lookups}
+          copyLabel="Egzemplarz dla sklepu"
+          company={company}
+        />
       </div>
     </>
   );
@@ -77,10 +93,12 @@ function PrintCopy({
   caseRecord: c,
   lookups,
   copyLabel,
+  company,
 }: {
   caseRecord: CaseSummary;
   lookups: ReturnType<typeof useCaseLookups>;
   copyLabel: string;
+  company?: Company;
 }) {
   const customer = lookups.customerById.get(c.customerId);
   const item = c.items[0];
@@ -90,10 +108,22 @@ function PrintCopy({
     <div className="print-copy">
       <div className="print-header">
         <div className="print-brand">
-          <div className="sidebar-brand-mark">R</div>
+          {company?.logoUrl ? (
+            <img
+              src={companiesApi.logoAbsoluteUrl(company.logoUrl)}
+              alt=""
+              className="print-logo"
+            />
+          ) : (
+            <div className="sidebar-brand-mark">R</div>
+          )}
           <div>
             <div className="sidebar-brand-text" style={{ fontSize: 14 }}>
-              Smart<span>RMA</span> AI
+              {company?.name || (
+                <>
+                  Smart<span>RMA</span> AI
+                </>
+              )}
             </div>
             <div className="print-title">Potwierdzenie przyjęcia reklamacji</div>
           </div>
@@ -122,7 +152,7 @@ function PrintCopy({
           />
           <PrintField label="Telefon" value={customer?.phone ?? '—'} />
           <PrintField label="E-mail" value={customer?.email ?? '—'} />
-          <PrintField label="Adres" value={customer?.address ?? '—'} />
+          <PrintField label="Adres" value={formatCustomerAddress(customer)} />
         </div>
       </div>
 
@@ -146,6 +176,25 @@ function PrintCopy({
       <div className="print-section">
         <h4>Oczekiwany sposób rozwiązania</h4>
         <p style={{ fontSize: 13 }}>{c.requestedResolution ?? '—'}</p>
+      </div>
+
+      <div className="print-section">
+        <h4>Zgody RODO</h4>
+        <div className="print-consent-row">
+          <span className="box" />
+          <span>
+            Oświadczam, że zapoznałem(-am) się z informacją o przetwarzaniu danych osobowych i
+            wyrażam zgodę na przetwarzanie moich danych w celu obsługi procesu reklamacyjnego.
+          </span>
+        </div>
+        <div className="print-consent-row">
+          <span className="box" />
+          <span>
+            Wyrażam zgodę na udostępnienie załączonych dokumentów i zdjęć producentowi lub
+            dystrybutorowi produktu w celu weryfikacji zgłoszenia, jeśli sprawa zostanie do niego
+            przekazana.
+          </span>
+        </div>
       </div>
 
       <div className="print-footer-row">

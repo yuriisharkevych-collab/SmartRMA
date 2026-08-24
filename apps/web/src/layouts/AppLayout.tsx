@@ -66,6 +66,13 @@ export function AppLayout() {
   }
 
   const primaryRole = user?.roles[0] ?? '—';
+  // Token wydany przed dodaniem firstName/lastName do payloadu (stara sesja w localStorage)
+  // niesie puste stringi — awaryjnie e-mail, dopóki `POST /auth/refresh` nie wyda nowego tokenu.
+  const displayName =
+    user && (user.firstName || user.lastName)
+      ? `${user.firstName} ${user.lastName}`.trim()
+      : (user?.email ?? '');
+  const avatarInitial = (user?.firstName?.[0] ?? user?.email[0] ?? '?').toUpperCase();
 
   return (
     <div className="app-shell">
@@ -108,11 +115,11 @@ export function AppLayout() {
               role="button"
               tabIndex={0}
               onClick={handleLogout}
-              aria-label={`Menu użytkownika: ${user?.email}, wyloguj się`}
+              aria-label={`Menu użytkownika: ${displayName}, wyloguj się`}
             >
-              <div className="avatar">{user?.email[0].toUpperCase() ?? '?'}</div>
+              <div className="avatar">{avatarInitial}</div>
               <div>
-                <div className="user-chip-name">{user?.email}</div>
+                <div className="user-chip-name">{displayName}</div>
                 <div className="user-chip-role">{primaryRole}</div>
               </div>
               <ChevronDownIcon />

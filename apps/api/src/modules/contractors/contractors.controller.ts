@@ -23,19 +23,29 @@ export class ContractorsController {
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.CONTRACTORS_VIEW)
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ContractorEntity> {
-    return this.contractorsService.findById(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ContractorEntity> {
+    return this.contractorsService.findById(id, user.companyId);
   }
 
   @Post()
   @RequirePermissions(PERMISSIONS.CONTRACTORS_MANAGE)
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateContractorDto): Promise<ContractorEntity> {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateContractorDto,
+  ): Promise<ContractorEntity> {
     return this.contractorsService.create(user.companyId, dto);
   }
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.CONTRACTORS_MANAGE)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateContractorDto): Promise<ContractorEntity> {
-    return this.contractorsService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateContractorDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ContractorEntity> {
+    return this.contractorsService.update(id, user.companyId, dto);
   }
 }

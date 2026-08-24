@@ -6,6 +6,8 @@ export class CaseItemEntity {
   @ApiPropertyOptional({ nullable: true }) orderItemId!: string | null;
   @ApiProperty() productId!: string;
   @ApiPropertyOptional({ nullable: true }) manufacturerId!: string | null;
+  /** Marka pozycji katalogu (`Product.brandId`) — Etap 3, potrzebne do rozwiązania ewentualnego nadpisania wymagań/SLA (`manufacturers/requirements-resolver.ts`). */
+  @ApiPropertyOptional({ nullable: true }) brandId!: string | null;
   @ApiProperty() description!: string;
   @ApiProperty() quantity!: number;
 

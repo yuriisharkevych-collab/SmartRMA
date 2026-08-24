@@ -14,7 +14,7 @@ rozproszone po `WORKFLOW.md` §6/§7 i `BUSINESS_RULES.md` §20–21.
 
 | Kanał (`NotificationChannel`) | Odbiorca | Status w projekcie |
 |---|---|---|
-| `Email` | Klient (brak konta `User` — e-mail z `Customer.email`) lub pracownik | **Model gotowy**, wysyłka to integracja zewnętrzna (dostawca SMTP/API — do wyboru przy implementacji), poza zakresem dokumentacji architektury |
+| `Email` | Klient (brak konta `User` — e-mail z `Customer.email`) lub pracownik | **Zaimplementowane** (moduł "wysyłka wiadomości e-mail") — `IMailService` (`apps/api/src/mail/`, Nodemailer dla SMTP/Microsoft 365/Google Workspace, natywny `fetch` do Resend API), dostawca konfigurowalny per firma w Ustawienia → E-mail (`EmailSettings`, sekrety szyfrowane AES-256-GCM). Faktyczna wysyłka dzieje się w `NotificationDispatcherService` (cyklicznie, co `NOTIFICATION_DISPATCH_INTERVAL_MS`, domyślnie 10s) — patrz `EVENTS.md §11` |
 | `System` | Wyłącznie pracownik (`User`) — powiadomienie "w aplikacji" (odpowiednik dzwoneczka/listy powiadomień) | **Model gotowy** — `Notification.status=Read` reprezentuje odczytanie w UI |
 | `SMS` | Klient lub pracownik | **Wyłącznie przygotowanie na przyszłość** — enum istnieje (`NotificationChannel.SMS`), **żadna funkcjonalność wysyłki SMS nie jest częścią obecnego zakresu**, zgodnie z poleceniem zadania architektonicznego. `Notification.recipientPhone` istnieje w modelu już teraz, żeby przyszłe włączenie SMS nie wymagało migracji schematu — tylko podłączenia dostawcy i włączenia kanału w szablonach |
 
@@ -222,6 +222,23 @@ statusu, decyzji, itd.
   implementacją.
 - Żaden szablon nie powinien zawierać danych wrażliwych innych klientów
   (oczywiste, ale odnotowane jako zasada projektowania nowych szablonów).
+
+**Świadome odejście (moduł "wysyłka wiadomości e-mail"):** wbrew powyższej
+zasadzie, szablony `case.created.public.customer` (Publiczny Formularz
+Reklamacyjny) i `case.portal_access.customer` (`CasesService.enablePortal`)
+**wysyłają kod dostępu w treści e-maila**, na wyraźne, dwukrotnie powtórzone
+żądanie właściciela produktu ("klient powinien otrzymać wiadomość zawierającą
+numer reklamacji, kod dostępu, link do Portalu i instrukcję logowania"; "kod
+dostępu ma być wysyłany wyłącznie przy jego wygenerowaniu"). Zabezpieczenia
+kompensujące, zgodnie z wymaganiem: kod jest wysyłany WYŁĄCZNIE w momencie
+jego wygenerowania (nigdy odczytany z bazy i wysłany ponownie — w bazie
+istnieje tylko `Case.clientAccessCodeHash`, bcrypt, wartość jawna nigdy nie
+jest przechowywana); `enablePortal` wywołane ponownie na sprawie z już
+włączonym Portalem nadpisuje poprzedni hash (utrata dostępu → nowy kod, stary
+unieważniony, z nowym e-mailem). Mechanizm `case.secure_link.customer`/token
+opisany wyżej pozostaje w modelu jako bezpieczniejsza alternatywa (nie
+zaimplementowany end-to-end) — dobry, tani fast-follow, gdyby priorytet
+bezpieczeństwa miał w przyszłości przeważyć nad wygodą klienta.
 
 ---
 

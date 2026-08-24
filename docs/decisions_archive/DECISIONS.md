@@ -1496,3 +1496,54 @@ dokumentowany w niniejszym pliku.
 **Uzasadnienie:** Przy projekcie rozwijanym iteracyjnie z pomocą Claude Code,
 udokumentowana historia decyzji ułatwia wznowienie pracy po przerwie i
 onboarding kolejnych osób bez odtwarzania kontekstu z historii rozmów.
+
+---
+
+## Moduł wysyłki wiadomości e-mail
+
+**Kontekst:** Do tego kroku `NotificationsService.createNotificationFromTemplate`
+wyłącznie zapisywał `Notification(status=Pending)` do bazy — żaden e-mail
+nigdy faktycznie nie był wysyłany (`NOTIFICATIONS.md §1` opisywało to jako
+"poza zakresem dokumentacji architektury"). Właściciel zażądał kompletnego,
+produkcyjnego modułu wysyłki, obowiązkowego przed wdrożeniem, z możliwością
+przełączania dostawcy (SMTP / Resend / Microsoft 365 / Google Workspace) bez
+zmian w kodzie.
+
+**Decyzja:** Zrealizowano dokładnie port `IMailService` już zapowiedziany w
+niniejszym dokumencie ("Architektura Clean Architecture light") — Nodemailer
+dla `Smtp`/`Microsoft365`/`GoogleWorkspace` (identyczny protokół SMTP, różny
+tylko host/port), natywny `fetch` do Resend API (bez nowej zależności HTTP).
+Konfiguracja per firma w nowym modelu `EmailSettings` (1:1 z `Company`,
+edytowalna w Ustawienia → E-mail). Wysyłkę realizuje osobny
+`NotificationDispatcherService` (`@nestjs/schedule`, `@Interval` co
+`NOTIFICATION_DISPATCH_INTERVAL_MS`, domyślnie 10s) — NIE handler zdarzenia,
+bo `InMemoryEventBus.publish()` jest `await`-owany przez wołające serwisy
+domenowe (`CasesService`), więc realna wysyłka SMTP w handlerze
+zablokowałaby odpowiedź API (patrz `EVENTS.md §11.2` po aktualizacji).
+
+**Szyfrowanie sekretów:** nowy `EncryptionService` (`apps/api/src/crypto/`,
+AES-256-GCM, losowy IV per operacja) — pierwsza w projekcie faktyczna
+implementacja odwracalnego szyfrowania (bcrypt, jedyny dotąd wzorzec
+"sekretu" w kodzie, jest jednokierunkowy i nie nadaje się do haseł SMTP,
+które trzeba odszyfrować, żeby się nimi zalogować). Klucz AES to
+`SHA-256(ENCRYPTION_KEY)`, gdzie `ENCRYPTION_KEY` to nowy, wymagany env var
+(min. 32 znaki, ten sam wzorzec co sekrety JWT). **Świadome ograniczenia tej
+wersji**, jawnie odnotowane: (a) brak KDF z work factor (jak bcrypt/scrypt) —
+chroni przed odczytaniem sekretów z samego zrzutu bazy, NIE przed
+odgadnięciem słabego `ENCRYPTION_KEY`; (b) jeden statyczny klucz dla całej
+instalacji, bez rotacji i bez kluczy per-firma — akceptowalne dla obecnego
+etapu (BR-086, jedna firma z seeda), ale kompromitacja `ENCRYPTION_KEY`
+odszyfrowuje sekrety e-mail wszystkich firm naraz; rotacja wymagałaby
+ręcznego przeszyfrowania wszystkich wierszy `EmailSettings` offline.
+
+**Świadome odejście od `NOTIFICATIONS.md §9`:** kod dostępu do Portalu
+Klienta jest teraz wysyłany e-mailem w momencie generowania — pełne
+uzasadnienie i zabezpieczenia kompensujące opisane wprost w
+`NOTIFICATIONS.md §9`, nie powtarzane tutaj.
+
+**Odrzucone:** kolejka (BullMQ na już istniejącym Redisie, wspominana jako
+"kandydat" w `redis.module.ts`) — przedwczesna złożoność dla wolumenu jednej
+firmy; cykliczny dispatcher z ograniczoną liczbą prób (`attempts`,
+`MAX_NOTIFICATION_ATTEMPTS=5`) daje wystarczającą gwarancję dostarczenia bez
+nowej infrastruktury, zgodnie z tym samym "Odrzucone dla MVP: broker" z
+`EVENTS.md §12`.

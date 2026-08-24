@@ -2,7 +2,10 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AuditRepository } from '../audit/audit.repository';
-import { CustomerCreatedPayload, CustomerUpdatedPayload } from '../../events/contracts/customer.events';
+import {
+  CustomerCreatedPayload,
+  CustomerUpdatedPayload,
+} from '../../events/contracts/customer.events';
 import { DomainEvent } from '../../events/domain-event.base';
 import { EVENT_BUS, IEventBus } from '../../events/event-bus.interface';
 import { EVENT_NAMES } from '../../events/event-names.const';
@@ -49,8 +52,8 @@ export class CustomersService {
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
   ) {}
 
-  async findById(id: string): Promise<CustomerEntity> {
-    const customer = await this.findCustomerOrThrow(id);
+  async findById(id: string, companyId: string): Promise<CustomerEntity> {
+    const customer = await this.findCustomerOrThrow(id, companyId);
     return CustomerMapper.toEntity(customer);
   }
 
@@ -62,7 +65,12 @@ export class CustomersService {
     return CustomerMapper.toEntityList(await this.customersRepository.search(companyId, query));
   }
 
-  async createCustomer(companyId: string, dto: CreateCustomerDto, actorUserId: string): Promise<CustomerEntity> {
+  /** `actorUserId: string | null` — `null` = brak pracownika-inicjatora (Publiczny Formularz Reklamacyjny: klient tworzy swój rekord sam, bez sesji pracownika), ten sam wzorzec co `CasesService.resumeIfComplete`. */
+  async createCustomer(
+    companyId: string,
+    dto: CreateCustomerDto,
+    actorUserId: string | null,
+  ): Promise<CustomerEntity> {
     const customer = await this.customersRepository.create(companyId, dto);
 
     await this.auditRepository.create({
@@ -88,8 +96,13 @@ export class CustomersService {
     return CustomerMapper.toEntity(customer);
   }
 
-  async updateCustomer(id: string, dto: UpdateCustomerDto, actorUserId: string): Promise<CustomerEntity> {
-    const before = await this.findCustomerOrThrow(id);
+  async updateCustomer(
+    id: string,
+    companyId: string,
+    dto: UpdateCustomerDto,
+    actorUserId: string,
+  ): Promise<CustomerEntity> {
+    const before = await this.findCustomerOrThrow(id, companyId);
     const updated = await this.customersRepository.update(id, dto);
     const changedFields = diffChangedFields(before, dto);
 
@@ -120,8 +133,37 @@ export class CustomersService {
     return CustomerMapper.toEntity(updated);
   }
 
-  private async findCustomerOrThrow(id: string) {
-    const customer = await this.customersRepository.findById(id);
+  /**
+   * Publiczny Formularz Reklamacyjny — dopasuj po telefonie/e-mailu, żeby powtórne
+   * zgłoszenie tego samego klienta nie tworzyło duplikatu `Customer` (DATABASE.md
+   * §10 — brak unikalności w bazie, deduplikacja jest zawsze po stronie aplikacji).
+   * Brak `AuditLog`/zdarzenia przy trafieniu (nic się nie zmieniło); przy utworzeniu
+   * nowego klienta idzie przez zwykłe `createCustomer` (audyt/zdarzenie jak zawsze,
+   * `actorUserId=null` — brak pracownika-inicjatora).
+   */
+  async findOrCreatePublic(
+    companyId: string,
+    data: {
+      firstName: string;
+      lastName: string;
+      phone: string;
+      email: string;
+      address?: string;
+      city?: string;
+      postalCode?: string;
+    },
+  ): Promise<CustomerEntity> {
+    const existing = await this.customersRepository.findByPhoneOrEmail(
+      companyId,
+      data.phone,
+      data.email,
+    );
+    if (existing) return CustomerMapper.toEntity(existing);
+    return this.createCustomer(companyId, data, null);
+  }
+
+  private async findCustomerOrThrow(id: string, companyId: string) {
+    const customer = await this.customersRepository.findById(id, companyId);
     if (!customer) throw new NotFoundException();
     return customer;
   }

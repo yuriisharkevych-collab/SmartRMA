@@ -22,6 +22,16 @@ export const validationSchema = Joi.object({
 
   BCRYPT_ROUNDS: Joi.number().integer().min(4).max(15).default(10),
 
+  // Klucz szyfrowania sekretów modułu e-mail (hasło SMTP, klucz API Resend —
+  // EmailSettings). AES-256-GCM z kluczem SHA-256(ten string) — patrz
+  // EncryptionService. Minimalna długość analogicznie do sekretów JWT.
+  ENCRYPTION_KEY: Joi.string().min(32).required(),
+
+  // Co ile ms NotificationDispatcherService odpytuje Notification.status=Pending/Failed
+  // do wysyłki (EVENTS.md §11.2) — dispatcher jest jedyną ścieżką faktycznej
+  // wysyłki (nie tylko odzyskiwaniem), patrz mail/notification-dispatcher.service.ts.
+  NOTIFICATION_DISPATCH_INTERVAL_MS: Joi.number().integer().min(1000).default(10000),
+
   // Katalog na załączniki (IStorageService, dysk lokalny MVP). Ścieżka
   // relatywna liczona od CWD procesu (czyli `apps/api` przy uruchomieniu
   // przez skrypty npm) — ta sama konwencja co `.env` w @nestjs/config.
@@ -31,4 +41,8 @@ export const validationSchema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace')
     .default('debug'),
+
+  // Ustawienia › Backup — WYŁĄCZNIE informacyjne (patrz configuration.ts).
+  // Opcjonalne: brak = ekran szczerze pokazuje "nieskonfigurowane".
+  BACKUP_STORAGE_LOCATION: Joi.string().optional(),
 });

@@ -2,6 +2,8 @@
 export interface JwtAccessPayload {
   sub: string; // User.id
   email: string;
+  firstName: string;
+  lastName: string;
   companyId: string;
   shopId: string | null;
   roles: string[];

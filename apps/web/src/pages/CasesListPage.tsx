@@ -2,18 +2,20 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { casesApi } from '@/api/cases.api';
+import { companiesApi } from '@/api/companies.api';
 import { LoadingIndicator } from '@/components/common/LoadingIndicator';
 import { PermissionGate } from '@/components/common/PermissionGate';
 import { PlusIcon, SearchIcon } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
 import { useCaseLookups } from '@/hooks/useCaseLookups';
+import { useCaseStatuses } from '@/hooks/useCaseStatuses';
 import {
   CASE_FILTERS,
   COMPLAINT_TYPE_LABELS,
+  daysUntil,
   findFilter,
   formatDate,
-  statusLabel,
-  statusTone,
+  isB2B,
 } from '@/lib/case-filters';
 
 /**
@@ -38,7 +40,13 @@ export function CasesListPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const { data: cases, isLoading } = useQuery({ queryKey: ['cases'], queryFn: casesApi.list });
+  const { data: company } = useQuery({ queryKey: ['company-me'], queryFn: companiesApi.me });
   const lookups = useCaseLookups();
+  const caseStatuses = useCaseStatuses();
+  // Etap 2 (Dashboard Producenta/Dystrybutora) — kolumny Marka/Termin i pełny opis "zgłaszającego"
+  // (partner vs klient) są specyficzne dla tego typu organizacji; Sklep (DAWIDAM) widzi tabelę
+  // dokładnie jak dotąd, zero zmiany w jego workflow.
+  const isDistributorOrg = company?.type === 'ManufacturerDistributor';
 
   const activeFilterKey = searchParams.get('filter') ?? 'open';
   const activeFilter = findFilter(activeFilterKey);
@@ -46,6 +54,15 @@ export function CasesListPage() {
   const [search, setSearch] = useState(searchParams.get('q') ?? '');
   const [ownerId, setOwnerId] = useState('');
   const [manufacturerId, setManufacturerId] = useState('');
+  // Producent/Dystrybutor + Partnerzy B2B (Faza 6) — filtr źródła (Wszystkie/B2B/B2C), ten sam
+  // wzorzec co pozostałe filtry tej strony: w 100% po stronie klienta. Etap 2 — `isB2B()`
+  // zamiast surowego `originType` (marka może zgłosić B2B bez ustawiania `originType`, patrz
+  // komentarz przy `isB2B`). Odczytany raz z URL (`?origin=`) — kafelki nowego Dashboardu
+  // Dystrybutora linkują tutaj z gotowym źródłem I bucketem naraz (`?filter=new&origin=b2b`),
+  // inaczej liczba na kafelku (przefiltrowana PO ŹRÓDLE) nigdy nie zgadzałaby się z listą.
+  const [origin, setOrigin] = useState<'' | 'b2b' | 'b2c'>(
+    (searchParams.get('origin') as '' | 'b2b' | 'b2c' | null) ?? '',
+  );
 
   function selectFilter(key: string) {
     const next = new URLSearchParams(searchParams);
@@ -57,11 +74,12 @@ export function CasesListPage() {
     const query = search.trim().toLowerCase();
 
     return (cases ?? [])
-      .filter((c) => activeFilter.match(c, user?.userId))
+      .filter((c) => activeFilter.match(c, user?.userId, caseStatuses.finalStatusCodes))
       .filter((c) => (ownerId ? c.ownerId === ownerId : true))
       .filter((c) =>
         manufacturerId ? c.items.some((i) => i.manufacturerId === manufacturerId) : true,
       )
+      .filter((c) => (origin ? isB2B(c) === (origin === 'b2b') : true))
       .filter((c) => {
         if (!query) return true;
         const customer = lookups.customerById.get(c.customerId);
@@ -91,12 +109,13 @@ export function CasesListPage() {
     user?.userId,
     ownerId,
     manufacturerId,
+    origin,
     search,
     lookups.customerById,
     lookups.productById,
   ]);
 
-  const filtersActive = Boolean(ownerId || manufacturerId || search);
+  const filtersActive = Boolean(ownerId || manufacturerId || origin || search);
 
   return (
     <div>
@@ -172,6 +191,17 @@ export function CasesListPage() {
               ))}
             </select>
 
+            <select
+              className="toolbar-select"
+              value={origin}
+              onChange={(e) => setOrigin(e.target.value as typeof origin)}
+              aria-label="Filtr: źródło sprawy"
+            >
+              <option value="">Źródło: wszystkie</option>
+              <option value="b2c">B2C — klient detaliczny</option>
+              <option value="b2b">B2B — partner</option>
+            </select>
+
             {filtersActive && (
               <button
                 type="button"
@@ -179,6 +209,7 @@ export function CasesListPage() {
                 onClick={() => {
                   setOwnerId('');
                   setManufacturerId('');
+                  setOrigin('');
                   setSearch('');
                 }}
               >
@@ -206,13 +237,16 @@ export function CasesListPage() {
               <thead>
                 <tr>
                   <th>Nr sprawy</th>
-                  <th>Klient</th>
+                  <th>Zgłaszający</th>
                   <th>Produkt</th>
+                  {isDistributorOrg && <th>Marka</th>}
                   <th>Producent</th>
                   <th>Typ</th>
+                  <th>Źródło</th>
                   <th>Status</th>
                   <th>Właściciel</th>
                   <th>Utworzono</th>
+                  {isDistributorOrg && <th>Termin/SLA</th>}
                 </tr>
               </thead>
               <tbody>
@@ -226,12 +260,41 @@ export function CasesListPage() {
 
                   return (
                     <tr key={c.id} onClick={() => navigate(`/cases/${c.id}`)}>
-                      <td className="mono cell-primary">{c.caseNumber}</td>
+                      <td className="mono cell-primary">
+                        <span className="flex items-center gap-8">
+                          {c.caseNumber}
+                          {c.unreadMessagesCount > 0 && (
+                            <span
+                              title={`Nieprzeczytana wiadomość od klienta (${c.unreadMessagesCount})`}
+                              style={{
+                                display: 'inline-block',
+                                width: 8,
+                                height: 8,
+                                borderRadius: '50%',
+                                background: 'var(--red)',
+                                flexShrink: 0,
+                              }}
+                            />
+                          )}
+                        </span>
+                      </td>
                       <td>
-                        <div className="cell-primary">
-                          {customer ? `${customer.firstName} ${customer.lastName}` : '—'}
-                        </div>
-                        <div className="cell-secondary">{customer?.phone ?? ''}</div>
+                        {c.reportedByPartnerCompanyName ? (
+                          <>
+                            <div className="cell-primary">{c.reportedByPartnerCompanyName}</div>
+                            <div className="cell-secondary">
+                              w imieniu:{' '}
+                              {customer ? `${customer.firstName} ${customer.lastName}` : '—'}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="cell-primary">
+                              {customer ? `${customer.firstName} ${customer.lastName}` : '—'}
+                            </div>
+                            <div className="cell-secondary">{customer?.phone ?? ''}</div>
+                          </>
+                        )}
                       </td>
                       <td>
                         <div className="cell-primary">{product?.name ?? '—'}</div>
@@ -239,6 +302,7 @@ export function CasesListPage() {
                           {firstItem?.serialNumber || 'brak nr seryjnego'}
                         </div>
                       </td>
+                      {isDistributorOrg && <td>{lookups.brandName(firstItem?.productId)}</td>}
                       <td>{lookups.manufacturerName(firstItem?.manufacturerId)}</td>
                       <td>
                         <span className="tag">
@@ -258,12 +322,25 @@ export function CasesListPage() {
                         )}
                       </td>
                       <td>
-                        <span className={`badge badge-${statusTone(c.status)}`}>
-                          {statusLabel(c.status)}
+                        <span
+                          className="tag"
+                          style={
+                            isB2B(c)
+                              ? { borderColor: 'var(--primary)', color: 'var(--primary)' }
+                              : undefined
+                          }
+                        >
+                          {isB2B(c) ? 'B2B' : 'B2C'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge badge-${caseStatuses.statusTone(c.status)}`}>
+                          {caseStatuses.statusLabel(c.status)}
                         </span>
                       </td>
                       <td>{owner ? `${owner.firstName} ${owner.lastName}` : '—'}</td>
                       <td className="cell-secondary">{formatDate(c.createdAt)}</td>
+                      {isDistributorOrg && <td>{renderSlaBadge(c.nextActionDueDate)}</td>}
                     </tr>
                   );
                 })}
@@ -274,4 +351,13 @@ export function CasesListPage() {
       </div>
     </div>
   );
+}
+
+/** Etap 2 (Dashboard Producenta/Dystrybutora) — ten sam sposób liczenia dni co `isOverdue`/`isDueToday` w `lib/case-filters.ts`, żeby odznaka na liście NIGDY nie mówiła co innego niż filtr "Po terminie". */
+function renderSlaBadge(nextActionDueDate: string | null): string | JSX.Element {
+  const d = daysUntil(nextActionDueDate);
+  if (d === null) return '—';
+  if (d < 0) return <span className="badge badge-red">{Math.abs(d)} dni po terminie</span>;
+  if (d === 0) return <span className="badge badge-amber">dzisiaj</span>;
+  return <span className="badge badge-gray">za {d} dni</span>;
 }

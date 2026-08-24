@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isApiError } from '@/api/client';
+import { EyeIcon, EyeOffIcon } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
 
 /** Odpowiednik `index.html` — bez selektora roli (prototypowy mechanizm symulacji RBAC przez `localStorage`, zastąpiony prawdziwym logowaniem/JWT). AUTH-001 przy błędnych danych. */
@@ -9,6 +10,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,15 +63,30 @@ export function LoginPage() {
             />
           </div>
           <div className="field">
-            <label htmlFor="password">Hasło</label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
+            <label htmlFor="password">Hasło lub PIN</label>
+            <div className="password-field">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="password-toggle-btn"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? 'Ukryj hasło' : 'Pokaż hasło'}
+                tabIndex={-1}
+              >
+                {showPassword ? (
+                  <EyeOffIcon width={17} height={17} />
+                ) : (
+                  <EyeIcon width={17} height={17} />
+                )}
+              </button>
+            </div>
           </div>
           <button
             type="submit"

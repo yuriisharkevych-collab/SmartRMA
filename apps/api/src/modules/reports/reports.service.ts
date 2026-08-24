@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { CaseStatus, Decision } from '@prisma/client';
+import { Decision } from '@prisma/client';
+import { CaseStatusesService } from '../case-statuses/case-statuses.service';
 import { CompaniesService } from '../companies/companies.service';
 import { UsersService } from '../users/users.service';
 import {
@@ -13,11 +14,17 @@ import {
 import { ReportRange, ReportsRepository } from './reports.repository';
 
 const DAY_MS = 1000 * 60 * 60 * 24;
-const CLOSED_STATUSES: CaseStatus[] = [
-  CaseStatus.Zamknieta,
-  CaseStatus.Anulowana,
-  CaseStatus.Zarchiwizowana,
-];
+
+/**
+ * Status Workflow Refactor — jedyny kod z katalogu statusów, do którego ten
+ * plik odwołuje się wprost (dawniej `CaseStatus.WyslanaDoProducenta`):
+ * moment "przekazania do producenta/dystrybutora" to start okna odpowiedzi
+ * liczonego do raportu SLA. Zbiór statusów końcowych (dawniej hardcodowany
+ * `CLOSED_STATUSES`) i etykiety statusów (dawniej hardcodowany
+ * `STATUS_LABELS`) są teraz wyliczane per-firma z katalogu wewnątrz
+ * `getOverview` — patrz `statusCatalog`.
+ */
+const SENT_TO_MANUFACTURER_STATUS_CODE = 'PrzekazanaDoProducenta';
 
 const COMPLAINT_TYPE_LABELS: Record<string, string> = {
   Warranty: 'Gwarancja',
@@ -30,23 +37,6 @@ const SOURCE_LABELS: Record<string, string> = {
   FormularzWWW: 'Formularz WWW',
   Marketplace: 'Marketplace',
   Inne: 'Inne',
-};
-const STATUS_LABELS: Record<string, string> = {
-  Nowa: 'Nowa',
-  Przyjeta: 'Przyjęta',
-  Weryfikacja: 'Weryfikacja',
-  OczekiwanieNaKlienta: 'Oczekiwanie na klienta',
-  GotowaDoWysylki: 'Gotowa do wysyłki',
-  OczekiwanieNaKuriera: 'Oczekiwanie na kuriera',
-  WyslanaDoProducenta: 'Wysłana do producenta',
-  OczekiwanieNaDecyzjeProducenta: 'Oczekiwanie na decyzję producenta',
-  WeryfikacjaWewnetrzna: 'Weryfikacja wewnętrzna',
-  OczekiwanieNaDecyzjeKierownika: 'Oczekiwanie na decyzję Kierownika',
-  RealizacjaDecyzji: 'Realizacja decyzji',
-  GotowaDoOdbioru: 'Gotowa do odbioru',
-  Zamknieta: 'Zamknięta',
-  Anulowana: 'Anulowana',
-  Zarchiwizowana: 'Zarchiwizowana',
 };
 
 function avg(values: number[]): number | null {
@@ -75,11 +65,18 @@ export class ReportsService {
     private readonly reportsRepository: ReportsRepository,
     private readonly usersService: UsersService,
     private readonly companiesService: CompaniesService,
+    private readonly caseStatusesService: CaseStatusesService,
   ) {}
 
   async getOverview(companyId: string, from: Date, to: Date): Promise<ReportOverviewEntity> {
     const range: ReportRange = { companyId, from, to };
     const now = new Date();
+
+    const statusCatalog = await this.caseStatusesService.findAllForCompany(companyId);
+    const statusLabels: Record<string, string> = Object.fromEntries(
+      statusCatalog.map((s) => [s.code, s.label]),
+    );
+    const closedStatusCodes = statusCatalog.filter((s) => s.isFinal).map((s) => s.code);
 
     const [
       totalCases,
@@ -102,10 +99,10 @@ export class ReportsService {
       this.reportsRepository.groupByStatus(range),
       this.reportsRepository.groupBySource(range),
       this.reportsRepository.casesByMonth(range),
-      this.reportsRepository.findClosedCases(range),
-      this.reportsRepository.findOverdueCases(range, now),
+      this.reportsRepository.findClosedCases(range, closedStatusCodes),
+      this.reportsRepository.findOverdueCases(range, now, closedStatusCodes),
       this.reportsRepository.findCaseItems(range),
-      this.reportsRepository.findResponseTimeline(range),
+      this.reportsRepository.findResponseTimeline(range, SENT_TO_MANUFACTURER_STATUS_CODE),
       this.reportsRepository.findManufacturerSlas(companyId),
       this.reportsRepository.findBrands(companyId),
       this.reportsRepository.sumLogisticsCost(range),
@@ -114,7 +111,7 @@ export class ReportsService {
     ]);
 
     const closedCount = byStatusRaw
-      .filter((r) => CLOSED_STATUSES.includes(r.status))
+      .filter((r) => closedStatusCodes.includes(r.status))
       .reduce((sum, r) => sum + r._count._all, 0);
 
     const resolutionDaysByCase = new Map<string, number>();
@@ -122,11 +119,11 @@ export class ReportsService {
       resolutionDaysByCase.set(c.id, (c.closedAt!.getTime() - c.createdAt.getTime()) / DAY_MS);
     }
 
-    // --- Czas odpowiedzi producenta: WyslanaDoProducenta → pierwsza decyzja ---
+    // --- Czas odpowiedzi producenta: przekazanie do producenta/dystrybutora → pierwsza decyzja ---
     const sentAt = new Map<string, Date>();
     const decidedAt = new Map<string, Date>();
     for (const entry of timeline) {
-      if (entry.newValue === CaseStatus.WyslanaDoProducenta && !sentAt.has(entry.caseId)) {
+      if (entry.newValue === SENT_TO_MANUFACTURER_STATUS_CODE && !sentAt.has(entry.caseId)) {
         sentAt.set(entry.caseId, entry.createdAt);
       }
       if (entry.action === 'DecisionSet' && !decidedAt.has(entry.caseId)) {
@@ -226,7 +223,7 @@ export class ReportsService {
         this.named(r.complaintType, COMPLAINT_TYPE_LABELS, r._count._all),
       ),
       byStatus: byStatusRaw
-        .map((r) => this.named(r.status, STATUS_LABELS, r._count._all))
+        .map((r) => this.named(r.status, statusLabels, r._count._all))
         .sort((a, b) => b.count - a.count),
       bySource: bySourceRaw
         .map((r) => this.named(r.source, SOURCE_LABELS, r._count._all))

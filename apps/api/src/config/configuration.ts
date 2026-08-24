@@ -42,7 +42,8 @@ export interface BcryptConfig {
 }
 
 export interface CorsConfig {
-  origin: string;
+  /** Lista dozwolonych originów frontendu — `CORS_ORIGIN` może zawierać kilka adresów rozdzielonych przecinkiem (np. do jednoczesnego testowania z `localhost` i adresu LAN na telefonie). */
+  origin: string[];
 }
 
 /** `IStorageService` (dysk lokalny MVP, DECISIONS.md). `uploadsDir` jest ścieżką ABSOLUTNĄ — rozwiązaną raz tutaj, żeby implementacja nie liczyła jej z `__dirname` (co po kompilacji wskazywałoby wnętrze `dist/`, kasowane przy każdym buildzie). */
@@ -52,6 +53,29 @@ export interface StorageConfig {
 
 export interface LoggerConfig {
   level: string;
+}
+
+/**
+ * Ustawienia › Backup — WYŁĄCZNIE informacyjne (żądanie: "Nie implementuj
+ * jeszcze wykonywania backupów"). `location` to miejsce, które zespół
+ * operacyjny skonfigurował poza aplikacją (np. zadanie cron na serwerze,
+ * snapshot RDS) — SmartRMA go nie tworzy ani nie odczytuje z dysku, tylko
+ * WYŚWIETLA to, co administrator wpisał do `.env`. Brak zmiennej = ekran
+ * pokazuje szczerze "nieskonfigurowane", zamiast zgadywać.
+ */
+export interface BackupConfig {
+  location: string | null;
+  configured: boolean;
+}
+
+/** `EncryptionService` (hasło SMTP/klucz API Resend w `EmailSettings`, patrz `crypto/encryption.service.ts`). */
+export interface EncryptionConfig {
+  key: string;
+}
+
+/** `NotificationDispatcherService` (`mail/notification-dispatcher.service.ts`) — EVENTS.md §11.2. */
+export interface MailDispatchConfig {
+  intervalMs: number;
 }
 
 /**
@@ -87,7 +111,10 @@ export default () => ({
     rounds: parseInt(process.env.BCRYPT_ROUNDS ?? '10', 10),
   } satisfies BcryptConfig,
   cors: {
-    origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
+    origin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+      .split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean),
   } satisfies CorsConfig,
   storage: {
     uploadsDir: path.resolve(process.cwd(), process.env.UPLOADS_DIR ?? 'uploads'),
@@ -95,4 +122,14 @@ export default () => ({
   logger: {
     level: process.env.LOG_LEVEL ?? 'debug',
   } satisfies LoggerConfig,
+  backup: {
+    location: process.env.BACKUP_STORAGE_LOCATION ?? null,
+    configured: Boolean(process.env.BACKUP_STORAGE_LOCATION),
+  } satisfies BackupConfig,
+  encryption: {
+    key: process.env.ENCRYPTION_KEY!,
+  } satisfies EncryptionConfig,
+  mailDispatch: {
+    intervalMs: parseInt(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS ?? '10000', 10),
+  } satisfies MailDispatchConfig,
 });

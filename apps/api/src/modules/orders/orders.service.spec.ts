@@ -22,7 +22,16 @@ function buildOrder(overrides: Partial<OrderWithItems> = {}): OrderWithItems {
     currency: 'PLN',
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     items: [
-      { id: 'item-1', orderId: 'order-1', productId: 'product-1', quantity: 1, unitPrice: null, serialNumber: null, frameNumber: null, invoiceNumber: null },
+      {
+        id: 'item-1',
+        orderId: 'order-1',
+        productId: 'product-1',
+        quantity: 1,
+        unitPrice: null,
+        serialNumber: null,
+        frameNumber: null,
+        invoiceNumber: null,
+      },
     ],
     ...overrides,
   } as unknown as OrderWithItems;
@@ -30,7 +39,16 @@ function buildOrder(overrides: Partial<OrderWithItems> = {}): OrderWithItems {
 
 describe('OrdersService', () => {
   let ordersRepository: jest.Mocked<
-    Pick<OrdersRepository, 'findByOrderNumber' | 'findById' | 'findAllForCompany' | 'search' | 'findAllForCustomer' | 'create' | 'update'>
+    Pick<
+      OrdersRepository,
+      | 'findByOrderNumber'
+      | 'findById'
+      | 'findAllForCompany'
+      | 'search'
+      | 'findAllForCustomer'
+      | 'create'
+      | 'update'
+    >
   >;
   let auditRepository: jest.Mocked<Pick<AuditRepository, 'create'>>;
   let customersService: jest.Mocked<Pick<CustomersService, 'findById'>>;
@@ -75,7 +93,7 @@ describe('OrdersService', () => {
   describe('findById', () => {
     it('rzuca NotFoundException, gdy zamówienie nie istnieje (ORDER-001 dotyczy tylko wyszukiwania po numerze)', async () => {
       ordersRepository.findById.mockResolvedValue(null);
-      await expect(service.findById('brak')).rejects.toThrow(NotFoundException);
+      await expect(service.findById('brak', 'company-1')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -96,27 +114,37 @@ describe('OrdersService', () => {
   describe('createOrder', () => {
     it('weryfikuje istnienie customerId PRZED zapisem — 404, gdy klient nie istnieje', async () => {
       customersService.findById.mockRejectedValue(new NotFoundException());
-      await expect(service.createOrder('company-1', createDto, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(service.createOrder('company-1', createDto, 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
       expect(ordersRepository.create).not.toHaveBeenCalled();
     });
 
     it('weryfikuje istnienie shopId, gdy podane — 404, gdy sklep nie istnieje', async () => {
       companiesService.findShopById.mockRejectedValue(new NotFoundException());
-      await expect(service.createOrder('company-1', { ...createDto, shopId: 'brak' }, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.createOrder('company-1', { ...createDto, shopId: 'brak' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(ordersRepository.create).not.toHaveBeenCalled();
     });
 
     it('weryfikuje istnienie KAŻDEGO productId z pozycji — 404, gdy jedna pozycja wskazuje nieistniejący produkt', async () => {
       productsService.findById.mockRejectedValueOnce(new NotFoundException());
       await expect(
-        service.createOrder('company-1', { ...createDto, items: [{ productId: 'brak', quantity: 1 }] }, 'user-1'),
+        service.createOrder(
+          'company-1',
+          { ...createDto, items: [{ productId: 'brak', quantity: 1 }] },
+          'user-1',
+        ),
       ).rejects.toThrow(NotFoundException);
       expect(ordersRepository.create).not.toHaveBeenCalled();
     });
 
     it('rzuca ORDER-002, gdy numer zamówienia już istnieje w firmie (pre-check, nie P2002 z Prisma)', async () => {
       ordersRepository.findByOrderNumber.mockResolvedValue(buildOrder());
-      await expect(service.createOrder('company-1', createDto, 'user-1')).rejects.toMatchObject({ code: 'ORDER-002' });
+      await expect(service.createOrder('company-1', createDto, 'user-1')).rejects.toMatchObject({
+        code: 'ORDER-002',
+      });
       expect(ordersRepository.create).not.toHaveBeenCalled();
     });
 
@@ -129,7 +157,13 @@ describe('OrdersService', () => {
 
       expect(result.id).toBe('order-1');
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: 'company-1', userId: 'user-1', action: 'ORDER_CREATED', entityType: 'Order', entityId: 'order-1' }),
+        expect.objectContaining({
+          companyId: 'company-1',
+          userId: 'user-1',
+          action: 'ORDER_CREATED',
+          entityType: 'Order',
+          entityId: 'order-1',
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.ORDER_CREATED);
@@ -140,7 +174,9 @@ describe('OrdersService', () => {
   describe('updateOrder', () => {
     it('rzuca NotFoundException, gdy zamówienie docelowe nie istnieje', async () => {
       ordersRepository.findById.mockResolvedValue(null);
-      await expect(service.updateOrder('brak', { orderNumber: 'X' }, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateOrder('brak', 'company-1', { orderNumber: 'X' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(ordersRepository.update).not.toHaveBeenCalled();
     });
 
@@ -149,7 +185,12 @@ describe('OrdersService', () => {
       ordersRepository.findById.mockResolvedValue(before);
       ordersRepository.update.mockResolvedValue(before);
 
-      await service.updateOrder('order-1', { orderNumber: before.orderNumber }, 'user-1');
+      await service.updateOrder(
+        'order-1',
+        'company-1',
+        { orderNumber: before.orderNumber },
+        'user-1',
+      );
 
       expect(ordersRepository.findByOrderNumber).not.toHaveBeenCalled();
     });
@@ -157,18 +198,30 @@ describe('OrdersService', () => {
     it('rzuca ORDER-002, gdy NOWY numer zamówienia koliduje z innym zamówieniem firmy', async () => {
       const before = buildOrder();
       ordersRepository.findById.mockResolvedValue(before);
-      ordersRepository.findByOrderNumber.mockResolvedValue(buildOrder({ id: 'order-2', orderNumber: 'ZAM/2026/002' }));
+      ordersRepository.findByOrderNumber.mockResolvedValue(
+        buildOrder({ id: 'order-2', orderNumber: 'ZAM/2026/002' }),
+      );
 
-      await expect(service.updateOrder('order-1', { orderNumber: 'ZAM/2026/002' }, 'user-1')).rejects.toMatchObject({ code: 'ORDER-002' });
+      await expect(
+        service.updateOrder('order-1', 'company-1', { orderNumber: 'ZAM/2026/002' }, 'user-1'),
+      ).rejects.toMatchObject({ code: 'ORDER-002' });
       expect(ordersRepository.update).not.toHaveBeenCalled();
     });
 
     it('NIE zapisuje AuditLog ani nie publikuje zdarzenia, gdy Decimal/Date są równe wartościowo mimo różnych referencji', async () => {
-      const before = buildOrder({ totalAmount: new Prisma.Decimal(100), orderDate: new Date('2026-01-01T00:00:00.000Z') });
+      const before = buildOrder({
+        totalAmount: new Prisma.Decimal(100),
+        orderDate: new Date('2026-01-01T00:00:00.000Z'),
+      });
       ordersRepository.findById.mockResolvedValue(before);
       ordersRepository.update.mockResolvedValue(before);
 
-      await service.updateOrder('order-1', { totalAmount: 100, orderDate: '2026-01-01T00:00:00.000Z' }, 'user-1');
+      await service.updateOrder(
+        'order-1',
+        'company-1',
+        { totalAmount: 100, orderDate: '2026-01-01T00:00:00.000Z' },
+        'user-1',
+      );
 
       expect(auditRepository.create).not.toHaveBeenCalled();
       expect(eventBus.publish).not.toHaveBeenCalled();
@@ -180,10 +233,14 @@ describe('OrdersService', () => {
       ordersRepository.findById.mockResolvedValue(before);
       ordersRepository.update.mockResolvedValue(after);
 
-      await service.updateOrder('order-1', { totalAmount: 150 }, 'user-1');
+      await service.updateOrder('order-1', 'company-1', { totalAmount: 150 }, 'user-1');
 
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'ORDER_UPDATED', previousValue: { totalAmount: 100 }, newValue: { totalAmount: 150 } }),
+        expect.objectContaining({
+          action: 'ORDER_UPDATED',
+          previousValue: { totalAmount: 100 },
+          newValue: { totalAmount: 150 },
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.ORDER_UPDATED);

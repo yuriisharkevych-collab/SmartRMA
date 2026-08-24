@@ -20,6 +20,9 @@ export const HISTORY_ACTION_LABELS: Record<string, string> = {
   CaseArchived: 'Zarchiwizowano sprawę',
   LogisticsStatusChanged: 'Zmieniono status logistyki',
   PriorityChanged: 'Zmieniono priorytet',
+  CaseItemUpdated: 'Poprawiono dane pozycji',
+  HandoffSent: 'Przekazano sprawę partnerowi B2B',
+  HandoffPartnerUpdate: 'Aktualizacja od partnera B2B',
 };
 
 export const DECISION_LABELS: Record<string, string> = {
@@ -28,6 +31,12 @@ export const DECISION_LABELS: Record<string, string> = {
   WymianaProduktu: 'Wymiana produktu',
   ZwrotSrodkow: 'Zwrot środków',
   Odrzucenie: 'Odrzucenie',
+};
+
+/** Faza 6 (Producent/Dystrybutor + Partnerzy B2B) — etykiety `Case.originType`, niezależne od `SOURCE_LABELS` (kanał zgłoszenia klienta). */
+export const ORIGIN_TYPE_LABELS: Record<string, string> = {
+  DirectCustomer: 'Klient bezpośredni',
+  PartnerB2B: 'Partner B2B',
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
@@ -64,27 +73,21 @@ export const DOCUMENT_CATEGORY_LABELS: Record<string, string> = {
 };
 
 /**
- * Domyślna treść Next Action po zmianie statusu — transkrypcja
- * `NEXT_ACTION_BY_STATUS` z prototypu. Backend ustawia własną wartość przy
- * przejściu (`DEFAULT_NEXT_ACTION` w `cases.service.ts`); ta mapa służy
- * WYŁĄCZNIE do podpowiedzi w modalu, żeby pracownik widział, co się stanie.
+ * Domyślna treść Next Action po zmianie statusu (Status Workflow Refactor —
+ * 9 statusów katalogu). Backend ustawia własną wartość przy przejściu
+ * (`CaseStatusDefinition.defaultNextAction`); ta mapa służy WYŁĄCZNIE do
+ * podpowiedzi w modalu, żeby pracownik widział, co się prawdopodobnie stanie.
  */
 export const NEXT_ACTION_BY_STATUS: Record<string, string | null> = {
   Nowa: 'Zweryfikuj kompletność zgłoszenia i przyjmij produkt od klienta.',
-  Przyjeta: 'Sprawdź stan produktu i udokumentuj zdjęciami.',
-  Weryfikacja: 'Zweryfikuj kompletność dokumentacji przed dalszym procesowaniem.',
-  WeryfikacjaWewnetrzna: 'Przygotuj wewnętrzną ocenę sprawy (rękojmia).',
-  GotowaDoWysylki: 'Przekaż produkt do wysyłki / kuriera.',
-  OczekiwanieNaKuriera: 'Oczekiwanie na odbiór produktu przez kuriera.',
-  WyslanaDoProducenta: 'Monitoruj odpowiedź producenta.',
-  OczekiwanieNaDecyzjeProducenta: 'Oczekiwanie na decyzję producenta — sprawdź termin SLA.',
-  OczekiwanieNaKlienta: 'Oczekiwanie na uzupełnienie danych przez klienta.',
-  OczekiwanieNaDecyzjeKierownika: 'Kierownik: podejmij decyzję w sprawie.',
-  RealizacjaDecyzji: 'Zrealizuj podjętą decyzję (naprawa / wymiana / zwrot).',
-  GotowaDoOdbioru: 'Powiadom klienta, że produkt jest gotowy do odbioru.',
-  Zamknieta: null,
-  Anulowana: null,
-  Zarchiwizowana: null,
+  Przyjeta: 'Sprawdź stan produktu, udokumentuj zdjęciami i skompletuj wymagane dokumenty.',
+  PrzekazanaDoProducenta: 'Monitoruj odpowiedź producenta / dystrybutora.',
+  DecyzjaPozytywna: 'Zrealizuj podjętą decyzję (naprawa / wymiana / zwrot).',
+  TowarWyslanyDoSerwisu: 'Monitoruj status naprawy w serwisie.',
+  TowarWrocilZSerwisu: 'Powiadom klienta, że produkt jest gotowy do odbioru.',
+  DecyzjaNegatywna: 'Poinformuj klienta o decyzji i uzasadnieniu producenta.',
+  Zakonczona: null,
+  ReklamacjaPonownie: 'Zweryfikuj ponowne zgłoszenie i ustal dalsze kroki.',
 };
 
 export function formatDateTime(value: string | null): string {
@@ -96,6 +99,22 @@ export function formatDateTime(value: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+/**
+ * Adres klienta złożony z 3 osobnych pól (`address`=ulica i numer, `city`,
+ * `postalCode`) — formularz publiczny zbiera je osobno (patrz
+ * `PublicComplaintFormPage`), starsze rekordy klientów (utworzone ręcznie
+ * przez pracownika przed tą zmianą) mogą mieć tylko `address` wypełnione.
+ */
+export function formatCustomerAddress(
+  customer:
+    { address: string | null; city: string | null; postalCode: string | null } | null | undefined,
+): string {
+  if (!customer) return '—';
+  const cityLine = [customer.postalCode, customer.city].filter(Boolean).join(' ');
+  const parts = [customer.address, cityLine].filter((p) => p && p.trim().length > 0);
+  return parts.length > 0 ? parts.join(', ') : '—';
 }
 
 /** Zaokrąglenie jak w prototypie (`SMARTRMA_DATA.formatFileSize`): KB bez części dziesiętnej, MB z jedną. */
@@ -134,16 +153,11 @@ export function historyIcon(action: string, newValue: string | null): string {
     return (newValue && icons[newValue]) || '✅';
   }
   if (action === 'StatusChanged') {
-    const shipping = ['GotowaDoWysylki', 'OczekiwanieNaKuriera', 'WyslanaDoProducenta'];
-    const analysis = [
-      'Weryfikacja',
-      'WeryfikacjaWewnetrzna',
-      'OczekiwanieNaDecyzjeProducenta',
-      'OczekiwanieNaDecyzjeKierownika',
-    ];
-    const done = ['GotowaDoOdbioru', 'Zamknieta'];
-    if (newValue && shipping.includes(newValue)) return '🚚';
-    if (newValue && analysis.includes(newValue)) return '🔍';
+    const inTransit = ['PrzekazanaDoProducenta', 'TowarWyslanyDoSerwisu'];
+    const decided = ['DecyzjaPozytywna', 'DecyzjaNegatywna'];
+    const done = ['TowarWrocilZSerwisu', 'Zakonczona'];
+    if (newValue && inTransit.includes(newValue)) return '🚚';
+    if (newValue && decided.includes(newValue)) return '⚖️';
     if (newValue && done.includes(newValue)) return '📦';
     return '🔄';
   }

@@ -2,6 +2,7 @@ import { Company, Shop } from '@prisma/client';
 import { AuditRepository } from '../audit/audit.repository';
 import { IEventBus } from '../../events/event-bus.interface';
 import { EVENT_NAMES } from '../../events/event-names.const';
+import { IStorageService } from '../../storage/storage.interface';
 import { CompaniesRepository } from './companies.repository';
 import { CompaniesService } from './companies.service';
 
@@ -38,16 +39,27 @@ function buildShop(overrides: Partial<Shop> = {}): Shop {
 
 describe('CompaniesService', () => {
   let companiesRepository: jest.Mocked<
-    Pick<CompaniesRepository, 'findById' | 'update' | 'findShopsByCompany' | 'findShopById' | 'createShop' | 'updateShop'>
+    Pick<
+      CompaniesRepository,
+      | 'findById'
+      | 'update'
+      | 'updateLogoPath'
+      | 'findShopsByCompany'
+      | 'findShopById'
+      | 'createShop'
+      | 'updateShop'
+    >
   >;
   let auditRepository: jest.Mocked<Pick<AuditRepository, 'create'>>;
   let eventBus: jest.Mocked<IEventBus>;
+  let storageService: jest.Mocked<IStorageService>;
   let service: CompaniesService;
 
   beforeEach(() => {
     companiesRepository = {
       findById: jest.fn(),
       update: jest.fn(),
+      updateLogoPath: jest.fn(),
       findShopsByCompany: jest.fn(),
       findShopById: jest.fn(),
       createShop: jest.fn(),
@@ -55,11 +67,13 @@ describe('CompaniesService', () => {
     };
     auditRepository = { create: jest.fn() };
     eventBus = { publish: jest.fn(), publishAll: jest.fn() };
+    storageService = { save: jest.fn(), read: jest.fn(), copy: jest.fn() };
 
     service = new CompaniesService(
       companiesRepository as unknown as CompaniesRepository,
       auditRepository as unknown as AuditRepository,
       eventBus,
+      storageService,
     );
   });
 
@@ -132,7 +146,13 @@ describe('CompaniesService', () => {
 
       expect(result.id).toBe('shop-1');
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: 'company-1', userId: 'user-1', action: 'SHOP_CREATED', entityType: 'Shop', entityId: 'shop-1' }),
+        expect.objectContaining({
+          companyId: 'company-1',
+          userId: 'user-1',
+          action: 'SHOP_CREATED',
+          entityType: 'Shop',
+          entityId: 'shop-1',
+        }),
       );
       expect(eventBus.publish).toHaveBeenCalledTimes(1);
       const published = eventBus.publish.mock.calls[0][0];
@@ -144,7 +164,9 @@ describe('CompaniesService', () => {
   describe('updateShop', () => {
     it('rzuca NotFoundException, gdy placówka nie istnieje', async () => {
       companiesRepository.findShopById.mockResolvedValue(null);
-      await expect(service.updateShop('brak', { name: 'X' }, 'user-1')).rejects.toThrow();
+      await expect(
+        service.updateShop('brak', 'company-1', { name: 'X' }, 'user-1'),
+      ).rejects.toThrow();
       expect(companiesRepository.updateShop).not.toHaveBeenCalled();
     });
 
@@ -154,10 +176,15 @@ describe('CompaniesService', () => {
       companiesRepository.findShopById.mockResolvedValue(before);
       companiesRepository.updateShop.mockResolvedValue(after);
 
-      await service.updateShop('shop-1', { city: 'Warszawa' }, 'user-1');
+      await service.updateShop('shop-1', 'company-1', { city: 'Warszawa' }, 'user-1');
 
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: 'company-1', action: 'SHOP_UPDATED', entityType: 'Shop', entityId: 'shop-1' }),
+        expect.objectContaining({
+          companyId: 'company-1',
+          action: 'SHOP_UPDATED',
+          entityType: 'Shop',
+          entityId: 'shop-1',
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.SHOP_UPDATED);
@@ -168,7 +195,7 @@ describe('CompaniesService', () => {
   describe('deactivateShop', () => {
     it('rzuca NotFoundException, gdy placówka nie istnieje', async () => {
       companiesRepository.findShopById.mockResolvedValue(null);
-      await expect(service.deactivateShop('brak', 'user-1')).rejects.toThrow();
+      await expect(service.deactivateShop('brak', 'company-1', 'user-1')).rejects.toThrow();
     });
 
     it('ustawia active=false, zapisuje AuditLog i publikuje ShopDeactivated', async () => {
@@ -177,7 +204,7 @@ describe('CompaniesService', () => {
       companiesRepository.findShopById.mockResolvedValue(before);
       companiesRepository.updateShop.mockResolvedValue(after);
 
-      const result = await service.deactivateShop('shop-1', 'user-1');
+      const result = await service.deactivateShop('shop-1', 'company-1', 'user-1');
 
       expect(companiesRepository.updateShop).toHaveBeenCalledWith('shop-1', { active: false });
       expect(result.active).toBe(false);
@@ -193,6 +220,60 @@ describe('CompaniesService', () => {
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.SHOP_DEACTIVATED);
       expect(published.payload).toEqual({});
+    });
+  });
+
+  describe('uploadLogo / getLogoBuffer', () => {
+    const file = {
+      originalname: 'logo.png',
+      mimetype: 'image/png',
+      size: 1024,
+      buffer: Buffer.from('x'),
+    } as Express.Multer.File;
+
+    it('zapisuje plik przez IStorageService pod caseId="logo" i aktualizuje logoPath', async () => {
+      companiesRepository.findById.mockResolvedValue(buildCompany());
+      storageService.save.mockResolvedValue({
+        storagePath: 'company-1/logo/uuid-logo.png',
+        fileName: 'logo.png',
+        mimeType: 'image/png',
+        fileSize: 1024,
+      });
+      companiesRepository.updateLogoPath.mockResolvedValue(
+        buildCompany({ logoPath: 'company-1/logo/uuid-logo.png' } as never),
+      );
+
+      const result = await service.uploadLogo('company-1', file, 'user-1');
+
+      expect(storageService.save).toHaveBeenCalledWith('company-1', 'logo', file);
+      expect(companiesRepository.updateLogoPath).toHaveBeenCalledWith(
+        'company-1',
+        'company-1/logo/uuid-logo.png',
+      );
+      expect(result.logoUrl).toBe(
+        `/companies/company-1/logo?v=${new Date('2026-01-01').getTime()}`,
+      );
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'COMPANY_LOGO_UPDATED' }),
+      );
+    });
+
+    it('rzuca NotFoundException z getLogoBuffer, gdy firma nie ma jeszcze logo', async () => {
+      companiesRepository.findById.mockResolvedValue(buildCompany());
+      await expect(service.getLogoBuffer('company-1')).rejects.toThrow();
+      expect(storageService.read).not.toHaveBeenCalled();
+    });
+
+    it('czyta plik przez IStorageService, gdy logoPath jest ustawiony', async () => {
+      companiesRepository.findById.mockResolvedValue(
+        buildCompany({ logoPath: 'company-1/logo/uuid-logo.png' } as never),
+      );
+      storageService.read.mockResolvedValue(Buffer.from('dane-obrazu'));
+
+      const result = await service.getLogoBuffer('company-1');
+
+      expect(storageService.read).toHaveBeenCalledWith('company-1/logo/uuid-logo.png');
+      expect(result.buffer.toString()).toBe('dane-obrazu');
     });
   });
 });

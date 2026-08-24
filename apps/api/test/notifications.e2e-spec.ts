@@ -1,10 +1,12 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
+import { toValidationException } from '../src/common/validation/to-validation-exception';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { PasswordService } from '../src/modules/auth/services/password.service';
+import { CaseStatusesService } from '../src/modules/case-statuses/case-statuses.service';
 
 /**
  * Test integracyjny/e2e — WYMAGA prawdziwego Postgresa i Redisa (jak
@@ -49,7 +51,16 @@ describe('Notifications (e2e)', () => {
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+        errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        exceptionFactory: toValidationException,
+      }),
+    );
     app.useGlobalFilters(new HttpExceptionFilter());
     app.setGlobalPrefix('api', { exclude: ['health', 'version'] });
     await app.init();
@@ -59,6 +70,8 @@ describe('Notifications (e2e)', () => {
 
     const company = await prisma.company.create({ data: { name: `E2E Notifications ${Date.now()}` } });
     companyId = company.id;
+    // Bez tego `POST /api/cases` rzuca — patrz komentarz w `test/cases.e2e-spec.ts`.
+    await app.get(CaseStatusesService).seedDefaultCatalog(companyId);
     const customer = await prisma.customer.create({ data: { companyId, firstName: 'Jan', lastName: 'Kowalski', phone: '600000000', email: customerEmail } });
     customerId = customer.id;
     const contractor = await prisma.contractor.create({ data: { companyId, name: `E2E Producent ${Date.now()}` } });
@@ -111,6 +124,7 @@ describe('Notifications (e2e)', () => {
     await prisma.contractor.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.user.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.role.deleteMany({ where: { companyId } }).catch(() => undefined);
+    await prisma.caseStatusDefinition.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.company.delete({ where: { id: companyId } }).catch(() => undefined);
     await app.close();
   });
@@ -122,7 +136,7 @@ describe('Notifications (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/cases')
         .set(authHeader(adminAccessToken))
-        .send({ customerId, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis', items: [{ productId, description: 'Rysa' }] });
+        .send({ customerId, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis', items: [{ productId, description: 'Rysa', purchaseProofNumber: 'FV/2026/001' }] });
       expect(res.status).toBe(201);
 
       const notifications = await prisma.notification.findMany({ where: { relatedCaseId: res.body.id } });
@@ -133,7 +147,7 @@ describe('Notifications (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/cases')
         .set(authHeader(adminAccessToken))
-        .send({ customerId, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis', clientPortalEnabled: true, items: [{ productId, description: 'Rysa' }] });
+        .send({ customerId, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis', clientPortalEnabled: true, items: [{ productId, description: 'Rysa', purchaseProofNumber: 'FV/2026/001' }] });
       expect(res.status).toBe(201);
       const caseId = res.body.id;
 
@@ -153,7 +167,7 @@ describe('Notifications (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/cases')
         .set(authHeader(adminAccessToken))
-        .send({ customerId, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis', items: [{ productId, description: 'Rysa' }] });
+        .send({ customerId, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis', items: [{ productId, description: 'Rysa', purchaseProofNumber: 'FV/2026/001' }] });
       caseId = res.body.id;
     });
 

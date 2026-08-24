@@ -64,8 +64,8 @@ export class ProductsService {
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
   ) {}
 
-  async findById(id: string): Promise<ProductEntity> {
-    const product = await this.findProductOrThrow(id);
+  async findById(id: string, companyId: string): Promise<ProductEntity> {
+    const product = await this.findProductOrThrow(id, companyId);
     return ProductMapper.toEntity(product);
   }
 
@@ -82,8 +82,8 @@ export class ProductsService {
     dto: CreateProductDto,
     actorUserId: string,
   ): Promise<ProductEntity> {
-    await this.manufacturersService.findById(dto.manufacturerId);
-    if (dto.brandId) await this.findBrandOrThrow(dto.brandId);
+    await this.manufacturersService.findById(dto.manufacturerId, companyId);
+    if (dto.brandId) await this.findBrandOrThrow(dto.brandId, companyId);
 
     const product = await this.productsRepository.create(companyId, dto);
 
@@ -113,12 +113,13 @@ export class ProductsService {
 
   async updateProduct(
     id: string,
+    companyId: string,
     dto: UpdateProductDto,
     actorUserId: string,
   ): Promise<ProductEntity> {
-    const before = await this.findProductOrThrow(id);
-    if (dto.manufacturerId) await this.manufacturersService.findById(dto.manufacturerId);
-    if (dto.brandId) await this.findBrandOrThrow(dto.brandId);
+    const before = await this.findProductOrThrow(id, companyId);
+    if (dto.manufacturerId) await this.manufacturersService.findById(dto.manufacturerId, companyId);
+    if (dto.brandId) await this.findBrandOrThrow(dto.brandId, companyId);
 
     const updated = await this.productsRepository.update(id, dto);
     const changedFields = diffChangedFields(before, dto);
@@ -150,8 +151,8 @@ export class ProductsService {
     return ProductMapper.toEntity(updated);
   }
 
-  async findBrandById(id: string): Promise<BrandEntity> {
-    const brand = await this.findBrandOrThrow(id);
+  async findBrandById(id: string, companyId: string): Promise<BrandEntity> {
+    const brand = await this.findBrandOrThrow(id, companyId);
     return ProductMapper.brandToEntity(brand);
   }
 
@@ -172,7 +173,7 @@ export class ProductsService {
     dto: CreateBrandDto,
     actorUserId: string,
   ): Promise<BrandEntity> {
-    await this.manufacturersService.findById(dto.manufacturerId);
+    await this.manufacturersService.findById(dto.manufacturerId, companyId);
     const brand = await this.productsRepository.createBrand(companyId, dto);
 
     await this.auditRepository.create({
@@ -199,9 +200,14 @@ export class ProductsService {
     return ProductMapper.brandToEntity(brand);
   }
 
-  async updateBrand(id: string, dto: UpdateBrandDto, actorUserId: string): Promise<BrandEntity> {
-    const before = await this.findBrandOrThrow(id);
-    if (dto.manufacturerId) await this.manufacturersService.findById(dto.manufacturerId);
+  async updateBrand(
+    id: string,
+    companyId: string,
+    dto: UpdateBrandDto,
+    actorUserId: string,
+  ): Promise<BrandEntity> {
+    const before = await this.findBrandOrThrow(id, companyId);
+    if (dto.manufacturerId) await this.manufacturersService.findById(dto.manufacturerId, companyId);
 
     const updated = await this.productsRepository.updateBrand(id, dto);
     const changedFields = diffChangedFields(before, dto);
@@ -233,14 +239,14 @@ export class ProductsService {
     return ProductMapper.brandToEntity(updated);
   }
 
-  private async findProductOrThrow(id: string) {
-    const product = await this.productsRepository.findById(id);
+  private async findProductOrThrow(id: string, companyId: string) {
+    const product = await this.productsRepository.findById(id, companyId);
     if (!product) throw new NotFoundException();
     return product;
   }
 
-  private async findBrandOrThrow(id: string) {
-    const brand = await this.productsRepository.findBrandById(id);
+  private async findBrandOrThrow(id: string, companyId: string) {
+    const brand = await this.productsRepository.findBrandById(id, companyId);
     if (!brand) throw new NotFoundException();
     return brand;
   }

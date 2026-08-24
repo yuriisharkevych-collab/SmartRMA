@@ -8,5 +8,7 @@ export class CreateCustomerDto {
   @ApiProperty() @IsString() phone!: string;
   @ApiPropertyOptional() @IsOptional() @IsEmail({}, { message: 'VALIDATION-002' }) email?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() address?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() city?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() postalCode?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() notes?: string;
 }

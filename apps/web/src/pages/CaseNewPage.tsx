@@ -176,6 +176,9 @@ export function CaseNewPage() {
   const [ownerId, setOwnerId] = useState('');
   const effectiveOwnerId = ownerId || user?.userId || '';
 
+  // --- 10. Portal Klienta ---
+  const [enablePortalOnCreate, setEnablePortalOnCreate] = useState(false);
+
   const [formError, setFormError] = useState<string | null>(null);
   const createCaseMutation = useMutation({ mutationFn: casesApi.create });
   const [uploading, setUploading] = useState(false);
@@ -245,17 +248,13 @@ export function CaseNewPage() {
     }
 
     try {
-      // Model spoza katalogu zakłada nową pozycję `Product` (patrz komentarz klasy).
+      // Model spoza katalogu — backend (`CasesService.create`) sam znajduje pasujący istniejący
+      // `Product` po nazwie+producencie albo tworzy nowy; nie wołamy tu `POST /products`
+      // bezpośrednio, bo to wymagałoby od pracownika osobnego uprawnienia `products.manage`,
+      // którego rejestrowanie sprawy dla nowego modelu nie powinno wymagać (patrz UAT/RBAC.md §3).
       const existing = productsForManufacturer.find(
         (p) => p.name.trim().toLowerCase() === model.trim().toLowerCase(),
       );
-      const product =
-        existing ??
-        (await productsApi.create({
-          manufacturerId,
-          brandId: brandId || undefined,
-          name: model.trim(),
-        }));
 
       const created = await createCaseMutation.mutateAsync({
         customerId: selectedCustomer.id,
@@ -267,7 +266,9 @@ export function CaseNewPage() {
         customerStatement: customerStatement.trim() || undefined,
         items: [
           {
-            productId: product.id,
+            ...(existing
+              ? { productId: existing.id }
+              : { productName: model.trim(), brandId: brandId || undefined }),
             manufacturerId,
             description: itemDescription.trim(),
             serialNumber: serialNumber.trim() || undefined,
@@ -285,10 +286,27 @@ export function CaseNewPage() {
         }
       }
 
+      // Ten sam endpoint co przełącznik "Portal klienta" na szczegółach sprawy
+      // (`casesApi.enablePortal` → `CasesService.enablePortal`) — generuje działający
+      // kod dostępu i wysyła e-mail `case.portal_access.customer` z linkiem i kodem.
+      // Świadomie WOŁANY PO utworzeniu sprawy, nie przez `clientPortalEnabled` w DTO
+      // tworzenia: samo ustawienie flagi bez wygenerowania kodu zostawiłoby Portal
+      // "włączony", ale bez działającego dostępu dla klienta.
+      let portalEnableFailed = false;
+      if (enablePortalOnCreate) {
+        try {
+          await casesApi.enablePortal(created.id);
+        } catch {
+          portalEnableFailed = true;
+        }
+      }
+
       showToast(
-        files.length > 0
-          ? `Zgłoszenie ${created.caseNumber} zapisane wraz z ${files.length} załącznikami.`
-          : `Zgłoszenie ${created.caseNumber} zapisane.`,
+        portalEnableFailed
+          ? `Zgłoszenie ${created.caseNumber} zapisane, ale nie udało się włączyć Portalu Klienta — spróbuj ze szczegółów sprawy.`
+          : files.length > 0
+            ? `Zgłoszenie ${created.caseNumber} zapisane wraz z ${files.length} załącznikami.`
+            : `Zgłoszenie ${created.caseNumber} zapisane.`,
       );
       navigate(`/cases/${created.id}`);
     } catch (err) {
@@ -310,7 +328,7 @@ export function CaseNewPage() {
       <div className="page-header">
         <div>
           <h1>Nowa reklamacja</h1>
-          <p className="page-subtitle">Zarejestruj zgłoszenie klienta krok po kroku (BR-011).</p>
+          <p className="page-subtitle">Zarejestruj zgłoszenie klienta krok po kroku.</p>
         </div>
       </div>
 
@@ -831,14 +849,44 @@ export function CaseNewPage() {
                 <>
                   <input id="f-owner" type="text" value={user?.email ?? ''} disabled />
                   <span className="hint">
-                    Sprawa zostanie przypisana do Ciebie — wybór innego opiekuna wymaga uprawnienia
-                    `users.view`.
+                    Sprawa zostanie przypisana do Ciebie — wybór innego opiekuna wymaga dodatkowego
+                    uprawnienia.
                   </span>
                 </>
               )}
             </div>
           </div>
         </Section>
+
+        {/* --- 10. Portal Klienta --- */}
+        {hasPermission('cases.portal.manage') && (
+          <Section
+            index={10}
+            title="Portal Klienta"
+            subtitle="Dostęp klienta do statusu sprawy online, bez dzwonienia do sklepu."
+          >
+            <div className="form-grid single">
+              <div className="field">
+                <div className="portal-toggle-row">
+                  <span className="text-sm">Włącz Portal Klienta od razu przy zapisie</span>
+                  <label className="switch">
+                    <input
+                      type="checkbox"
+                      checked={enablePortalOnCreate}
+                      onChange={(e) => setEnablePortalOnCreate(e.target.checked)}
+                    />
+                    <span className="slider" />
+                  </label>
+                </div>
+                <span className="hint">
+                  {selectedCustomer?.email
+                    ? `Klient dostanie e-mail na ${selectedCustomer.email} z linkiem i kodem dostępu do Portalu.`
+                    : 'Wybrany klient nie ma podanego adresu e-mail — dostęp zostanie włączony, ale kod dostępu trzeba będzie przekazać klientowi ręcznie.'}
+                </span>
+              </div>
+            </div>
+          </Section>
+        )}
 
         {/*
           Pasek akcji przyklejony do dołu ekranu: na laptopie 15–16" formularz ma 9 sekcji

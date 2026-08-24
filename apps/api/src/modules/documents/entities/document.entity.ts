@@ -12,7 +12,12 @@ export class DocumentEntity {
   @ApiProperty({ enum: DocumentCategory }) category!: DocumentCategory;
   @ApiProperty({ enum: DocumentVisibility }) visibility!: DocumentVisibility;
   @ApiProperty({ enum: DocumentStatus }) status!: DocumentStatus;
-  @ApiProperty() uploadedById!: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      '`null` — wgrane przez klienta w Portalu (bez rekordu User), patrz komentarz w schemacie.',
+  })
+  uploadedById!: string | null;
   @ApiProperty() uploadedAt!: Date;
   @ApiProperty() version!: number;
 }

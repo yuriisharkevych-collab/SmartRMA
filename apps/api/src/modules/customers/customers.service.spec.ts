@@ -49,12 +49,12 @@ describe('CustomersService', () => {
   describe('findById', () => {
     it('rzuca NotFoundException, gdy klient nie istnieje (brak kodu CUSTOMER-* w ERROR_CODES.md)', async () => {
       customersRepository.findById.mockResolvedValue(null);
-      await expect(service.findById('brak')).rejects.toThrow();
+      await expect(service.findById('brak', 'company-1')).rejects.toThrow();
     });
 
     it('zwraca CustomerEntity, gdy klient istnieje', async () => {
       customersRepository.findById.mockResolvedValue(buildCustomer());
-      const result = await service.findById('customer-1');
+      const result = await service.findById('customer-1', 'company-1');
       expect(result.id).toBe('customer-1');
     });
   });
@@ -89,11 +89,21 @@ describe('CustomersService', () => {
       const customer = buildCustomer();
       customersRepository.create.mockResolvedValue(customer);
 
-      const result = await service.createCustomer('company-1', { firstName: 'Jan', lastName: 'Kowalski', phone: '600000000' }, 'user-1');
+      const result = await service.createCustomer(
+        'company-1',
+        { firstName: 'Jan', lastName: 'Kowalski', phone: '600000000' },
+        'user-1',
+      );
 
       expect(result.id).toBe('customer-1');
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: 'company-1', userId: 'user-1', action: 'CUSTOMER_CREATED', entityType: 'Customer', entityId: 'customer-1' }),
+        expect.objectContaining({
+          companyId: 'company-1',
+          userId: 'user-1',
+          action: 'CUSTOMER_CREATED',
+          entityType: 'Customer',
+          entityId: 'customer-1',
+        }),
       );
       expect(eventBus.publish).toHaveBeenCalledTimes(1);
       const published = eventBus.publish.mock.calls[0][0];
@@ -108,7 +118,9 @@ describe('CustomersService', () => {
   describe('updateCustomer', () => {
     it('rzuca NotFoundException, gdy klient docelowy nie istnieje', async () => {
       customersRepository.findById.mockResolvedValue(null);
-      await expect(service.updateCustomer('brak', { lastName: 'X' }, 'user-1')).rejects.toThrow();
+      await expect(
+        service.updateCustomer('brak', 'company-1', { lastName: 'X' }, 'user-1'),
+      ).rejects.toThrow();
       expect(customersRepository.update).not.toHaveBeenCalled();
     });
 
@@ -117,7 +129,12 @@ describe('CustomersService', () => {
       customersRepository.findById.mockResolvedValue(before);
       customersRepository.update.mockResolvedValue(before);
 
-      await service.updateCustomer('customer-1', { lastName: before.lastName }, 'user-1');
+      await service.updateCustomer(
+        'customer-1',
+        'company-1',
+        { lastName: before.lastName },
+        'user-1',
+      );
 
       expect(auditRepository.create).not.toHaveBeenCalled();
       expect(eventBus.publish).not.toHaveBeenCalled();
@@ -129,7 +146,7 @@ describe('CustomersService', () => {
       customersRepository.findById.mockResolvedValue(before);
       customersRepository.update.mockResolvedValue(after);
 
-      await service.updateCustomer('customer-1', { lastName: 'Nowak' }, 'user-1');
+      await service.updateCustomer('customer-1', 'company-1', { lastName: 'Nowak' }, 'user-1');
 
       expect(auditRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({

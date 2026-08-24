@@ -23,8 +23,11 @@ export class RolesController {
 
   @Get(':id')
   @RequirePermissions(PERMISSIONS.USERS_VIEW, PERMISSIONS.ROLES_MANAGE)
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<RoleEntity> {
-    return this.rolesService.findById(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<RoleEntity> {
+    return this.rolesService.findById(id, user.companyId);
   }
 
   @Post()
@@ -35,7 +38,11 @@ export class RolesController {
 
   @Patch(':id')
   @RequirePermissions(PERMISSIONS.ROLES_MANAGE)
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateRoleDto): Promise<RoleEntity> {
-    return this.rolesService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateRoleDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<RoleEntity> {
+    return this.rolesService.update(id, user.companyId, dto);
   }
 }

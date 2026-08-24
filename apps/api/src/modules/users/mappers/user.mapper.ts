@@ -14,6 +14,7 @@ export class UserMapper {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      loginMethod: user.loginMethod,
       active: user.active,
       lastLoginAt: user.lastLoginAt,
       createdAt: user.createdAt,

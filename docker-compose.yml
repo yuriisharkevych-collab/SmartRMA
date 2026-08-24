@@ -29,6 +29,17 @@ services:
       timeout: 5s
       retries: 10
 
+  # Lokalny "przechwytywacz" SMTP do testowania modułu e-mail bez prawdziwej
+  # skrzynki — celowo BEZ `profiles:`, razem z db/redis na gołe `up -d`
+  # (tylko wysyłka lokalna dev, zero kosztu, nie zastępuje testu na prawdziwym
+  # SMTP/Resend przed wdrożeniem). UI podglądu wysłanych maili: http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   # `api`/`web` mają `profiles: [full]` — bez tego bare `docker compose up -d`
   # uruchamiałby wszystkie cztery serwisy, wliczając produkcyjne build API/web,
   # podczas gdy standardowy przepływ dev to: Docker WYŁĄCZNIE dla db+redis
@@ -53,6 +64,7 @@ services:
       JWT_PORTAL_SECRET: ${JWT_PORTAL_SECRET:-changeme-portal-secret}
       JWT_PORTAL_EXPIRES_IN: ${JWT_PORTAL_EXPIRES_IN:-30m}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-10}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY musi być ustawiony w .env}
     ports:
       - "3000:3000"
     depends_on:

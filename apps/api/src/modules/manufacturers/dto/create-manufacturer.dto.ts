@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SubmissionMethod } from '@prisma/client';
 import {
+  IsArray,
   IsBoolean,
   IsEmail,
   IsEnum,
@@ -58,4 +59,15 @@ export class CreateManufacturerDto {
   @ApiPropertyOptional() @IsOptional() @IsInt() maxPhotos?: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() maxAttachmentSizeMb?: number;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() active?: boolean;
+
+  /** Formularz publiczny per marka (np. Veres Meble) — patrz komentarz przy `Manufacturer.publicFormSlug` w schemacie. Puste = ten producent nie ma własnego formularza. */
+  @ApiPropertyOptional() @IsOptional() @IsString() publicFormSlug?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() publicFormDisplayName?: string;
+
+  /** Etap 3 — kategorie produktowe formularza publicznego marki, per producent (zastępuje dawny hardcoded `BRAND_PRODUCT_CATEGORIES`). */
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  productCategories?: string[];
 }

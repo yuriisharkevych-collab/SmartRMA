@@ -4,11 +4,27 @@ import { OrdersRepository } from './orders.repository';
 const WITH_ITEMS = { items: true };
 
 describe('OrdersRepository', () => {
-  let prisma: { order: { findUnique: jest.Mock; findMany: jest.Mock; create: jest.Mock; update: jest.Mock } };
+  let prisma: {
+    order: {
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
+  };
   let repository: OrdersRepository;
 
   beforeEach(() => {
-    prisma = { order: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() } };
+    prisma = {
+      order: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+    };
     repository = new OrdersRepository(prisma as unknown as PrismaService);
   });
 
@@ -21,16 +37,23 @@ describe('OrdersRepository', () => {
     });
   });
 
-  it('findById() dołącza pozycje zamówienia', async () => {
-    prisma.order.findUnique.mockResolvedValue(null);
-    await repository.findById('order-1');
-    expect(prisma.order.findUnique).toHaveBeenCalledWith({ where: { id: 'order-1' }, include: WITH_ITEMS });
+  it('findById() filtruje po id i companyId, dołącza pozycje zamówienia (IDOR — patrz audyt bezpieczeństwa)', async () => {
+    prisma.order.findFirst.mockResolvedValue(null);
+    await repository.findById('order-1', 'company-1');
+    expect(prisma.order.findFirst).toHaveBeenCalledWith({
+      where: { id: 'order-1', companyId: 'company-1' },
+      include: WITH_ITEMS,
+    });
   });
 
   it('findAllForCompany() filtruje po companyId i sortuje od najnowszej daty zamówienia', async () => {
     prisma.order.findMany.mockResolvedValue([]);
     await repository.findAllForCompany('company-1');
-    expect(prisma.order.findMany).toHaveBeenCalledWith({ where: { companyId: 'company-1' }, include: WITH_ITEMS, orderBy: { orderDate: 'desc' } });
+    expect(prisma.order.findMany).toHaveBeenCalledWith({
+      where: { companyId: 'company-1' },
+      include: WITH_ITEMS,
+      orderBy: { orderDate: 'desc' },
+    });
   });
 
   it('search() filtruje po companyId i częściowym dopasowaniu orderNumber (case-insensitive)', async () => {
@@ -43,10 +66,13 @@ describe('OrdersRepository', () => {
     });
   });
 
-  it('findAllForCustomer() filtruje po customerId', async () => {
+  it('findAllForCustomer() filtruje po customerId i companyId', async () => {
     prisma.order.findMany.mockResolvedValue([]);
-    await repository.findAllForCustomer('customer-1');
-    expect(prisma.order.findMany).toHaveBeenCalledWith({ where: { customerId: 'customer-1' }, include: WITH_ITEMS });
+    await repository.findAllForCustomer('customer-1', 'company-1');
+    expect(prisma.order.findMany).toHaveBeenCalledWith({
+      where: { customerId: 'customer-1', companyId: 'company-1' },
+      include: WITH_ITEMS,
+    });
   });
 
   it('create() dowiązuje companyId i tworzy zagnieżdżone OrderItem', async () => {

@@ -55,11 +55,18 @@ interface FormState {
   requiresProofOfPurchase: boolean;
   minPhotos: number;
   requiresVideo: boolean;
+  // Etap 3 — kategorie produktowe formularza publicznego marki, wpisywane jako lista
+  // rozdzielona przecinkami (ten sam wzorzec co progi SLA niżej: string w formularzu,
+  // sparsowany dopiero przy zapisie).
+  productCategoriesText: string;
   // SLA (progi dniowe; pusty string = brak progu)
   responseDays: string;
   repairDays: string;
   reminderAfterDays: string;
   escalationAfterDays: string;
+  // Przypomnienia o reakcji — nadpisanie wartości domyślnej firmy (pusty string = użyj wartości domyślnej)
+  statusStaleDaysOverride: string;
+  caseAgeStaleDaysOverride: string;
   // Logistics
   returnAddress: string;
   transportOrganizer: TransportOrganizer;
@@ -100,10 +107,13 @@ const EMPTY_FORM: FormState = {
   requiresProofOfPurchase: true,
   minPhotos: 0,
   requiresVideo: false,
+  productCategoriesText: '',
   responseDays: '',
   repairDays: '',
   reminderAfterDays: '',
   escalationAfterDays: '',
+  statusStaleDaysOverride: '',
+  caseAgeStaleDaysOverride: '',
   returnAddress: '',
   transportOrganizer: 'Klient',
   manufacturerProvidesLabel: false,
@@ -132,10 +142,13 @@ function formFromRecord(manufacturer: Manufacturer, contractor: Contractor | und
     complaintEmail: manufacturer.complaintEmail ?? '',
     minPhotos: manufacturer.minPhotos,
     requiresVideo: manufacturer.requiresVideo,
+    productCategoriesText: (manufacturer.productCategories ?? []).join(', '),
     responseDays: manufacturer.sla?.responseDays?.toString() ?? '',
     repairDays: manufacturer.sla?.repairDays?.toString() ?? '',
     reminderAfterDays: manufacturer.sla?.reminderAfterDays?.toString() ?? '',
     escalationAfterDays: manufacturer.sla?.escalationAfterDays?.toString() ?? '',
+    statusStaleDaysOverride: manufacturer.sla?.statusStaleDaysOverride?.toString() ?? '',
+    caseAgeStaleDaysOverride: manufacturer.sla?.caseAgeStaleDaysOverride?.toString() ?? '',
     portalUrl: manufacturer.portalUrl ?? '',
     portalLogin: manufacturer.portalLogin ?? '',
     complaintProcedure: manufacturer.complaintProcedure ?? '',
@@ -160,6 +173,87 @@ function formFromRecord(manufacturer: Manufacturer, contractor: Contractor | und
     autoCloseEnabled: manufacturer.automation?.autoCloseEnabled ?? false,
     autoCloseDays: manufacturer.automation?.autoCloseDays ?? 30,
   };
+}
+
+/**
+ * Etap 3 — nadpisania wymagań/SLA marki. Zasada właściciela: "Brand override →
+ * jeśli brak, dziedziczenie z Manufacturer" — stąd trójstanowy wybór dla pól
+ * logicznych ('' = dziedzicz, nie tylko `true`/`false`) zamiast zwykłego
+ * checkboxa, który nie potrafiłby wyrazić "brak nadpisania".
+ */
+type TriState = '' | 'true' | 'false';
+
+interface BrandOverrideFormState {
+  requiresSerialNumber: TriState;
+  requiresFrameNumber: TriState;
+  requiresProofOfPurchase: TriState;
+  minPhotos: string;
+  requiresVideo: TriState;
+  maxPhotos: string;
+  maxAttachmentSizeMb: string;
+  statusStaleDaysOverride: string;
+  caseAgeStaleDaysOverride: string;
+}
+
+const EMPTY_BRAND_OVERRIDE_FORM: BrandOverrideFormState = {
+  requiresSerialNumber: '',
+  requiresFrameNumber: '',
+  requiresProofOfPurchase: '',
+  minPhotos: '',
+  requiresVideo: '',
+  maxPhotos: '',
+  maxAttachmentSizeMb: '',
+  statusStaleDaysOverride: '',
+  caseAgeStaleDaysOverride: '',
+};
+
+function triStateFromBool(value: boolean | null): TriState {
+  return value === null ? '' : value ? 'true' : 'false';
+}
+
+function boolFromTriState(value: TriState): boolean | null {
+  return value === '' ? null : value === 'true';
+}
+
+function numberFromText(value: string): number | null {
+  return value.trim() === '' ? null : Number(value);
+}
+
+function brandOverrideFormFromRecord(brand: Brand): BrandOverrideFormState {
+  return {
+    requiresSerialNumber: triStateFromBool(brand.requiresSerialNumber),
+    requiresFrameNumber: triStateFromBool(brand.requiresFrameNumber),
+    requiresProofOfPurchase: triStateFromBool(brand.requiresProofOfPurchase),
+    minPhotos: brand.minPhotos?.toString() ?? '',
+    requiresVideo: triStateFromBool(brand.requiresVideo),
+    maxPhotos: brand.maxPhotos?.toString() ?? '',
+    maxAttachmentSizeMb: brand.maxAttachmentSizeMb?.toString() ?? '',
+    statusStaleDaysOverride: brand.statusStaleDaysOverride?.toString() ?? '',
+    caseAgeStaleDaysOverride: brand.caseAgeStaleDaysOverride?.toString() ?? '',
+  };
+}
+
+/** Pole wyboru dla nadpisań marki: `''` = dziedzicz z producenta, brak sposobu wyrazić to zwykłym checkboxem. */
+function TriStateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: TriState;
+  onChange: (value: TriState) => void;
+}) {
+  const id = `bo-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as TriState)}>
+        <option value="">Dziedzicz z producenta</option>
+        <option value="true">Tak</option>
+        <option value="false">Nie</option>
+      </select>
+    </div>
+  );
 }
 
 /**
@@ -194,6 +288,7 @@ export function ManufacturersPage() {
   const { hasPermission } = useAuth();
   const canManage = hasPermission('manufacturers.manage');
   const canManageBrands = hasPermission('brands.manage');
+  const canDelete = hasPermission('manufacturers.delete');
 
   const { data: manufacturers, isLoading } = useQuery({
     queryKey: ['manufacturers'],
@@ -223,7 +318,52 @@ export function ManufacturersPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [newBrandName, setNewBrandName] = useState('');
   const [pendingBrands, setPendingBrands] = useState<string[]>([]);
+
+  // Etap 3 — nadpisania wymagań/SLA JEDNEJ marki, osobny mały modal (9 pól nie
+  // mieści się w `window.prompt`, jak `renameBrand`).
+  const [overrideTarget, setOverrideTarget] = useState<Brand | null>(null);
+  const [overrideForm, setOverrideForm] =
+    useState<BrandOverrideFormState>(EMPTY_BRAND_OVERRIDE_FORM);
+  const [overrideError, setOverrideError] = useState<string | null>(null);
+
+  function openOverrideModal(brand: Brand) {
+    setOverrideTarget(brand);
+    setOverrideForm(brandOverrideFormFromRecord(brand));
+    setOverrideError(null);
+  }
+
+  const overrideMutation = useMutation({
+    mutationFn: async () => {
+      if (!overrideTarget) return;
+      await brandsApi.update(overrideTarget.id, {
+        requiresSerialNumber: boolFromTriState(overrideForm.requiresSerialNumber),
+        requiresFrameNumber: boolFromTriState(overrideForm.requiresFrameNumber),
+        requiresProofOfPurchase: boolFromTriState(overrideForm.requiresProofOfPurchase),
+        minPhotos: numberFromText(overrideForm.minPhotos),
+        requiresVideo: boolFromTriState(overrideForm.requiresVideo),
+        maxPhotos: numberFromText(overrideForm.maxPhotos),
+        maxAttachmentSizeMb: numberFromText(overrideForm.maxAttachmentSizeMb),
+        statusStaleDaysOverride: numberFromText(overrideForm.statusStaleDaysOverride),
+        caseAgeStaleDaysOverride: numberFromText(overrideForm.caseAgeStaleDaysOverride),
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['brands'] });
+      setOverrideTarget(null);
+      showToast('Wymagania marki zapisane.');
+    },
+    onError: (error: unknown) => {
+      setOverrideError(
+        isApiError(error)
+          ? (error.response?.data.error.message ?? 'Nie udało się zapisać.')
+          : 'Nie udało się zapisać.',
+      );
+    },
+  });
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Manufacturer | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -275,6 +415,10 @@ export function ManufacturersPage() {
         requiresFrameNumber: form.requiresFrameNumber,
         requiresProofOfPurchase: form.requiresProofOfPurchase,
         active: form.active,
+        productCategories: form.productCategoriesText
+          .split(',')
+          .map((c) => c.trim())
+          .filter(Boolean),
       };
 
       let manufacturerId: string;
@@ -320,6 +464,8 @@ export function ManufacturersPage() {
         repairDays: day(form.repairDays),
         reminderAfterDays: day(form.reminderAfterDays),
         escalationAfterDays: day(form.escalationAfterDays),
+        statusStaleDaysOverride: day(form.statusStaleDaysOverride),
+        caseAgeStaleDaysOverride: day(form.caseAgeStaleDaysOverride),
       });
 
       for (const brandName of pendingBrands) {
@@ -351,6 +497,29 @@ export function ManufacturersPage() {
       return;
     }
     saveMutation.mutate();
+  }
+
+  /** `manufacturers.delete` (RBAC.md §5) — TRWAŁE, nieodwracalne usunięcie. Zablokowane przez backend (MANUFACTURER-003), gdy producent ma przypisane produkty/marki. */
+  const deleteMutation = useMutation({
+    mutationFn: () => manufacturersApi.delete(deleteTarget!.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['manufacturers'] });
+      showToast('Producent trwale usunięty.');
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      setDeleteError(
+        isApiError(err)
+          ? (err.response?.data.error.message ?? 'Nie udało się usunąć producenta.')
+          : 'Nie udało się usunąć producenta.',
+      );
+    },
+  });
+
+  function openDelete(manufacturer: Manufacturer) {
+    setDeleteTarget(manufacturer);
+    setDeleteConfirmText('');
+    setDeleteError(null);
   }
 
   /** Zmiana nazwy zapisanej marki — literówka w nazwie producenta/marki jest częsta, a bez tego jedynym wyjściem było dodanie duplikatu. */
@@ -452,6 +621,7 @@ export function ManufacturersPage() {
                   <th>Sposób zgłoszenia</th>
                   <th>Wymagania</th>
                   <th>Status</th>
+                  {canDelete && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -490,6 +660,18 @@ export function ManufacturersPage() {
                           <span className="badge badge-gray">Nieaktywny</span>
                         )}
                       </td>
+                      {canDelete && (
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => openDelete(m)}
+                            title="Trwałe, nieodwracalne usunięcie producenta — wyłącznie do producentów testowych"
+                          >
+                            Usuń
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -625,22 +807,24 @@ export function ManufacturersPage() {
             </select>
           </div>
         </div>
-        <div className="form-grid">
-          <div className="field span-2">
-            <label htmlFor="mf-complaint-email">Adres e-mail do zgłoszeń reklamacyjnych</label>
-            <input
-              id="mf-complaint-email"
-              type="email"
-              placeholder="np. rma@producent.pl"
-              value={form.complaintEmail}
-              onChange={(e) => set('complaintEmail', e.target.value)}
-            />
-            <span className="hint">
-              Odrębny od kontaktu handlowego powyżej — wielu producentów ma osobną skrzynkę
-              reklamacyjną, a zgłoszenie wysłane na adres handlowy zostaje bez odpowiedzi.
-            </span>
+        {form.submissionMethod === 'Email' && (
+          <div className="form-grid">
+            <div className="field span-2">
+              <label htmlFor="mf-complaint-email">Adres e-mail do zgłoszeń reklamacyjnych</label>
+              <input
+                id="mf-complaint-email"
+                type="email"
+                placeholder="np. rma@producent.pl"
+                value={form.complaintEmail}
+                onChange={(e) => set('complaintEmail', e.target.value)}
+              />
+              <span className="hint">
+                Odrębny od kontaktu handlowego powyżej — wielu producentów ma osobną skrzynkę
+                reklamacyjną, a zgłoszenie wysłane na adres handlowy zostaje bez odpowiedzi.
+              </span>
+            </div>
           </div>
-        </div>
+        )}
         {form.submissionMethod === 'PortalB2B' && (
           <div className="form-grid">
             <div className="field span-2">
@@ -665,6 +849,24 @@ export function ManufacturersPage() {
                 Hasło do portalu producenta nie jest jeszcze obsługiwane — wymaga szyfrowania
                 aplikacyjnego po stronie backendu (niezrealizowane), a przyjmowanie go jawnym
                 tekstem byłoby gorsze niż brak tego pola.
+              </span>
+            </div>
+          </div>
+        )}
+        {form.submissionMethod === 'FormularzWWW' && (
+          <div className="form-grid">
+            <div className="field span-2">
+              <label htmlFor="mf-portal">Link do formularza WWW</label>
+              <input
+                id="mf-portal"
+                type="text"
+                placeholder="https://"
+                value={form.portalUrl}
+                onChange={(e) => set('portalUrl', e.target.value)}
+              />
+              <span className="hint">
+                Adres formularza zgłoszeniowego producenta — pracownik zostanie tam skierowany
+                zamiast wpisywać osobny adres e-mail.
               </span>
             </div>
           </div>
@@ -730,6 +932,22 @@ export function ManufacturersPage() {
               onChange={(e) => set('maxAttachmentSizeMb', Number(e.target.value))}
             />
           </div>
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <label htmlFor="mf-product-categories">
+              Kategorie produktowe formularza publicznego marki (oddzielone przecinkami)
+            </label>
+            <input
+              id="mf-product-categories"
+              type="text"
+              value={form.productCategoriesText}
+              onChange={(e) => set('productCategoriesText', e.target.value)}
+              placeholder="np. Łóżeczka, Komody, Szafy, Inne"
+            />
+            <span className="field-hint-static">
+              Krok "Kategoria produktu" formularza {'/reklamacja-marka/…'} tego producenta — pusta
+              lista = ten krok nie ma z czego wybierać.
+            </span>
+          </div>
           <div className="field">
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 500 }}>
               <input
@@ -791,10 +1009,11 @@ export function ManufacturersPage() {
           </div>
         </div>
         <p className="hint" style={{ marginTop: -8 }}>
-          Te wymagania są <strong>egzekwowane przez system</strong>, nie tylko opisowe: numer
-          seryjny, numer ramy i dowód zakupu blokują zapis reklamacji (CASE-004/005/006), a
-          minimalna liczba zdjęć i film blokują wysłanie sprawy do producenta (CASE-002). Pola
-          tekstowe powyżej są wyłącznie podpowiedzią dla pracownika.
+          Te wymagania są <strong>pilnowane automatycznie</strong>: numer seryjny, numer ramy i
+          dowód zakupu muszą być podane, zanim reklamację będzie można zapisać, a minimalna liczba
+          zdjęć i film muszą być skompletowane, zanim sprawę będzie można wysłać do producenta. Pola
+          tekstowe „Wymagane dokumenty/zdjęcia/filmy" wyżej to tylko podpowiedź dla pracownika —
+          same w sobie niczego nie blokują.
         </p>
 
         <div className="modal-section-label">SLA — terminy producenta</div>
@@ -841,9 +1060,40 @@ export function ManufacturersPage() {
           </div>
         </div>
         <p className="hint" style={{ marginTop: -8 }}>
-          Puste pole = próg wyłączony dla tego producenta (np. „brak przypomnień"). To zastępuje
-          przełączniki „Automatyczne przypomnienia" i „Automatyczne eskalacje" z prototypu — jedno
-          źródło prawdy zamiast flagi i progu, które mogłyby się rozjechać.
+          Puste pole = wyłączone dla tego producenta (np. brak automatycznych przypomnień lub
+          eskalacji).
+        </p>
+
+        <div className="modal-section-label">
+          Przypomnienia o reakcji — nadpisanie dla tego producenta
+        </div>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="mf-attention-status">Brak zmiany statusu przez (dni)</label>
+            <input
+              id="mf-attention-status"
+              type="number"
+              min={1}
+              placeholder="Wartość domyślna"
+              value={form.statusStaleDaysOverride}
+              onChange={(e) => set('statusStaleDaysOverride', e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="mf-attention-age">Dni od zgłoszenia reklamacji</label>
+            <input
+              id="mf-attention-age"
+              type="number"
+              min={1}
+              placeholder="Wartość domyślna"
+              value={form.caseAgeStaleDaysOverride}
+              onChange={(e) => set('caseAgeStaleDaysOverride', e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="hint" style={{ marginTop: -8 }}>
+          Puste pole = użyj wartości domyślnej firmy (Ustawienia → Przypomnienia). Wypełnienie tutaj
+          nadpisuje tę wartość wyłącznie dla spraw tego producenta.
         </p>
 
         <div className="modal-section-label">Logistyka</div>
@@ -1001,10 +1251,9 @@ export function ManufacturersPage() {
           </div>
         </div>
         <p className="hint" style={{ marginTop: -8 }}>
-          Przypomnienia i eskalacje konfiguruje się progami dniowymi SLA producenta
-          (`reminderAfterDays`/`escalationAfterDays`, brak progu = wyłączone), nie osobnymi
-          przełącznikami — jedno źródło prawdy zamiast flagi i progu, które mogłyby się rozjechać.
-          Samo wykonywanie automatyzacji wymaga harmonogramu zadań (jeszcze nie zaimplementowanego).
+          Przypomnienia i eskalacje ustawia się progami dniowymi w sekcji „SLA — terminy producenta"
+          powyżej (puste pole = wyłączone), a nie osobnymi przełącznikami. Uwaga: automatyczne
+          wykonywanie tych akcji nie jest jeszcze aktywne w systemie.
         </p>
 
         {canManageBrands && (
@@ -1037,6 +1286,14 @@ export function ManufacturersPage() {
                       onClick={() => renameBrand(brand)}
                     >
                       {brand.name}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Nadpisz wymagania marki ${brand.name}`}
+                      title="Nadpisz wymagania/SLA tej marki (domyślnie dziedziczy z producenta)"
+                      onClick={() => openOverrideModal(brand)}
+                    >
+                      ⚙
                     </button>
                     <button
                       type="button"
@@ -1094,13 +1351,168 @@ export function ManufacturersPage() {
               </div>
               <span className="hint">
                 Marki przypisane do tego producenta podpowiadają go automatycznie przy rejestracji
-                reklamacji. Nowe marki zapisują się razem z producentem; marek już zapisanych ten
-                ekran nie usuwa (API nie ma operacji usunięcia marki — `Brand.active` jest jedynym
-                udokumentowanym mechanizmem).
+                reklamacji. Nowe marki zapisują się razem z producentem; usuwanie już zapisanych
+                marek nie jest tu dostępne.
               </span>
             </div>
           </>
         )}
+      </Modal>
+
+      {/* --- Modal: nadpisania wymagań/SLA marki (Etap 3) --- */}
+      <Modal
+        open={overrideTarget !== null}
+        title={`Wymagania marki „${overrideTarget?.name ?? ''}”`}
+        onClose={() => setOverrideTarget(null)}
+        error={overrideError}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setOverrideTarget(null)}>
+              Anuluj
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => overrideMutation.mutate()}
+              disabled={overrideMutation.isPending}
+            >
+              {overrideMutation.isPending ? 'Zapisywanie…' : 'Zapisz'}
+            </button>
+          </>
+        }
+      >
+        <p className="field-hint-static" style={{ marginTop: 0, marginBottom: 14 }}>
+          Domyślnie ("Dziedzicz z producenta") ta marka korzysta z wymagań producenta powyżej. Zmień
+          wybrane pola tylko tam, gdzie ta konkretna marka ma się różnić.
+        </p>
+        <div className="form-grid">
+          <TriStateField
+            label="Wymagany numer seryjny"
+            value={overrideForm.requiresSerialNumber}
+            onChange={(v) => setOverrideForm((f) => ({ ...f, requiresSerialNumber: v }))}
+          />
+          <TriStateField
+            label="Wymagany numer ramy"
+            value={overrideForm.requiresFrameNumber}
+            onChange={(v) => setOverrideForm((f) => ({ ...f, requiresFrameNumber: v }))}
+          />
+          <TriStateField
+            label="Wymagany dowód zakupu"
+            value={overrideForm.requiresProofOfPurchase}
+            onChange={(v) => setOverrideForm((f) => ({ ...f, requiresProofOfPurchase: v }))}
+          />
+          <TriStateField
+            label="Wymagany film"
+            value={overrideForm.requiresVideo}
+            onChange={(v) => setOverrideForm((f) => ({ ...f, requiresVideo: v }))}
+          />
+          <div className="field">
+            <label htmlFor="bo-min-photos">Min. liczba zdjęć</label>
+            <input
+              id="bo-min-photos"
+              type="number"
+              min={0}
+              placeholder="dziedzicz"
+              value={overrideForm.minPhotos}
+              onChange={(e) => setOverrideForm((f) => ({ ...f, minPhotos: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="bo-max-photos">Maks. liczba zdjęć</label>
+            <input
+              id="bo-max-photos"
+              type="number"
+              min={0}
+              placeholder="dziedzicz"
+              value={overrideForm.maxPhotos}
+              onChange={(e) => setOverrideForm((f) => ({ ...f, maxPhotos: e.target.value }))}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="bo-max-size">Maks. rozmiar załączników (MB)</label>
+            <input
+              id="bo-max-size"
+              type="number"
+              min={0}
+              placeholder="dziedzicz"
+              value={overrideForm.maxAttachmentSizeMb}
+              onChange={(e) =>
+                setOverrideForm((f) => ({ ...f, maxAttachmentSizeMb: e.target.value }))
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="bo-status-stale">Próg "brak zmiany statusu" (dni)</label>
+            <input
+              id="bo-status-stale"
+              type="number"
+              min={0}
+              placeholder="dziedzicz"
+              value={overrideForm.statusStaleDaysOverride}
+              onChange={(e) =>
+                setOverrideForm((f) => ({ ...f, statusStaleDaysOverride: e.target.value }))
+              }
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="bo-age-stale">Próg "dni od zgłoszenia" (dni)</label>
+            <input
+              id="bo-age-stale"
+              type="number"
+              min={0}
+              placeholder="dziedzicz"
+              value={overrideForm.caseAgeStaleDaysOverride}
+              onChange={(e) =>
+                setOverrideForm((f) => ({ ...f, caseAgeStaleDaysOverride: e.target.value }))
+              }
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* --- Modal: TRWAŁE usunięcie (RBAC.md §5, wyłącznie Administrator) --- */}
+      <Modal
+        open={deleteTarget !== null}
+        title={`Trwale usunąć producenta „${contractorById.get(deleteTarget?.contractorId ?? '')?.name ?? ''}”?`}
+        onClose={() => setDeleteTarget(null)}
+        error={deleteError}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>
+              Wróć
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => deleteMutation.mutate()}
+              disabled={
+                deleteConfirmText.trim() !==
+                  (contractorById.get(deleteTarget?.contractorId ?? '')?.name ?? '') ||
+                deleteMutation.isPending
+              }
+            >
+              {deleteMutation.isPending ? 'Usuwanie…' : 'Usuń trwale'}
+            </button>
+          </>
+        }
+      >
+        <p className="field-error" role="alert" style={{ display: 'block', marginBottom: 14 }}>
+          Tej operacji NIE da się cofnąć. Zablokowana automatycznie, jeśli producent ma przypisane
+          produkty lub marki — w takim wypadku dezaktywuj go zamiast usuwać.
+        </p>
+        <div className="field">
+          <label htmlFor="mf-delete-confirm">
+            Wpisz nazwę producenta{' '}
+            <strong>{contractorById.get(deleteTarget?.contractorId ?? '')?.name ?? ''}</strong>, aby
+            potwierdzić
+          </label>
+          <input
+            id="mf-delete-confirm"
+            type="text"
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder={contractorById.get(deleteTarget?.contractorId ?? '')?.name ?? ''}
+            autoComplete="off"
+          />
+        </div>
       </Modal>
     </div>
   );

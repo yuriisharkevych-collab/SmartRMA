@@ -26,10 +26,17 @@ export class ProductsController {
 
   @Get('products')
   @RequirePermissions(PERMISSIONS.PRODUCTS_VIEW)
-  @ApiOperation({ summary: 'Lista/wyszukiwanie produktów katalogu', description: 'Bez `query` — pełna lista firmy. Z `query` — wyszukiwanie po nazwie/SKU/kategorii.' })
+  @ApiOperation({
+    summary: 'Lista/wyszukiwanie produktów katalogu',
+    description:
+      'Bez `query` — pełna lista firmy. Z `query` — wyszukiwanie po nazwie/SKU/kategorii.',
+  })
   @ApiResponse({ status: 200, description: 'Lista produktów.', type: [ProductEntity] })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `products.view`.' })
-  findAll(@CurrentUser() user: AuthenticatedUser, @Query() query: SearchCatalogDto): Promise<ProductEntity[]> {
+  findAll(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: SearchCatalogDto,
+  ): Promise<ProductEntity[]> {
     return query.query
       ? this.productsService.searchProducts(user.companyId, query.query)
       : this.productsService.listProducts(user.companyId);
@@ -39,21 +46,33 @@ export class ProductsController {
   @RequirePermissions(PERMISSIONS.PRODUCTS_VIEW)
   @ApiOperation({ summary: 'Szczegóły pozycji katalogowej' })
   @ApiResponse({ status: 200, description: 'Produkt znaleziony.', type: ProductEntity })
-  @ApiResponse({ status: 404, description: 'Nie znaleziono produktu (brak dedykowanego kodu PRODUCT-* w ERROR_CODES.md).' })
+  @ApiResponse({
+    status: 404,
+    description: 'Nie znaleziono produktu (brak dedykowanego kodu PRODUCT-* w ERROR_CODES.md).',
+  })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `products.view`.' })
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<ProductEntity> {
-    return this.productsService.findById(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ProductEntity> {
+    return this.productsService.findById(id, user.companyId);
   }
 
   @Post('products')
   @RequirePermissions(PERMISSIONS.PRODUCTS_MANAGE)
-  @ApiOperation({ summary: 'Dodanie pozycji katalogowej', description: 'BR-074 — Product to typ/model, nie egzemplarz zakupiony (ten żyje na OrderItem).' })
+  @ApiOperation({
+    summary: 'Dodanie pozycji katalogowej',
+    description: 'BR-074 — Product to typ/model, nie egzemplarz zakupiony (ten żyje na OrderItem).',
+  })
   @ApiBody({ type: CreateProductDto })
   @ApiResponse({ status: 201, description: 'Produkt utworzony.', type: ProductEntity })
   @ApiResponse({ status: 404, description: 'Nie znaleziono `manufacturerId`/`brandId`.' })
   @ApiResponse({ status: 422, description: 'VALIDATION-001 — pola wymagane.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `products.manage`.' })
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductDto): Promise<ProductEntity> {
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateProductDto,
+  ): Promise<ProductEntity> {
     return this.productsService.createProduct(user.companyId, dto, user.userId);
   }
 
@@ -69,15 +88,21 @@ export class ProductsController {
     @Body() dto: UpdateProductDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ProductEntity> {
-    return this.productsService.updateProduct(id, dto, user.userId);
+    return this.productsService.updateProduct(id, user.companyId, dto, user.userId);
   }
 
   @Get('brands')
   @RequirePermissions(PERMISSIONS.BRANDS_MANAGE)
-  @ApiOperation({ summary: 'Lista/wyszukiwanie marek', description: 'Bez `query` — pełna lista firmy. Z `query` — wyszukiwanie po nazwie.' })
+  @ApiOperation({
+    summary: 'Lista/wyszukiwanie marek',
+    description: 'Bez `query` — pełna lista firmy. Z `query` — wyszukiwanie po nazwie.',
+  })
   @ApiResponse({ status: 200, description: 'Lista marek.', type: [BrandEntity] })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `brands.manage`.' })
-  findAllBrands(@CurrentUser() user: AuthenticatedUser, @Query() query: SearchCatalogDto): Promise<BrandEntity[]> {
+  findAllBrands(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: SearchCatalogDto,
+  ): Promise<BrandEntity[]> {
     return query.query
       ? this.productsService.searchBrands(user.companyId, query.query)
       : this.productsService.listBrands(user.companyId);
@@ -87,20 +112,32 @@ export class ProductsController {
   @RequirePermissions(PERMISSIONS.BRANDS_MANAGE)
   @ApiOperation({ summary: 'Szczegóły marki' })
   @ApiResponse({ status: 200, description: 'Marka znaleziona.', type: BrandEntity })
-  @ApiResponse({ status: 404, description: 'Nie znaleziono marki (brak dedykowanego kodu BRAND-* w ERROR_CODES.md).' })
+  @ApiResponse({
+    status: 404,
+    description: 'Nie znaleziono marki (brak dedykowanego kodu BRAND-* w ERROR_CODES.md).',
+  })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `brands.manage`.' })
-  findOneBrand(@Param('id', ParseUUIDPipe) id: string): Promise<BrandEntity> {
-    return this.productsService.findBrandById(id);
+  findOneBrand(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BrandEntity> {
+    return this.productsService.findBrandById(id, user.companyId);
   }
 
   @Post('brands')
   @RequirePermissions(PERMISSIONS.BRANDS_MANAGE)
-  @ApiOperation({ summary: 'Utworzenie marki', description: 'BR-076 — marka jest polem pomocniczym przy wyborze producenta, nie zastępuje go.' })
+  @ApiOperation({
+    summary: 'Utworzenie marki',
+    description: 'BR-076 — marka jest polem pomocniczym przy wyborze producenta, nie zastępuje go.',
+  })
   @ApiBody({ type: CreateBrandDto })
   @ApiResponse({ status: 201, description: 'Marka utworzona.', type: BrandEntity })
   @ApiResponse({ status: 404, description: 'Nie znaleziono `manufacturerId`.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `brands.manage`.' })
-  createBrand(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateBrandDto): Promise<BrandEntity> {
+  createBrand(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateBrandDto,
+  ): Promise<BrandEntity> {
     return this.productsService.createBrand(user.companyId, dto, user.userId);
   }
 
@@ -116,6 +153,6 @@ export class ProductsController {
     @Body() dto: UpdateBrandDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<BrandEntity> {
-    return this.productsService.updateBrand(id, dto, user.userId);
+    return this.productsService.updateBrand(id, user.companyId, dto, user.userId);
   }
 }

@@ -30,15 +30,23 @@ export class CaseCreatedNotificationHandler {
 
   @DomainEventHandler(EVENT_NAMES.CASE_CREATED)
   async handle(event: DomainEvent<CaseCreatedPayload>): Promise<void> {
-    const isFirst = await this.idempotencyService.tryMarkProcessed(event.eventId, CaseCreatedNotificationHandler.name);
+    const isFirst = await this.idempotencyService.tryMarkProcessed(
+      event.eventId,
+      CaseCreatedNotificationHandler.name,
+    );
     if (!isFirst) return;
 
-    const caseEntity = await this.casesService.findById(event.aggregateId);
+    const caseEntity = await this.casesService.findById(event.aggregateId, event.companyId);
     if (!caseEntity.clientPortalEnabled) return;
 
-    const customer = await this.customersService.findById(event.payload.customerId);
+    const customer = await this.customersService.findById(
+      event.payload.customerId,
+      event.companyId,
+    );
     const firstItem = caseEntity.items[0];
-    const productName = firstItem ? (await this.productsService.findById(firstItem.productId)).name : '';
+    const productName = firstItem
+      ? (await this.productsService.findById(firstItem.productId, event.companyId)).name
+      : '';
 
     await this.notificationsService.createNotificationFromTemplate({
       companyId: caseEntity.companyId,
@@ -47,7 +55,12 @@ export class CaseCreatedNotificationHandler {
       recipientType: NotificationRecipientType.Customer,
       recipientEmail: customer.email ?? undefined,
       relatedCaseId: caseEntity.id,
-      variables: { caseNumber: caseEntity.caseNumber, customerName: `${customer.firstName} ${customer.lastName}`, productModel: productName },
+      senderNameOverride: caseEntity.notificationSenderName ?? undefined,
+      variables: {
+        caseNumber: caseEntity.caseNumber,
+        customerName: `${customer.firstName} ${customer.lastName}`,
+        productModel: productName,
+      },
     });
   }
 }

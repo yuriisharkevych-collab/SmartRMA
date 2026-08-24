@@ -82,12 +82,12 @@ describe('ProductsService', () => {
   describe('findById', () => {
     it('rzuca NotFoundException, gdy produkt nie istnieje (brak kodu PRODUCT-* w ERROR_CODES.md)', async () => {
       productsRepository.findById.mockResolvedValue(null);
-      await expect(service.findById('brak')).rejects.toThrow(NotFoundException);
+      await expect(service.findById('brak', 'company-1')).rejects.toThrow(NotFoundException);
     });
 
     it('zwraca ProductEntity, gdy produkt istnieje', async () => {
       productsRepository.findById.mockResolvedValue(buildProduct());
-      const result = await service.findById('product-1');
+      const result = await service.findById('product-1', 'company-1');
       expect(result.id).toBe('product-1');
     });
   });
@@ -109,24 +109,38 @@ describe('ProductsService', () => {
   describe('createProduct', () => {
     it('weryfikuje istnienie manufacturerId PRZED zapisem — 404, gdy producent nie istnieje', async () => {
       manufacturersService.findById.mockRejectedValue(new NotFoundException());
-      await expect(service.createProduct('company-1', { manufacturerId: 'brak', name: 'X' }, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.createProduct('company-1', { manufacturerId: 'brak', name: 'X' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(productsRepository.create).not.toHaveBeenCalled();
     });
 
     it('weryfikuje istnienie brandId, gdy podane — 404, gdy marka nie istnieje', async () => {
       productsRepository.findBrandById.mockResolvedValue(null);
       await expect(
-        service.createProduct('company-1', { manufacturerId: 'manufacturer-1', name: 'X', brandId: 'brak' }, 'user-1'),
+        service.createProduct(
+          'company-1',
+          { manufacturerId: 'manufacturer-1', name: 'X', brandId: 'brak' },
+          'user-1',
+        ),
       ).rejects.toThrow(NotFoundException);
       expect(productsRepository.create).not.toHaveBeenCalled();
     });
 
     it('NIE wymusza spójności brandId/manufacturerId (BR-076 — marka sugeruje, nie wymusza)', async () => {
-      productsRepository.findBrandById.mockResolvedValue(buildBrand({ manufacturerId: 'inny-producent' }));
-      productsRepository.create.mockResolvedValue(buildProduct({ brandId: 'brand-1', manufacturerId: 'manufacturer-1' }));
+      productsRepository.findBrandById.mockResolvedValue(
+        buildBrand({ manufacturerId: 'inny-producent' }),
+      );
+      productsRepository.create.mockResolvedValue(
+        buildProduct({ brandId: 'brand-1', manufacturerId: 'manufacturer-1' }),
+      );
 
       await expect(
-        service.createProduct('company-1', { manufacturerId: 'manufacturer-1', name: 'X', brandId: 'brand-1' }, 'user-1'),
+        service.createProduct(
+          'company-1',
+          { manufacturerId: 'manufacturer-1', name: 'X', brandId: 'brand-1' },
+          'user-1',
+        ),
       ).resolves.toBeDefined();
     });
 
@@ -134,11 +148,21 @@ describe('ProductsService', () => {
       const product = buildProduct();
       productsRepository.create.mockResolvedValue(product);
 
-      const result = await service.createProduct('company-1', { manufacturerId: 'manufacturer-1', name: 'Rower X' }, 'user-1');
+      const result = await service.createProduct(
+        'company-1',
+        { manufacturerId: 'manufacturer-1', name: 'Rower X' },
+        'user-1',
+      );
 
       expect(result.id).toBe('product-1');
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ companyId: 'company-1', userId: 'user-1', action: 'PRODUCT_CREATED', entityType: 'Product', entityId: 'product-1' }),
+        expect.objectContaining({
+          companyId: 'company-1',
+          userId: 'user-1',
+          action: 'PRODUCT_CREATED',
+          entityType: 'Product',
+          entityId: 'product-1',
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.PRODUCT_CREATED);
@@ -149,7 +173,9 @@ describe('ProductsService', () => {
   describe('updateProduct', () => {
     it('rzuca NotFoundException, gdy produkt docelowy nie istnieje', async () => {
       productsRepository.findById.mockResolvedValue(null);
-      await expect(service.updateProduct('brak', { name: 'X' }, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateProduct('brak', 'company-1', { name: 'X' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(productsRepository.update).not.toHaveBeenCalled();
     });
 
@@ -158,7 +184,7 @@ describe('ProductsService', () => {
       productsRepository.findById.mockResolvedValue(before);
       productsRepository.update.mockResolvedValue(before);
 
-      await service.updateProduct('product-1', { name: before.name }, 'user-1');
+      await service.updateProduct('product-1', 'company-1', { name: before.name }, 'user-1');
 
       expect(auditRepository.create).not.toHaveBeenCalled();
       expect(eventBus.publish).not.toHaveBeenCalled();
@@ -170,10 +196,14 @@ describe('ProductsService', () => {
       productsRepository.findById.mockResolvedValue(before);
       productsRepository.update.mockResolvedValue(after);
 
-      await service.updateProduct('product-1', { name: 'Rower X2' }, 'user-1');
+      await service.updateProduct('product-1', 'company-1', { name: 'Rower X2' }, 'user-1');
 
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'PRODUCT_UPDATED', previousValue: { name: 'Rower X' }, newValue: { name: 'Rower X2' } }),
+        expect.objectContaining({
+          action: 'PRODUCT_UPDATED',
+          previousValue: { name: 'Rower X' },
+          newValue: { name: 'Rower X2' },
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.PRODUCT_UPDATED);
@@ -184,14 +214,16 @@ describe('ProductsService', () => {
   describe('findBrandById', () => {
     it('rzuca NotFoundException, gdy marka nie istnieje', async () => {
       productsRepository.findBrandById.mockResolvedValue(null);
-      await expect(service.findBrandById('brak')).rejects.toThrow(NotFoundException);
+      await expect(service.findBrandById('brak', 'company-1')).rejects.toThrow(NotFoundException);
     });
   });
 
   describe('createBrand', () => {
     it('weryfikuje istnienie manufacturerId PRZED zapisem', async () => {
       manufacturersService.findById.mockRejectedValue(new NotFoundException());
-      await expect(service.createBrand('company-1', { manufacturerId: 'brak', name: 'Acme' }, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.createBrand('company-1', { manufacturerId: 'brak', name: 'Acme' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(productsRepository.createBrand).not.toHaveBeenCalled();
     });
 
@@ -199,11 +231,19 @@ describe('ProductsService', () => {
       const brand = buildBrand();
       productsRepository.createBrand.mockResolvedValue(brand);
 
-      const result = await service.createBrand('company-1', { manufacturerId: 'manufacturer-1', name: 'Acme' }, 'user-1');
+      const result = await service.createBrand(
+        'company-1',
+        { manufacturerId: 'manufacturer-1', name: 'Acme' },
+        'user-1',
+      );
 
       expect(result.id).toBe('brand-1');
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'BRAND_CREATED', entityType: 'Brand', entityId: 'brand-1' }),
+        expect.objectContaining({
+          action: 'BRAND_CREATED',
+          entityType: 'Brand',
+          entityId: 'brand-1',
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.BRAND_CREATED);
@@ -214,7 +254,9 @@ describe('ProductsService', () => {
   describe('updateBrand', () => {
     it('rzuca NotFoundException, gdy marka docelowa nie istnieje', async () => {
       productsRepository.findBrandById.mockResolvedValue(null);
-      await expect(service.updateBrand('brak', { name: 'X' }, 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.updateBrand('brak', 'company-1', { name: 'X' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(productsRepository.updateBrand).not.toHaveBeenCalled();
     });
 
@@ -224,10 +266,14 @@ describe('ProductsService', () => {
       productsRepository.findBrandById.mockResolvedValue(before);
       productsRepository.updateBrand.mockResolvedValue(after);
 
-      await service.updateBrand('brand-1', { name: 'Acme Corp' }, 'user-1');
+      await service.updateBrand('brand-1', 'company-1', { name: 'Acme Corp' }, 'user-1');
 
       expect(auditRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'BRAND_UPDATED', previousValue: { name: 'Acme' }, newValue: { name: 'Acme Corp' } }),
+        expect.objectContaining({
+          action: 'BRAND_UPDATED',
+          previousValue: { name: 'Acme' },
+          newValue: { name: 'Acme Corp' },
+        }),
       );
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.BRAND_UPDATED);

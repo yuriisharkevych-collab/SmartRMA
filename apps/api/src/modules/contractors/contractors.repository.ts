@@ -13,11 +13,15 @@ export class ContractorsRepository {
     return this.prisma.contractor.findMany({ where: { companyId }, include: WITH_PROFILE });
   }
 
-  findById(id: string): Promise<ContractorWithProfile | null> {
-    return this.prisma.contractor.findUnique({ where: { id }, include: WITH_PROFILE });
+  /** `companyId` obowiązkowy — bez niego administrator jednej firmy mógłby odczytać/edytować kontrahenta innej firmy, znając samo UUID (IDOR, patrz audyt bezpieczeństwa). */
+  findById(id: string, companyId: string): Promise<ContractorWithProfile | null> {
+    return this.prisma.contractor.findFirst({ where: { id, companyId }, include: WITH_PROFILE });
   }
 
-  create(companyId: string, data: Omit<Prisma.ContractorUncheckedCreateInput, 'companyId'>): Promise<ContractorWithProfile> {
+  create(
+    companyId: string,
+    data: Omit<Prisma.ContractorUncheckedCreateInput, 'companyId'>,
+  ): Promise<ContractorWithProfile> {
     return this.prisma.contractor.create({ data: { ...data, companyId }, include: WITH_PROFILE });
   }
 

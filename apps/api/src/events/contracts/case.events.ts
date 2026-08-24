@@ -1,6 +1,5 @@
 import {
   CasePriority,
-  CaseStatus,
   ComplaintSource,
   ComplaintType,
   Decision,
@@ -27,12 +26,21 @@ export interface CaseCreatedPayload {
 }
 
 export interface CaseStatusChangedPayload {
-  previousStatus: CaseStatus;
-  newStatus: CaseStatus;
+  /** Kod z per-firma katalogu `CaseStatusDefinition.code` (Status Workflow Refactor) — NIE enum, patrz komentarz przy `Case.status` w schema.prisma. */
+  previousStatus: string;
+  newStatus: string;
   complaintType: ComplaintType;
-  /** true = wykonane przez Scheduler (actorUserId=null), nie przez człowieka. */
-  automatic: boolean;
   caseHistoryId: string;
+  /** `CasesService.changeStatus` — pracownik mógł zrezygnować z automatycznego e-maila do klienta przy tym konkretnym przejściu. Domyślnie `true`. */
+  notifyCustomer: boolean;
+  /**
+   * Status Workflow Refactor — "Anulowana" nie jest już osobnym statusem
+   * (folded w "Zakonczona", rozróżnienie przez `Case.cancelledAt`). Ta flaga
+   * pozwala handlerowi powiadomień wybrać `case.cancelled.customer` zamiast
+   * `case.closed.customer`, mimo że `newStatus` jest w obu przypadkach
+   * tym samym kodem.
+   */
+  cancelled?: boolean;
 }
 
 export interface CaseDecisionSetPayload {
@@ -46,13 +54,6 @@ export interface CaseInfoRequestedPayload {
   requestedItems: string[];
   messageText: string;
   caseHistoryId: string;
-}
-
-export interface CaseCustomerRepliedPayload {
-  messageId: string;
-  channel: MessageChannel;
-  /** Status, do którego wraca sprawa po wyjściu z OczekiwanieNaKlienta (WORKFLOW.md §4). */
-  restoredStatus: CaseStatus;
 }
 
 export interface CaseOwnerChangedPayload {

@@ -1,12 +1,19 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { CaseStatusesModule } from '../case-statuses/case-statuses.module';
 import { CompaniesModule } from '../companies/companies.module';
+import { CompanySettingsModule } from '../company-settings/company-settings.module';
+import { ContractorsModule } from '../contractors/contractors.module';
 import { CustomersModule } from '../customers/customers.module';
 import { DocumentsModule } from '../documents/documents.module';
 import { ManufacturersModule } from '../manufacturers/manufacturers.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { OrdersModule } from '../orders/orders.module';
+import { PartnershipsModule } from '../partnerships/partnerships.module';
 import { ProductsModule } from '../products/products.module';
 import { UsersModule } from '../users/users.module';
+import { CaseAttentionScannerService } from './case-attention-scanner.service';
+import { CaseConsentRepository } from './case-consent.repository';
 import { CaseHistoryRepository } from './case-history.repository';
 import { CaseItemsRepository } from './case-items.repository';
 import { CasesController } from './cases.controller';
@@ -32,17 +39,26 @@ import { NotesRepository } from './notes.repository';
 @Module({
   imports: [
     AuditModule,
+    CaseStatusesModule,
     CustomersModule,
     CompaniesModule,
+    CompanySettingsModule,
+    ContractorsModule,
     ProductsModule,
     OrdersModule,
     ManufacturersModule,
+    PartnershipsModule,
     forwardRef(() => UsersModule),
     // `DocumentsModule` importuje `CasesModule` (potrzebuje `CasesService`), a teraz
     // `CasesService` potrzebuje `DocumentsRepository` do kontroli CASE-002 — cykl na
     // poziomie MODUŁÓW, rozwiązany `forwardRef` po obu stronach. Graf PROVIDERÓW
     // pozostaje acykliczny: `DocumentsRepository → PrismaService`, bez powrotu do Cases.
     forwardRef(() => DocumentsModule),
+    // `NotificationsModule` importuje `CasesModule` (kontekst dla handlerów zdarzeń), a
+    // `CasesService.enablePortal` woła `NotificationsService` bezpośrednio (e-mail z
+    // jednorazowym kodem dostępu, patrz doc-comment `createNotificationFromTemplate`) —
+    // ten sam wzorzec `forwardRef` po obu stronach co `DocumentsModule` powyżej.
+    forwardRef(() => NotificationsModule),
   ],
   controllers: [CasesController],
   providers: [
@@ -52,7 +68,18 @@ import { NotesRepository } from './notes.repository';
     CaseHistoryRepository,
     NotesRepository,
     MessagesRepository,
+    CaseConsentRepository,
+    CaseAttentionScannerService,
   ],
-  exports: [CasesService, CasesRepository, CaseHistoryRepository, MessagesRepository],
+  // `CaseConsentRepository` — współdzielone przez Portal Klienta i Publiczny Formularz
+  // Reklamacyjny (oba tworzą/czytają zgody RODO powiązane ze sprawą), stąd żyje przy
+  // Cases (CaseConsent jest logicznie częścią agregatu Case), nie przy żadnym z nich.
+  exports: [
+    CasesService,
+    CasesRepository,
+    CaseHistoryRepository,
+    MessagesRepository,
+    CaseConsentRepository,
+  ],
 })
 export class CasesModule {}

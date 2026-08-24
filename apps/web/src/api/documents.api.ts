@@ -26,10 +26,11 @@ export interface CaseDocument {
 export const documentsApi = {
   list: (caseId: string) =>
     apiClient.get<CaseDocument[]>(`/cases/${caseId}/documents`).then((res) => res.data),
-  upload: (caseId: string, file: File, category?: string) => {
+  upload: (caseId: string, file: File, category?: string, visibility?: string) => {
     const formData = new FormData();
     formData.append('file', file);
     if (category) formData.append('category', category);
+    if (visibility) formData.append('visibility', visibility);
     return apiClient
       .post<CaseDocument>(`/cases/${caseId}/documents`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },

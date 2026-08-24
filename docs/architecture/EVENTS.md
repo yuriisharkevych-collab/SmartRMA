@@ -499,9 +499,9 @@ jednorazowe wywołanie SMTP:
 
 [transakcja] INSERT Notification (status = Pending, body już wyrenderowany)
 [COMMIT]
-[zdarzenie] subskrybent Notifications → dispatch → IMailService
+[dispatcher cykliczny] → IMailService
 sukces → status = Sent, sentAt
-błąd → status = Failed, failureReason
+błąd → status = Failed, failureReason, attempts++
 
 
 Trzy powody, wszystkie wynikające z istniejącego modelu:
@@ -516,12 +516,29 @@ Trzy powody, wszystkie wynikające z istniejącego modelu:
 3. Utrata zdarzenia degraduje system do opóźnienia, nie do utraty
    powiadomienia (§11.2).
 
-## 11.2 Mechanizm odzyskiwania
+## 11.2 Zaimplementowane: `NotificationDispatcherService` jako JEDYNA ścieżka wysyłki
 
-Zadanie cykliczne `Scheduler` wyszukuje `Notification` w statusie `Pending`
-starsze niż próg (proponowane: 5 minut) oraz `Failed` z liczbą prób poniżej
-limitu, i ponawia wysyłkę. To jest **właściwa gwarancja dostarczenia** —
-zdarzenie jest tylko szybką ścieżką.
+**Zaimplementowane** (moduł "wysyłka wiadomości e-mail"): `apps/api/src/mail/notification-dispatcher.service.ts`,
+`@Interval` (`@nestjs/schedule`) co `NOTIFICATION_DISPATCH_INTERVAL_MS`
+(domyślnie 10s) — odpytuje `Notification` w statusie `Pending` (dowolnego
+wieku) oraz `Failed` z `attempts < MAX_NOTIFICATION_ATTEMPTS` (5), wywołuje
+`IMailService.send`, aktualizuje status.
+
+Świadoma zmiana względem wcześniejszego opisu tej sekcji: dispatcher jest
+**jedyną** ścieżką faktycznej wysyłki, nie tylko mechanizmem odzyskiwania dla
+"szybkiej ścieżki" w handlerze zdarzenia. Powód: `InMemoryEventBus.publish()`
+(`apps/api/src/events/in-memory-event-bus.service.ts`) faktycznie **czeka**
+(`await Promise.allSettled(...)` na wszystkich subskrybentach) — a każde
+wywołujące miejsce w `CasesService` robi `await this.eventBus.publish(...)`.
+Gdyby więc `IMailService` był wołany bezpośrednio w handlerze zdarzenia
+(pierwotnie opisana "szybka ścieżka"), żywe połączenie SMTP/HTTP do
+zewnętrznego dostawcy blokowałoby odpowiedź API na każde tworzenie sprawy/
+zmianę statusu/wiadomość — realne ryzyko produkcyjne przy wolnym lub
+niedostępnym dostawcy poczty. `createNotificationFromTemplate` (i każdy
+handler, który go woła) pozostaje więc czystym, szybkim `INSERT`-em bez
+sieci — e-mail dociera zwykle w ciągu ok. 10 s od zdarzenia, nie natychmiast;
+to świadomy kompromis (opóźnienie zamiast ryzyka blokady), udokumentowany
+tutaj celowo, żeby nie został pomylony z przeoczeniem.
 
 ## 11.3 Wybór szablonu
 

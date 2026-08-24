@@ -643,6 +643,14 @@ button, input, select, textarea {
   padding: 40px 20px 10px;
 }
 
+.wizard-company-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+  letter-spacing: 0.01em;
+}
+
 .wizard-intro h1 {
   font-size: 26px;
   margin-bottom: 14px;
@@ -667,6 +675,61 @@ button, input, select, textarea {
   color: var(--primary-hover);
   font-size: 12.5px;
   font-weight: 600;
+}
+
+.wizard-prep {
+  max-width: 760px;
+  margin: 4px auto 0;
+  padding: 0 20px 8px;
+}
+
+.wizard-prep h2 {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}
+
+.prep-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.prep-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.prep-item .prep-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.prep-item .prep-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0 0 2px;
+}
+
+.prep-item .prep-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .prep-grid { grid-template-columns: 1fr; }
+  .wizard-prep { padding: 0 12px 4px; }
 }
 
 .wizard-card {
@@ -938,11 +1001,119 @@ button, input, select, textarea {
   margin: 18px 0 6px;
 }
 
+.wizard-next-steps {
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken);
+  padding: 18px 20px;
+  margin-top: 22px;
+}
+.wizard-next-steps h2 { font-size: 14px; margin-bottom: 12px; }
+.wizard-next-steps ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.wizard-next-steps li { font-size: 13px; color: var(--text-secondary); line-height: 1.5; display: flex; gap: 8px; align-items: flex-start; }
+.wizard-next-steps .step-emoji { flex-shrink: 0; }
+
 @media (max-width: 640px) {
   .method-card-group { grid-template-columns: 1fr; }
   .wizard-card { padding: 20px 18px; }
   .wizard-intro { padding: 24px 12px 4px; }
   .wizard-intro h1 { font-size: 21px; }
+}
+
+/* Formularz publiczny (`.wizard-*`) jest jedynym miejscem w apps/web, gdzie pola
+   wypełnia klient na telefonie bez pomocy pracownika — stąd większe touch targety
+   i font-size 16px (zapobiega auto-zoomowi Safari na iOS przy focusie pola). */
+.wizard-card .form-grid { padding: 0; }
+
+.wizard-card input[type='text'],
+.wizard-card input[type='email'],
+.wizard-card input[type='tel'],
+.wizard-card select,
+.wizard-card textarea {
+  padding: 12px 14px;
+  font-size: 16px;
+  min-height: 46px;
+}
+
+.wizard-card textarea { min-height: 96px; }
+
+.wizard-card .field label { font-size: 13.5px; }
+
+.wizard-card .required-star { margin-left: 1px; }
+
+.field-hint-static {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-top: 10px;
+}
+
+.wizard-nav .btn {
+  min-height: 48px;
+  padding: 12px 22px;
+  font-size: 14.5px;
+}
+
+.dropzone:focus-visible,
+.method-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.wizard-faq {
+  max-width: 760px;
+  margin: 8px auto 0;
+  padding: 0 20px;
+}
+
+.wizard-faq h2 {
+  font-size: 15px;
+  margin-bottom: 10px;
+}
+
+.wizard-faq-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.wizard-faq-item summary {
+  padding: 13px 16px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wizard-faq-item summary::-webkit-details-marker { display: none; }
+
+.wizard-faq-item summary::after {
+  content: '+';
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.wizard-faq-item[open] summary::after { content: '−'; }
+
+.wizard-faq-item p {
+  padding: 0 16px 14px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .wizard-nav .btn { flex: 1; justify-content: center; }
 }
 
 .storage-warning {
@@ -1438,6 +1609,26 @@ table.data-table {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
+
+.password-field { position: relative; }
+.password-field input { width: 100%; padding-right: 38px !important; }
+.password-toggle-btn {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.password-toggle-btn:hover { color: var(--text); background: var(--surface-sunken); }
 
 .radio-card-group {
   display: grid;
@@ -2126,6 +2317,7 @@ table.data-table {
 }
 .print-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; padding-bottom: 18px; border-bottom: 2px solid var(--text); }
 .print-brand { display: flex; align-items: center; gap: 10px; }
+.print-logo { width: 30px; height: 30px; border-radius: 8px; object-fit: contain; }
 .print-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; margin-top: 10px; }
 .print-copy-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 5px 10px; border-radius: 999px; background: var(--primary-soft); color: var(--primary-hover); height: fit-content; }
 .print-section { margin-bottom: 18px; }
@@ -2143,6 +2335,8 @@ table.data-table {
 .signatures { display: flex; gap: 40px; flex: 1; }
 .signature-block { flex: 1; }
 .signature-line { border-top: 1px solid var(--text-muted); margin-top: 34px; padding-top: 6px; font-size: 11px; color: var(--text-muted); text-align: center; }
+.print-consent-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; font-size: 11px; line-height: 1.45; }
+.print-consent-row .box { flex-shrink: 0; width: 12px; height: 12px; border: 1.3px solid var(--text-muted); margin-top: 1px; }
 
 @media print {
   .no-print { display: none !important; }

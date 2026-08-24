@@ -6,6 +6,16 @@ export class ManufacturerSlaEntity {
   @ApiPropertyOptional({ nullable: true }) repairDays!: number | null;
   @ApiPropertyOptional({ nullable: true }) reminderAfterDays!: number | null;
   @ApiPropertyOptional({ nullable: true }) escalationAfterDays!: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '`null` = użyj wartości domyślnej z Ustawień → Przypomnienia.',
+  })
+  statusStaleDaysOverride!: number | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: '`null` = użyj wartości domyślnej z Ustawień → Przypomnienia.',
+  })
+  caseAgeStaleDaysOverride!: number | null;
 }
 
 /** `ManufacturerLogistics` (DATABASE.md §"Manufacturer" — osobna tabela 1:1, celowo NIE JSON). `null` na całym obiekcie = producent nie ma jeszcze skonfigurowanej logistyki. */
@@ -65,6 +75,9 @@ export class ManufacturerEntity {
   @ApiProperty() maxPhotos!: number;
   @ApiProperty() maxAttachmentSizeMb!: number;
   @ApiProperty() active!: boolean;
+
+  /** Etap 3 — kategorie produktowe formularza publicznego marki (`BrandComplaintFormPage.tsx`). Puste = formularz marki tego producenta jeszcze nieskonfigurowany. */
+  @ApiProperty({ type: [String] }) productCategories!: string[];
 
   @ApiPropertyOptional({ type: ManufacturerSlaEntity, nullable: true })
   sla!: ManufacturerSlaEntity | null;

@@ -24,12 +24,17 @@ export class OrdersRepository {
     });
   }
 
-  findById(id: string): Promise<OrderWithItems | null> {
-    return this.prisma.order.findUnique({ where: { id }, include: WITH_ITEMS });
+  /** `companyId` obowiązkowy — bez niego administrator jednej firmy mógłby odczytać/edytować zamówienie innej firmy, znając samo UUID (IDOR, patrz audyt bezpieczeństwa). */
+  findById(id: string, companyId: string): Promise<OrderWithItems | null> {
+    return this.prisma.order.findFirst({ where: { id, companyId }, include: WITH_ITEMS });
   }
 
   findAllForCompany(companyId: string): Promise<OrderWithItems[]> {
-    return this.prisma.order.findMany({ where: { companyId }, include: WITH_ITEMS, orderBy: { orderDate: 'desc' } });
+    return this.prisma.order.findMany({
+      where: { companyId },
+      include: WITH_ITEMS,
+      orderBy: { orderDate: 'desc' },
+    });
   }
 
   /** BR/WORKFLOW.md §6 poz. 12 dotyczy wyłącznie dopasowania dokładnego (`findByOrderNumber`) — to jest szersze wyszukiwanie tekstowe dla `GET /orders?query=`, wzorzec z `ProductsRepository.search`. */
@@ -41,13 +46,14 @@ export class OrdersRepository {
     });
   }
 
-  findAllForCustomer(customerId: string): Promise<OrderWithItems[]> {
-    return this.prisma.order.findMany({ where: { customerId }, include: WITH_ITEMS });
+  /** Nieużywane dziś przez żaden endpoint (dead code ze scaffoldu) — `companyId` mimo to obowiązkowy, żeby ewentualny przyszły wołający nie musiał tego odkrywać sam. */
+  findAllForCustomer(customerId: string, companyId: string): Promise<OrderWithItems[]> {
+    return this.prisma.order.findMany({ where: { customerId, companyId }, include: WITH_ITEMS });
   }
 
-  /** Zadanie 16 (Cases) — weryfikacja referencji `CaseItem.orderItemId` przed zapisem sprawy. */
-  findOrderItemById(id: string): Promise<OrderItem | null> {
-    return this.prisma.orderItem.findUnique({ where: { id } });
+  /** Zadanie 16 (Cases) — weryfikacja referencji `CaseItem.orderItemId` przed zapisem sprawy. `companyId` sprawdzony PRZEZ relację do `Order` — bez tego dałoby się dowiązać sprawę do pozycji zamówienia innej firmy (IDOR na poziomie linkowania rekordów, patrz audyt bezpieczeństwa). */
+  findOrderItemById(id: string, companyId: string): Promise<OrderItem | null> {
+    return this.prisma.orderItem.findFirst({ where: { id, order: { companyId } } });
   }
 
   create(
@@ -85,7 +91,13 @@ export class OrdersRepository {
   /** Typ jawny, nie `Pick<Order,...>` — `Order.totalAmount` w typie modelu to `Decimal | null`, a wejście z DTO to `number`; Prisma akceptuje `number` dla pól `Decimal` na wejściu, ale typ modelu (wyjściowy) tego nie wyraża. */
   update(
     id: string,
-    data: { shopId?: string; customerId?: string; orderNumber?: string; orderDate?: Date; totalAmount?: number },
+    data: {
+      shopId?: string;
+      customerId?: string;
+      orderNumber?: string;
+      orderDate?: Date;
+      totalAmount?: number;
+    },
   ): Promise<OrderWithItems> {
     return this.prisma.order.update({ where: { id }, data, include: WITH_ITEMS });
   }

@@ -32,9 +32,10 @@ export class DocumentsRepository {
     return this.prisma.document.findUnique({ where: { id } });
   }
 
+  /** `uploadedById` nullable — Portal Klienta pozwala klientowi wgrać załącznik bez rekordu `User` (RBAC.md §1.2). */
   create(
     caseId: string,
-    uploadedById: string,
+    uploadedById: string | null,
     data: {
       caseItemId?: string;
       fileName: string;
@@ -53,5 +54,13 @@ export class DocumentsRepository {
   /** BR-020/DATABASE.md §25 — brak `delete`, wyłącznie zmiana statusu. */
   markInvalid(id: string, client: PrismaClientLike = this.prisma): Promise<Document> {
     return client.document.update({ where: { id }, data: { status: DocumentStatus.Bledny } });
+  }
+
+  /** `cases.delete` (RBAC.md §5) — JEDYNY wyjątek od BR-020 powyżej (celowo, na wyraźne żądanie właściciela, wyłącznie dla usuwania spraw testowych). Musi wykonać się PRZED `MessagesRepository.deleteAllForCase` (`Document.messageId` → `Message`, kolejność FK). Nie usuwa pliku z dysku — `IStorageService` nie ma metody `delete`, poza zakresem tej zmiany. */
+  deleteAllForCase(
+    caseId: string,
+    client: PrismaClientLike = this.prisma,
+  ): Promise<Prisma.BatchPayload> {
+    return client.document.deleteMany({ where: { caseId } });
   }
 }

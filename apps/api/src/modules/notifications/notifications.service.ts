@@ -1,5 +1,10 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { NotificationChannel, NotificationRecipientType, NotificationStatus } from '@prisma/client';
+import {
+  NotificationChannel,
+  NotificationRecipientType,
+  NotificationStatus,
+  Prisma,
+} from '@prisma/client';
 import { CreateTemplateDto } from './dto/create-template.dto';
 import { UpdateTemplateDto } from './dto/update-template.dto';
 import { NotificationTemplateEntity } from './entities/notification-template.entity';
@@ -22,6 +27,8 @@ export interface CreateNotificationParams {
   recipientPhone?: string;
   recipientManufacturerId?: string;
   relatedCaseId?: string;
+  /** Nadpisuje nazwę nadawcy e-mail dla TEGO powiadomienia (np. "Veres Meble") — patrz komentarz przy `Case.notificationSenderName`/`Notification.senderNameOverride` w schemacie. `undefined` = zachowanie bez zmian (nazwa firmy z Ustawienia → E-mail). */
+  senderNameOverride?: string;
   variables: Record<string, string>;
 }
 
@@ -29,19 +36,23 @@ export interface CreateNotificationParams {
  * `createNotification()` z zakresu zadania to `createNotificationFromTemplate()`
  * poniżej — jedyny udokumentowany sposób powstania `Notification`
  * (NOTIFICATIONS.md §2: każde powiadomienie pochodzi z szablonu). Wołane
- * WYŁĄCZNIE przez handlery zdarzeń w `handlers/` — ten serwis sam nie zna
- * żadnego agregatu źródłowego (Case/Customer/...), żeby nie naruszyć
- * EVENTS.md §6.2 ("Notifications nigdy nie publikuje case.*") ani zasady
- * "handler nie wykonuje logiki biznesowej modułu źródłowego" — rozwiązanie
- * odbiorcy (czytanie `Customer.email` na żywo itd.) żyje w handlerach, nie
- * tutaj; ten serwis dostaje już gotowe dane odbiorcy jako parametry.
+ * GŁÓWNIE przez handlery zdarzeń w `handlers/` — ten serwis sam nie zna
+ * żadnego agregatu źródłowego (Case/Customer/...), tylko gotowe dane
+ * odbiorcy jako parametry. Dwa udokumentowane wyjątki wołają bezpośrednio,
+ * z pominięciem handlera: `IntakeService.submitComplaint` i
+ * `CasesService.enablePortal` (moduł e-mail) — oba potrzebują wartości
+ * dostępnej WYŁĄCZNIE w danym wywołaniu (świeżo wygenerowany, jednorazowy
+ * kod dostępu), której nie da się bezpiecznie przenieść przez payload
+ * zdarzenia bez trwałego przechowywania jawnego kodu.
  *
- * Brak faktycznej wysyłki (SMTP/SMS) — `Notification.status=Pending` to
- * KONIEC odpowiedzialności tego modułu w tym zadaniu (NOTIFICATIONS.md §1:
- * "wysyłka to integracja zewnętrzna, poza zakresem dokumentacji
- * architektury"). Wyjątek: brak adresu odbiorcy dla kanału `Email` — wtedy
- * `status=Failed` NATYCHMIAST, zgodnie z NOTIFICATIONS.md §8 ("bez próby
- * wysyłki na pusty adres").
+ * Faktyczna wysyłka (SMTP/Resend) NIE dzieje się tutaj — `Notification.status=Pending`
+ * to koniec odpowiedzialności tej metody. Osobny `NotificationDispatcherService`
+ * (`mail/`) cyklicznie odpytuje `Pending`/`Failed` i wywołuje `IMailService`
+ * (EVENTS.md §11.2) — celowo NIE w handlerze zdarzenia, bo `InMemoryEventBus.publish()`
+ * jest `await`-owany przez wołające serwisy domenowe (patrz `CasesService`),
+ * więc realna wysyłka SMTP w handlerze zablokowałaby odpowiedź API. Wyjątek:
+ * brak adresu odbiorcy dla kanału `Email` — wtedy `status=Failed` NATYCHMIAST,
+ * zgodnie z NOTIFICATIONS.md §8 ("bez próby wysyłki na pusty adres").
  *
  * Brak audytu (`AuditLog`) — NOTIFICATIONS.md nigdzie go nie wymaga;
  * `AuditLog` rejestruje mutacje danych biznesowych (BR-088), nie
@@ -57,20 +68,28 @@ export class NotificationsService {
   constructor(private readonly notificationsRepository: NotificationsRepository) {}
 
   async listNotifications(companyId: string): Promise<NotificationEntity[]> {
-    return NotificationMapper.toEntityList(await this.notificationsRepository.findAllForCompany(companyId));
+    return NotificationMapper.toEntityList(
+      await this.notificationsRepository.findAllForCompany(companyId),
+    );
   }
 
-  async listForCase(caseId: string): Promise<NotificationEntity[]> {
-    return NotificationMapper.toEntityList(await this.notificationsRepository.findAllForCase(caseId));
+  async listForCase(caseId: string, companyId: string): Promise<NotificationEntity[]> {
+    return NotificationMapper.toEntityList(
+      await this.notificationsRepository.findAllForCase(caseId, companyId),
+    );
   }
 
-  async getNotification(id: string): Promise<NotificationEntity> {
-    return NotificationMapper.toEntity(await this.findNotificationOrThrow(id));
+  async getNotification(id: string, companyId: string): Promise<NotificationEntity> {
+    const notification = await this.notificationsRepository.findByIdForCompany(id, companyId);
+    if (!notification) throw new NotFoundException();
+    return NotificationMapper.toEntity(notification);
   }
 
   /** "Moje powiadomienia" — bez `notifications.view` (permission gates WYŁĄCZNIE historię wysłanych powiadomień CAŁEJ firmy, RBAC.md: "Przeglądanie historii wysłanych powiadomień", macierz ról ogranicza to do Administratora/Kierownika). Własne powiadomienia to zasób osobisty, wzorzec z `GET /companies/me`. */
   async listMyNotifications(recipientUserId: string): Promise<NotificationEntity[]> {
-    return NotificationMapper.toEntityList(await this.notificationsRepository.findAllForUser(recipientUserId));
+    return NotificationMapper.toEntityList(
+      await this.notificationsRepository.findAllForUser(recipientUserId),
+    );
   }
 
   async getMyNotification(recipientUserId: string, id: string): Promise<NotificationEntity> {
@@ -83,7 +102,8 @@ export class NotificationsService {
   async markAsRead(recipientUserId: string, id: string): Promise<NotificationEntity> {
     const notification = await this.findNotificationOrThrow(id);
     if (notification.recipientUserId !== recipientUserId) throw new NotFoundException();
-    if (notification.status === NotificationStatus.Read) return NotificationMapper.toEntity(notification);
+    if (notification.status === NotificationStatus.Read)
+      return NotificationMapper.toEntity(notification);
     return NotificationMapper.toEntity(await this.notificationsRepository.markAsRead(id));
   }
 
@@ -94,18 +114,32 @@ export class NotificationsService {
   }
 
   async listTemplates(companyId: string): Promise<NotificationTemplateEntity[]> {
-    return NotificationMapper.templatesToEntities(await this.notificationsRepository.findTemplatesForCompany(companyId));
+    return NotificationMapper.templatesToEntities(
+      await this.notificationsRepository.findTemplatesForCompany(companyId),
+    );
   }
 
   /** `notifications.templates.manage`. Tworzy szablon PER FIRMA (nadpisanie globalnego, NOTIFICATIONS.md §2.2) — szablony globalne (`companyId=null`) to dane seeda, nie tworzone przez ten endpoint. */
-  async createTemplate(companyId: string, dto: CreateTemplateDto): Promise<NotificationTemplateEntity> {
-    return NotificationMapper.templateToEntity(await this.notificationsRepository.createTemplate(companyId, dto));
+  async createTemplate(
+    companyId: string,
+    dto: CreateTemplateDto,
+  ): Promise<NotificationTemplateEntity> {
+    return NotificationMapper.templateToEntity(
+      await this.notificationsRepository.createTemplate(companyId, dto),
+    );
   }
 
-  async updateTemplate(id: string, dto: UpdateTemplateDto): Promise<NotificationTemplateEntity> {
-    const existing = await this.notificationsRepository.findTemplateById(id);
-    if (!existing) throw new NotFoundException();
-    return NotificationMapper.templateToEntity(await this.notificationsRepository.updateTemplate(id, dto));
+  /** Szablony globalne (`companyId=null`) są WIDOCZNE dla firmy (`findTemplateByIdForCompany`), ale NIE edytowalne tym endpointem — inaczej jedna firma mogłaby zmienić treść wiadomości wysyłanych przez WSZYSTKIE firmy (IDOR, patrz audyt bezpieczeństwa). Edycja globalnego = 404, tak samo jak "nie istnieje dla ciebie". */
+  async updateTemplate(
+    id: string,
+    companyId: string,
+    dto: UpdateTemplateDto,
+  ): Promise<NotificationTemplateEntity> {
+    const existing = await this.notificationsRepository.findTemplateByIdForCompany(id, companyId);
+    if (!existing || existing.companyId === null) throw new NotFoundException();
+    return NotificationMapper.templateToEntity(
+      await this.notificationsRepository.updateTemplate(id, dto),
+    );
   }
 
   /**
@@ -116,8 +150,14 @@ export class NotificationsService {
    * żądanie/odpowiedź HTTP źródłowej operacji, więc nie ma czego zwrócić
    * klientowi — log ostrzeżenia jest jedyną właściwą reakcją.
    */
-  async createNotificationFromTemplate(params: CreateNotificationParams): Promise<NotificationEntity | null> {
-    const template = await this.notificationsRepository.resolveTemplate(params.companyId, params.code, params.channel);
+  async createNotificationFromTemplate(
+    params: CreateNotificationParams,
+  ): Promise<NotificationEntity | null> {
+    const template = await this.notificationsRepository.resolveTemplate(
+      params.companyId,
+      params.code,
+      params.channel,
+    );
     if (!template) {
       this.logger.warn(
         `NOTIFICATION-002 — brak szablonu '${params.code}'/${params.channel} dla firmy ${params.companyId} (i brak globalnego) — powiadomienie pominięte.`,
@@ -137,6 +177,7 @@ export class NotificationsService {
       recipientPhone: params.recipientPhone,
       recipientManufacturerId: params.recipientManufacturerId,
       relatedCaseId: params.relatedCaseId,
+      senderNameOverride: params.senderNameOverride,
       subject: template.subject ? renderTemplate(template.subject, params.variables) : undefined,
       body: renderTemplate(template.bodyTemplate, params.variables),
       status: missingRecipient ? NotificationStatus.Failed : undefined,
@@ -144,6 +185,14 @@ export class NotificationsService {
     });
 
     return NotificationMapper.toEntity(notification);
+  }
+
+  /** `cases.delete` (RBAC.md §5, jedyny hard-delete w aplikacji) — wołane przez `CasesService.hardDelete` wewnątrz jego transakcji (`client` = `tx`). */
+  deleteAllForCase(
+    caseId: string,
+    client?: Parameters<NotificationsRepository['deleteAllForCase']>[1],
+  ): Promise<Prisma.BatchPayload> {
+    return this.notificationsRepository.deleteAllForCase(caseId, client);
   }
 
   private async findNotificationOrThrow(id: string) {

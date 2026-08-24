@@ -1,0 +1,564 @@
+<title>Raport Wdrożeniowy SmartRMA</title>
+<style>
+  :root {
+    --paper: #f3f4f1;
+    --paper-raised: #ffffff;
+    --ink: #1b2229;
+    --ink-soft: #4a535c;
+    --ink-faint: #7c8790;
+    --line: #d7dad4;
+    --line-soft: #e7e9e4;
+    --accent: #2c4a72;
+    --accent-soft: #e8edf4;
+    --accent-ink: #1c3252;
+    --code-bg: #eceeea;
+    --pass-bg: #e4efe4;
+    --pass-ink: #2e5d34;
+    --pass-line: #b9d3ba;
+    --warn-bg: #f6ecd9;
+    --warn-ink: #7a5518;
+    --warn-line: #e3c98e;
+    --block-bg: #f5e3df;
+    --block-ink: #8a3c2a;
+    --block-line: #e3b6a9;
+    --shadow: 0 1px 2px rgba(27,34,41,0.04), 0 8px 24px rgba(27,34,41,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14181c;
+      --paper-raised: #1b2126;
+      --ink: #e9ecee;
+      --ink-soft: #b0b9c1;
+      --ink-faint: #7d8791;
+      --line: #333c43;
+      --line-soft: #262e34;
+      --accent: #7fa4d6;
+      --accent-soft: #202c3a;
+      --accent-ink: #a9c4e8;
+      --code-bg: #20262b;
+      --pass-bg: #1d2b1f;
+      --pass-ink: #8fc496;
+      --pass-line: #34492f;
+      --warn-bg: #2c2517;
+      --warn-ink: #e0bd7c;
+      --warn-line: #4a3e21;
+      --block-bg: #2b201c;
+      --block-ink: #e2a292;
+      --block-line: #4a2f27;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181c;
+    --paper-raised: #1b2126;
+    --ink: #e9ecee;
+    --ink-soft: #b0b9c1;
+    --ink-faint: #7d8791;
+    --line: #333c43;
+    --line-soft: #262e34;
+    --accent: #7fa4d6;
+    --accent-soft: #202c3a;
+    --accent-ink: #a9c4e8;
+    --code-bg: #20262b;
+    --pass-bg: #1d2b1f;
+    --pass-ink: #8fc496;
+    --pass-line: #34492f;
+    --warn-bg: #2c2517;
+    --warn-ink: #e0bd7c;
+    --warn-line: #4a3e21;
+    --block-bg: #2b201c;
+    --block-ink: #e2a292;
+    --block-line: #4a2f27;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sheet {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 56px 24px 96px;
+  }
+  .masthead {
+    border-bottom: 3px solid var(--ink);
+    padding-bottom: 20px;
+    margin-bottom: 36px;
+  }
+  .masthead .kicker {
+    font-size: 12.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent-ink);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .masthead h1 {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    font-size: clamp(28px, 4.2vw, 38px);
+    font-weight: 600;
+    line-height: 1.15;
+    margin: 0 0 14px;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 28px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .meta-row strong { color: var(--ink); font-weight: 600; }
+
+  .lede {
+    font-size: 16.5px;
+    color: var(--ink-soft);
+    margin: 24px 0 0;
+    max-width: 62ch;
+  }
+
+  h2 {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 23px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    margin: 56px 0 4px;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    text-wrap: balance;
+  }
+  h2 .num {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--paper-raised);
+    background: var(--accent);
+    border-radius: 5px;
+    padding: 2px 8px;
+    flex-shrink: 0;
+  }
+  h2 + .section-sub {
+    color: var(--ink-faint);
+    font-size: 13.5px;
+    margin: 0 0 20px;
+  }
+  h3 {
+    font-size: 15.5px;
+    font-weight: 700;
+    margin: 28px 0 10px;
+    color: var(--ink);
+  }
+
+  p { margin: 0 0 14px; }
+  ul, ol { margin: 0 0 16px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--ink-faint); }
+
+  strong { font-weight: 650; }
+  code {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    font-size: 0.87em;
+    background: var(--code-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    color: var(--accent-ink);
+  }
+
+  .callout {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border-radius: 10px;
+    margin: 18px 0;
+    font-size: 14.5px;
+    border: 1px solid var(--line);
+  }
+  .callout.pass { background: var(--pass-bg); border-color: var(--pass-line); color: var(--pass-ink); }
+  .callout.summary { background: var(--accent-soft); border-color: var(--line); color: var(--ink); }
+  .callout .tag {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-weight: 700;
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .callout.pass .tag { background: var(--pass-ink); color: var(--pass-bg); }
+  .callout.summary .tag { background: var(--accent); color: white; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    margin: 4px 0 20px;
+  }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); background: var(--paper-raised); margin: 4px 0 22px; }
+  .table-wrap table { margin: 0; }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  thead th {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    font-size: 11.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    font-weight: 700;
+    border-bottom: 1px solid var(--line);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--line-soft); }
+  td:has(.mono), .mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-variant-numeric: tabular-nums; font-size: 13px; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 9px 3px;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .pill.pass { background: var(--pass-bg); color: var(--pass-ink); border-color: var(--pass-line); }
+  .pill.warn { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+  .pill.block { background: var(--block-bg); color: var(--block-ink); border-color: var(--block-line); }
+  .pill.fixed { background: var(--accent-soft); color: var(--accent-ink); border-color: var(--line); }
+
+  .finding {
+    border: 1px solid var(--line);
+    background: var(--paper-raised);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 0 0 14px;
+    box-shadow: var(--shadow);
+  }
+  .finding .fhead {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .finding .flabel { font-weight: 700; font-size: 14.5px; }
+  .finding .floc {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 12px;
+    color: var(--ink-faint);
+  }
+  .finding p:last-child { margin-bottom: 0; }
+
+  .checklist { list-style: none; padding-left: 0; margin: 4px 0 20px; }
+  .checklist li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 14.5px;
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist .mark {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    margin-top: 1px;
+  }
+  .checklist .mark.ok { background: var(--pass-bg); color: var(--pass-ink); }
+  .checklist .mark.gap { background: var(--block-bg); color: var(--block-ink); }
+
+  ol.steps { list-style: none; padding-left: 0; counter-reset: step; }
+  ol.steps li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 38px;
+    margin-bottom: 14px;
+  }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: white;
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 48px 0 0;
+  }
+
+  .closing {
+    margin-top: 52px;
+    padding: 22px 24px;
+    background: var(--accent-soft);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+  .closing h3 {
+    margin-top: 0;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 18px;
+    color: var(--accent-ink);
+  }
+  .closing p:last-child { margin-bottom: 0; }
+
+  @media (max-width: 600px) {
+    .sheet { padding: 36px 16px 64px; }
+    h2 { font-size: 20px; }
+  }
+</style>
+
+<div class="sheet">
+
+  <div class="masthead">
+    <div class="kicker">Raport wdrożeniowy · nie sprzedażowy</div>
+    <h1>SmartRMA — pełny test operacyjny na żywo</h1>
+    <div class="meta-row">
+      <span><strong>Data:</strong> 17.08.2026</span>
+      <span><strong>Cel:</strong> stabilne wdrożenie w DAWIDAM</span>
+      <span><strong>Środowisko:</strong> Postgres + Redis + Mailpit, dane DAWIDAM + organizacje testowe</span>
+    </div>
+    <p class="lede">Test wykonany metodą mieszaną: rzeczywiste wywołania API odzwierciedlające dokładnie akcje panelu pracownika, bezpośrednia weryfikacja w przeglądarce (formularz publiczny, panel pracownika, Portal Klienta) i odczyt rzeczywistych e-maili z Mailpit.</p>
+  </div>
+
+  <h2><span class="num">01</span>B2B — wynik całego scenariusza</h2>
+  <div class="callout pass"><span class="tag">Pass</span><span>Pełny łańcuch DAWIDAM → TekstylPro → FabrykaWłókiennicza → decyzja Producenta → decyzja Dystrybutora → powrót do DAWIDAM zadziałał poprawnie od początku do końca.</span></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Etap</th><th>Sprawa</th><th>Status po etapie</th><th>Wynik</th></tr></thead>
+      <tbody>
+        <tr><td>Utworzenie sprawy w DAWIDAM</td><td class="mono">RMA/2026/00029</td><td>Nowa</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Przekazanie DAWIDAM → TekstylPro</td><td class="mono">00029 → 00030</td><td>Nowa (obie)</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Przyjęcie przez TekstylPro</td><td class="mono">00030</td><td>Przyjęta</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Przekazanie TekstylPro → FabrykaWłókiennicza</td><td class="mono">00030 → 00031</td><td>Nowa</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Decyzja Producenta</td><td class="mono">00031</td><td>Decyzja pozytywna — Naprawa</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Propagacja do Dystrybutora</td><td class="mono">00030</td><td>bez zmiany statusu</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Propagacja do DAWIDAM (2 przeskoki)</td><td class="mono">00029</td><td>bez zmiany statusu</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Decyzja Dystrybutora (własna)</td><td class="mono">00030</td><td>Decyzja pozytywna — Naprawa</td><td><span class="pill pass">OK</span></td></tr>
+        <tr><td>Próba ponownego przekazania</td><td class="mono">00029</td><td>—</td><td><span class="pill pass">409 PARTNERSHIP-006</span></td></tr>
+        <tr><td>Zamknięcie sprawy w DAWIDAM</td><td class="mono">00029</td><td>Zakończona</td><td><span class="pill pass">OK · 17 wpisów historii</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Sprawdzone punkty z checklisty</h3>
+  <ul class="checklist">
+    <li><span class="mark ok">✓</span><span>Utworzenie sprawy, poprawność numeracji <em>(format poprawny — patrz jednak problem 8b)</em></span></li>
+    <li><span class="mark ok">✓</span><span>Status na każdym etapie</span></li>
+    <li><span class="mark ok">✓</span><span>Przekazanie sprawy (handoff)</span></li>
+    <li><span class="mark ok">✓</span><span><code>receivedFrom</code>/<code>sentTo</code> — widoczne jako sekcja „Partner B2B” na karcie sprawy</span></li>
+    <li><span class="mark ok">✓</span><span>Historia — kompletna, poprawnie rozdzielona na wpisy widoczne/niewidoczne dla klienta</span></li>
+    <li><span class="mark ok">✓</span><span>Dokumenty i wiadomości/notatki na każdym etapie łańcucha</span></li>
+    <li><span class="mark ok">✓</span><span>Decyzja producenta i jej propagacja przez cały łańcuch</span></li>
+    <li><span class="mark ok">✓</span><span>Powrót informacji do oryginalnej sprawy DAWIDAM</span></li>
+    <li><span class="mark gap">!</span><span>Dalsze przekazanie — sprawa może zostać przekazana <strong>dokładnie raz</strong> w całej swojej historii. Świadoma decyzja architektoniczna, nie błąd — ale ma realne konsekwencje operacyjne, patrz sekcja 11.</span></li>
+    <li><span class="mark ok">✓</span><span>Zamknięcie sprawy</span></li>
+  </ul>
+
+  <h2><span class="num">02</span>B2C — wynik całego scenariusza</h2>
+  <div class="callout pass"><span class="tag">Pass*</span><span>Klient detaliczny (Ewa Kamińska) → formularz <code>/reklamacja/tekstylpro</code> → RMA/2026/00032 → e-mail z kodem dostępu → obsługa → decyzja (Wymiana produktu) → zamknięcie → e-mail zamknięcia → Portal Klienta. Jeden realny brak w brandingu Portalu — patrz niżej.</span></div>
+
+  <ul class="checklist">
+    <li><span class="mark ok">✓</span><span>Formularz publiczny rozpoznaje organizację po <code>slug</code> i pokazuje tylko jej własnego producenta/markę</span></li>
+    <li><span class="mark ok">✓</span><span>Zgoda RODO poprawnie wskazuje TekstylPro jako administratora danych</span></li>
+    <li><span class="mark ok">✓</span><span>E-mail potwierdzający poprawnie zaadresowany i zabrandowany, z działającym linkiem do Portalu</span></li>
+    <li><span class="mark ok">✓</span><span>Obsługa przez pracownika: przyjęcie, decyzja, wiadomość, zamknięcie</span></li>
+    <li><span class="mark ok">✓</span><span>E-mail zamknięcia dostarczony i zabrandowany</span></li>
+    <li><span class="mark ok">✓</span><span>Portal Klienta: status, decyzja, wiadomości, pusty stan dokumentów — wszystko poprawne</span></li>
+    <li><span class="mark ok">✓</span><span>Izolacja danych wewnętrznych — brak notatek, uzasadnień decyzji, wpisów partnerskich w widoku klienta</span></li>
+    <li><span class="mark gap">✕</span><span><strong>Marka firmy w Portalu Klienta</strong> — nagłówek pokazuje na stałe „SmartRMA” zamiast TekstylPro. Patrz finding 8e.</span></li>
+  </ul>
+
+  <h2><span class="num">03</span>CaseHandoff — wynik całego łańcucha</h2>
+  <p>Mechanizm działa poprawnie na wszystkich sprawdzonych punktach: tworzenie niezależnej sprawy u partnera, kopiowanie danych klienta bez ujawniania wewnętrznego ID oryginalnej firmy, wątek <code>receivedFrom</code>/<code>sentTo</code> w obu kierunkach, propagacja statusu/decyzji w górę całego łańcucha, blokada podwójnego przekazania.</p>
+  <div class="finding">
+    <div class="fhead"><span class="flabel">Jedyny znaleziony problem</span><span class="pill warn">Do dalszego wdrożenia</span></div>
+    <p>Komunikaty propagacji („Status u partnera: X”, „Decyzja partnera: Y”) nie identyfikują, która firma w łańcuchu wywołała zmianę. Przy łańcuchu 3-firmowym pracownik Sklepu widzi w historii dwa pozornie identyczne wpisy „Status u partnera: Przyjęta” — jeden od Dystrybutora, jeden dwa przeskoki dalej od Producenta.</p>
+    <p class="floc">apps/api/src/modules/case-handoff/handlers/case-handoff-partner-update.handler.ts:73–88</p>
+  </div>
+
+  <h2><span class="num">04</span>E-mail / powiadomienia</h2>
+  <h3>Co działa</h3>
+  <ul>
+    <li>Wysyłka SMTP (zweryfikowana przez Mailpit) dla potwierdzenia zgłoszenia, wiadomości pracownika, zamknięcia sprawy, wiadomości testowej</li>
+    <li>Poprawny branding nadawcy per organizacja — potwierdzone na dwóch różnych firmach</li>
+    <li>Jasny komunikat błędu (<code>502 NOTIFICATION-001</code>) gdy poczta nie jest jeszcze skonfigurowana</li>
+    <li>Endpoint wiadomości testowej (<code>POST /settings/email/test-send</code>) działa i jest dostępny z panelu</li>
+  </ul>
+  <h3>Co wymaga ręcznej konfiguracji</h3>
+  <p>Żaden z dwóch mechanizmów zakładania nowej organizacji nie tworzy wiersza <code>EmailSettings</code>. Świeżo założona firma ma wyłączoną pocztę do czasu ręcznego wypełnienia Ustawienia → E-mail — zgodnie z instrukcją, że dane logowania do prawdziwej skrzynki nie mogą być zgadywane przez system.</p>
+
+  <h2><span class="num">05</span>Portal Klienta — co działa</h2>
+  <ul class="checklist">
+    <li><span class="mark ok">✓</span><span>Logowanie kodem dostępu (wielorazowym) i bezpiecznym linkiem jednorazowym</span></li>
+    <li><span class="mark ok">✓</span><span>Pasek postępu, status, decyzja</span></li>
+    <li><span class="mark ok">✓</span><span>Wiadomości, dokumenty, historia ograniczona do zdarzeń widocznych dla klienta</span></li>
+    <li><span class="mark ok">✓</span><span>Izolacja danych między organizacjami</span></li>
+    <li><span class="mark gap">✕</span><span>Brak marki organizacji — <code>apps/web/src/layouts/PortalLayout.tsx:18</code> ma na stałe wpisane „SmartRMA” zamiast nazwy/loga firmy. Jedyne miejsce w całej podróży klienta, które nie pokazuje właściwej marki.</span></li>
+  </ul>
+
+  <h2><span class="num">06</span>Onboarding nowej organizacji — dokładne wymagania</h2>
+  <div class="callout summary"><span class="tag">Ustalenie</span><span>Nie ma dziś samoobsługowego ekranu zakładania nowej organizacji. <code>POST /companies</code> nie istnieje — jedyne dwie ścieżki to skrypty CLI z dostępem do serwera.</span></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Typ organizacji</th><th>Skrypt</th><th>Zakłada automatycznie</th></tr></thead>
+      <tbody>
+        <tr><td>Sklep</td><td class="mono">create-admin.ts</td><td>Firma + slug, katalog 9 statusów <em>(naprawione tą sesją)</em>, konto Administratora</td></tr>
+        <tr><td>Producent / Dystrybutor</td><td class="mono">create-organization.ts</td><td>Firma + slug, siedziba, samoopisany profil, katalog statusów, konto Administratora</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Żaden nie zakłada: <code>EmailSettings</code>, katalogu producentów/kontrahentów, partnerstw B2B — to robi administrator samodzielnie po pierwszym zalogowaniu.</p>
+
+  <h3>Checklista administratora nowej organizacji</h3>
+  <ol class="steps">
+    <li>Zaloguj się kontem Administratora przekazanym przez osobę zakładającą firmę.</li>
+    <li><strong>Ustawienia → E-mail</strong> — skonfiguruj SMTP lub Resend, zapisz, wyślij wiadomość testową i sprawdź dostarczenie.</li>
+    <li><strong>Producenci</strong> — dodaj przynajmniej jednego producenta/kontrahenta.</li>
+    <li><strong>Partnerzy B2B</strong> <em>(opcjonalnie)</em> — zaproś partnera, poczekaj na akceptację.</li>
+    <li><strong>Użytkownicy</strong> — dodaj pracowników i przypisz role (role systemowe są globalne i gotowe od razu).</li>
+    <li><strong>Ustawienia → Statusy reklamacji</strong> — sprawdź domyślny katalog 9 statusów, dostosuj w razie potrzeby.</li>
+    <li><strong>Ustawienia → Numeracja spraw</strong> — sprawdź format (uwaga na finding 8b).</li>
+    <li>Sprawdź formularz publiczny pod <code>/reklamacja/:slug</code> i utwórz sprawę testową od początku do końca.</li>
+  </ol>
+
+  <h2><span class="num">07</span>Multi-tenant / security — wynik testu</h2>
+  <div class="callout pass"><span class="tag">Pass</span><span>Osiem realnych prób międzyorganizacyjnych, każda poprawnie zablokowana — brak wycieku danych. Spójne z automatycznym pakietem multi-tenant-idor.e2e-spec.ts (23/23 zielone).</span></div>
+  <ul class="checklist">
+    <li><span class="mark ok">✓</span><span>DAWIDAM nie odczyta ani nie zmieni sprawy TekstylPro po realnym UUID → 404 CASE-012</span></li>
+    <li><span class="mark ok">✓</span><span>DAWIDAM nie doda notatki do cudzej sprawy</span></li>
+    <li><span class="mark ok">✓</span><span>Klient TekstylPro niewidoczny na liście klientów DAWIDAM</span></li>
+    <li><span class="mark ok">✓</span><span>Zupełnie niepowiązana organizacja nie odczyta żadnej cudzej sprawy</span></li>
+    <li><span class="mark ok">✓</span><span>Wątek przekazania (handoff-thread) niedostępny dla firm spoza łańcucha</span></li>
+    <li><span class="mark ok">✓</span><span>DAWIDAM nie edytuje samoopisanego profilu producenta TekstylPro</span></li>
+    <li><span class="mark ok">✓</span><span>Wstrzyknięcie <code>?companyId=…</code> odrzucone przez walidację (422), nie zignorowane po cichu</span></li>
+    <li><span class="mark ok">✓</span><span>Lista partnerstw poprawnie ograniczona do własnych relacji</span></li>
+  </ul>
+
+  <h2><span class="num">08</span>Problemy znalezione podczas testu</h2>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">a. Świeży Sklep nie mógł utworzyć pierwszej sprawy</span><span class="pill fixed">Naprawione</span></div>
+    <p><code>scripts/create-admin.ts</code> — skrypt, którym powstał sam DAWIDAM — nie seedował katalogu statusów. Pierwsza próba <code>POST /cases</code> kończyła się gołym <code>500</code>. DAWIDAM nie jest dotknięty, ale każda przyszła nowa organizacja Sklepu byłaby.</p>
+  </div>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">b. Numeracja spraw nie jest odizolowana między firmami</span><span class="pill warn">Do dalszego wdrożenia</span></div>
+    <p>Zapytanie o najwyższy numer w <code>cases.repository.ts:156–173</code> nie filtruje po <code>companyId</code>. W tej sesji DAWIDAM, TekstylPro i FabrykaWłókiennicza dostały kolejno numery z jednej wspólnej puli (00029, 00030, 00031). Numery pozostają unikalne, ale tracą sens biznesowy w miarę wzrostu liczby organizacji na instancji.</p>
+  </div>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">c. Niejednoznaczne komunikaty propagacji przy łańcuchu &gt;2 firm</span><span class="pill warn">Do dalszego wdrożenia</span></div>
+    <p>Opisane w sekcji 3.</p>
+  </div>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">d. Można zamknąć sprawę bez zapisanej decyzji</span><span class="pill fixed">Konfigurowalne, bez zmian w kodzie</span></div>
+    <p>Żaden z 9 domyślnych statusów nie ma ustawionego twardego wymogu decyzji. Mechanizm już istnieje — trzeba go świadomie włączyć w Ustawieniach dla wybranego statusu końcowego.</p>
+  </div>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">e. Portal Klienta nie pokazuje marki organizacji</span><span class="pill warn">Do dalszego wdrożenia</span></div>
+    <p>Jedyne niespójne miejsce w podróży klienta — formularz i e-maile są poprawnie brandowane, Portal nie.</p>
+  </div>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">f. Ponowne otwarcie i zamknięcie wysyła e-mail „zakończona” ponownie</span><span class="pill warn">Obserwacja, przypadek brzegowy</span></div>
+    <p>Każde wejście w status końcowy uruchamia powiadomienie. Przy korekcie pomyłki pracownika klient dostanie dwa e-maile pod rząd.</p>
+  </div>
+
+  <div class="finding">
+    <div class="fhead"><span class="flabel">g. Brak samoobsługowego zakładania nowych organizacji</span><span class="pill warn">Obserwacja, nie blokujące</span></div>
+    <p>Opisane w sekcji 6 — wymaga dziś dostępu do serwera/CLI.</p>
+  </div>
+
+  <h2><span class="num">09</span>Problemy naprawione</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Problem</th><th>Plik</th><th>Zmiana</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>8a — brak katalogu statusów dla nowego Sklepu</td>
+          <td class="mono">scripts/create-admin.ts</td>
+          <td>Dodano seedowanie <code>DEFAULT_STATUS_CATALOG</code> — ten sam, sprawdzony mechanizm już używany w <code>create-organization.ts</code>, idempotentne. Zweryfikowane na żywo: przed poprawką 500, po poprawce 201 z poprawnym numerem sprawy.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="color:var(--ink-faint); font-size:13.5px;">Dla pełnego obrazu: w poprzednim etapie tej sesji (stabilizacja zestawu testów e2e) naprawiono też dwa mniejsze, niezwiązane problemy — brak walidacji formatu e-maila przy logowaniu (kolejność Guard→Pipe w NestJS) oraz <code>GET /orders/search</code> zwracający pustą odpowiedź zamiast JSON <code>null</code>. Potwierdzone pełnym zielonym zestawem 376 testów jednostkowych + 152 e2e.</p>
+
+  <h2><span class="num">10</span>Problemy pozostawione do dalszego wdrożenia</h2>
+  <ul>
+    <li>8b — numeracja spraw współdzielona między firmami</li>
+    <li>8c — niejednoznaczne komunikaty propagacji handoff przy łańcuchu &gt;2 firm</li>
+    <li>8e — brak marki organizacji w nagłówku Portalu Klienta</li>
+    <li>8f — podwójny e-mail zamknięcia przy ponownym otwarciu/zamknięciu</li>
+    <li>8g — brak samoobsługowego zakładania nowych organizacji <em>(świadomie odłożone — nie dotyczy DAWIDAM)</em></li>
+  </ul>
+  <p>Żadna z tych zmian nie została wykonana w tej sesji — żadna nie blokuje pracy DAWIDAM dzisiaj.</p>
+
+  <h2><span class="num">11</span>Co może utrudniać codzienną pracę pracowników DAWIDAM</h2>
+  <ol class="steps">
+    <li><strong>Status sprawy nie zmienia się automatycznie po przekazaniu partnerowi.</strong> Sprawa zostaje w statusie sprzed przekazania, dopóki pracownik ręcznie go nie zmieni — lista spraw może mylnie sugerować, że czeka na reakcję pracownika.</li>
+    <li><strong>Niejednoznaczna historia przy dłuższych łańcuchach</strong> — Kierownik nie zawsze rozpozna, czy aktualizacja pochodzi od bezpośredniego partnera, czy od kogoś dalej w łańcuchu.</li>
+    <li><strong>Sprawę można przekazać tylko raz w całej jej historii.</strong> Jedyna droga po pomyłce to nowa sprawa od zera — warto uwzględnić to w szkoleniu.</li>
+    <li><strong>Brak wymuszonej decyzji przed zamknięciem</strong> — przy dużym wolumenie możliwe zamknięcie bez zapisanej decyzji, co utrudni raportowanie.</li>
+    <li><strong>Rozjazd marki w Portalu Klienta</strong> — klient może być zdezorientowany, widząc „SmartRMA” zamiast sklepu, z którym się kontaktował.</li>
+  </ol>
+
+  <h2><span class="num">12</span>Zadania przed rozpoczęciem normalnego użytkowania</h2>
+  <ol class="steps">
+    <li><strong>Zalecane przed dodaniem drugiej organizacji</strong> — naprawić numerację spraw per firma (8b).</li>
+    <li><strong>Zalecane</strong> — dodać markę organizacji do nagłówka Portalu Klienta (8e).</li>
+    <li><strong>Zalecane</strong> — doprecyzować komunikaty propagacji handoff o nazwę firmy-źródła (8c).</li>
+    <li><strong>Do decyzji właściciela, bez zmian w kodzie</strong> — czy wymusić decyzję przed zamknięciem sprawy (Ustawienia → Statusy reklamacji).</li>
+    <li><strong>Operacyjne, obowiązkowe przed startem</strong> — potwierdzić konfigurację prawdziwego SMTP DAWIDAM, wysłać wiadomość testową.</li>
+    <li><strong>Szkolenie</strong> — po przekazaniu sprawy partnerowi trzeba ręcznie zmienić jej status.</li>
+    <li><strong>Szkolenie</strong> — przekazanie sprawy partnerowi jest jednorazowe i nieodwracalne.</li>
+    <li><strong>Opcjonalne, nie pilne</strong> — rozważyć self-service ekran zakładania organizacji (8g).</li>
+    <li><strong>Porządkowe</strong> — usunąć nagromadzone dane testowe przed użyciem tej bazy produkcyjnie.</li>
+  </ol>
+
+  <hr class="divider" />
+  <div class="closing">
+    <h3>Podsumowanie</h3>
+    <p>System w obecnym stanie <strong>nadaje się do stabilnego uruchomienia w DAWIDAM</strong> — pełny scenariusz B2B, B2C, onboarding i izolacja wielo-organizacyjna działają poprawnie w realnych warunkach. Jeden rzeczywisty, blokujący błąd (brak katalogu statusów dla nowej organizacji) został znaleziony i naprawiony w trakcie tego testu. Pozostałe znalezione problemy są realne, ale nie blokują bieżącej pracy DAWIDAM — każdy jest jasno opisany, zlokalizowany w kodzie i gotowy do zaplanowania jako osobne, świadome zadanie.</p>
+  </div>
+
+</div>

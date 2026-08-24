@@ -2,10 +2,12 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AppException } from '../../common/exceptions/app.exception';
 import { AuthorizationService } from '../../rbac/authorization.service';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { UsersRepository } from '../users/users.repository';
 import { UserWithRoles } from '../users/mappers/user.mapper';
 import { AuthService } from './auth.service';
 import { PasswordService } from './services/password.service';
+import { PinLoginAttemptStoreService } from './services/pin-login-attempt-store.service';
 import { RefreshTokenStoreService } from './services/refresh-token-store.service';
 
 function buildUser(overrides: Partial<UserWithRoles> = {}): UserWithRoles {
@@ -16,7 +18,9 @@ function buildUser(overrides: Partial<UserWithRoles> = {}): UserWithRoles {
     firstName: 'Jan',
     lastName: 'Kowalski',
     email: 'jan.kowalski@sklep.pl',
+    loginMethod: 'Password',
     passwordHash: 'hashed-password',
+    pinHash: null,
     active: true,
     lastLoginAt: null,
     createdAt: new Date('2026-01-01'),
@@ -41,24 +45,64 @@ function buildUser(overrides: Partial<UserWithRoles> = {}): UserWithRoles {
 }
 
 describe('AuthService', () => {
-  let usersRepository: jest.Mocked<Pick<UsersRepository, 'findByEmail' | 'findById' | 'touchLastLogin'>>;
+  let usersRepository: jest.Mocked<
+    Pick<
+      UsersRepository,
+      | 'findPasswordAccountByEmail'
+      | 'findPinAccountsByEmail'
+      | 'findById'
+      | 'touchLastLogin'
+      | 'countRecentFailedLoginEvents'
+      | 'recordLoginEvent'
+    >
+  >;
   let authorizationService: jest.Mocked<Pick<AuthorizationService, 'getEffectivePermissions'>>;
   let passwordService: jest.Mocked<PasswordService>;
   let refreshTokenStore: jest.Mocked<RefreshTokenStoreService>;
+  let pinLoginAttemptStore: jest.Mocked<PinLoginAttemptStoreService>;
   let jwtService: jest.Mocked<Pick<JwtService, 'signAsync'>>;
   let config: ConfigService;
+  let companySettingsService: jest.Mocked<Pick<CompanySettingsService, 'getSettings'>>;
   let service: AuthService;
 
   beforeEach(() => {
     usersRepository = {
-      findByEmail: jest.fn(),
+      findPasswordAccountByEmail: jest.fn(),
+      findPinAccountsByEmail: jest.fn().mockResolvedValue([]),
       findById: jest.fn(),
       touchLastLogin: jest.fn().mockResolvedValue(undefined),
+      countRecentFailedLoginEvents: jest.fn().mockResolvedValue(0),
+      recordLoginEvent: jest.fn().mockResolvedValue(undefined),
     };
     authorizationService = { getEffectivePermissions: jest.fn().mockResolvedValue(['cases.view']) };
-    passwordService = { hash: jest.fn(), compare: jest.fn() } as unknown as jest.Mocked<PasswordService>;
-    refreshTokenStore = { store: jest.fn(), isValid: jest.fn(), revoke: jest.fn() } as unknown as jest.Mocked<RefreshTokenStoreService>;
-    jwtService = { signAsync: jest.fn().mockImplementation((_payload, opts) => Promise.resolve(`signed-with-${opts.secret}`)) };
+    companySettingsService = {
+      getSettings: jest.fn().mockResolvedValue({
+        maxLoginAttempts: 5,
+        lockoutDurationMinutes: 15,
+        sessionTimeoutMinutes: 10080, // 7 dni w minutach — zgodne z dotychczasowym 'jwt.refreshExpiresIn'='7d' w testach niżej
+        maxPinAttempts: 3,
+        pinLockoutDurationMinutes: 30,
+      }),
+    };
+    passwordService = {
+      hash: jest.fn(),
+      compare: jest.fn(),
+    } as unknown as jest.Mocked<PasswordService>;
+    refreshTokenStore = {
+      store: jest.fn(),
+      isValid: jest.fn(),
+      revoke: jest.fn(),
+    } as unknown as jest.Mocked<RefreshTokenStoreService>;
+    pinLoginAttemptStore = {
+      getFailedCount: jest.fn().mockResolvedValue(0),
+      recordFailedAttempt: jest.fn().mockResolvedValue(undefined),
+      resetFailedCount: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<PinLoginAttemptStoreService>;
+    jwtService = {
+      signAsync: jest
+        .fn()
+        .mockImplementation((_payload, opts) => Promise.resolve(`signed-with-${opts.secret}`)),
+    };
     config = {
       get: jest.fn((key: string) => {
         const values: Record<string, string> = {
@@ -76,38 +120,146 @@ describe('AuthService', () => {
       authorizationService as unknown as AuthorizationService,
       passwordService,
       refreshTokenStore,
+      pinLoginAttemptStore,
       jwtService as unknown as JwtService,
       config,
+      companySettingsService as unknown as CompanySettingsService,
     );
   });
 
-  describe('validateCredentials (AUTH-001/AUTH-002)', () => {
-    it('rzuca AUTH-001, gdy użytkownik o podanym e-mailu nie istnieje', async () => {
-      usersRepository.findByEmail.mockResolvedValue(null);
-      await expect(service.validateCredentials('brak@sklep.pl', 'haslo')).rejects.toMatchObject({ code: 'AUTH-001' });
+  describe('validateCredentials — logowanie hasłem (AUTH-001/AUTH-002)', () => {
+    it('rzuca AUTH-001, gdy e-mail nie odpowiada ŻADNEMU kontu (Password ani Pin)', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(null);
+      usersRepository.findPinAccountsByEmail.mockResolvedValue([]);
+      await expect(service.validateCredentials('brak@sklep.pl', 'haslo')).rejects.toMatchObject({
+        code: 'AUTH-001',
+      });
     });
 
     it('rzuca AUTH-002, gdy konto jest nieaktywne — NIE porównuje hasła w ogóle', async () => {
-      usersRepository.findByEmail.mockResolvedValue(buildUser({ active: false }));
-      await expect(service.validateCredentials('jan.kowalski@sklep.pl', 'haslo')).rejects.toMatchObject({
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(buildUser({ active: false }));
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'haslo'),
+      ).rejects.toMatchObject({
         code: 'AUTH-002',
       });
       expect(passwordService.compare).not.toHaveBeenCalled();
     });
 
     it('rzuca AUTH-001, gdy hasło się nie zgadza', async () => {
-      usersRepository.findByEmail.mockResolvedValue(buildUser());
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(buildUser());
       passwordService.compare.mockResolvedValue(false);
-      await expect(service.validateCredentials('jan.kowalski@sklep.pl', 'zle-haslo')).rejects.toMatchObject({
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'zle-haslo'),
+      ).rejects.toMatchObject({
         code: 'AUTH-001',
       });
     });
 
     it('zwraca użytkownika, gdy e-mail/hasło poprawne i konto aktywne', async () => {
       const user = buildUser();
-      usersRepository.findByEmail.mockResolvedValue(user);
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(user);
       passwordService.compare.mockResolvedValue(true);
-      await expect(service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo')).resolves.toBe(user);
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
+      ).resolves.toBe(user);
+    });
+  });
+
+  describe('validateCredentials — blokada konta (AUTH-005)', () => {
+    it('rzuca AUTH-005, gdy liczba niedawnych nieudanych prób osiągnęła próg z Ustawień — NIE porównuje hasła', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(buildUser());
+      usersRepository.countRecentFailedLoginEvents.mockResolvedValue(5);
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
+      ).rejects.toMatchObject({
+        code: 'AUTH-005',
+      });
+      expect(passwordService.compare).not.toHaveBeenCalled();
+    });
+
+    it('pozwala się zalogować, gdy liczba niedawnych niepowodzeń jest poniżej progu', async () => {
+      const user = buildUser();
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(user);
+      usersRepository.countRecentFailedLoginEvents.mockResolvedValue(4);
+      passwordService.compare.mockResolvedValue(true);
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
+      ).resolves.toBe(user);
+    });
+
+    it('próg blokady jest konfigurowalny per firma (maxLoginAttempts z CompanySettings)', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(buildUser());
+      companySettingsService.getSettings.mockResolvedValue({
+        maxLoginAttempts: 2,
+        lockoutDurationMinutes: 15,
+        sessionTimeoutMinutes: 10080,
+      } as never);
+      usersRepository.countRecentFailedLoginEvents.mockResolvedValue(2);
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
+      ).rejects.toMatchObject({
+        code: 'AUTH-005',
+      });
+    });
+  });
+
+  describe('validateCredentials — logowanie PIN-em (wspólny e-mail, wielu kandydatów)', () => {
+    function buildPinUser(overrides: Partial<UserWithRoles> = {}): UserWithRoles {
+      return buildUser({
+        loginMethod: 'Pin',
+        passwordHash: null,
+        pinHash: 'hashed-pin',
+        ...overrides,
+      });
+    }
+
+    it('konto Password pod tym e-mailem ma PIERWSZEŃSTWO — kandydaci Pin nawet nie są pobierani', async () => {
+      const passwordUser = buildUser();
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(passwordUser);
+      passwordService.compare.mockResolvedValue(true);
+      await service.validateCredentials('biuro@sklep.pl', 'haslo-admina');
+      expect(usersRepository.findPinAccountsByEmail).not.toHaveBeenCalled();
+    });
+
+    it('trafia właściwego kandydata spośród kilku kont dzielących e-mail', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(null);
+      const alice = buildPinUser({ id: 'user-alice', pinHash: 'hash-alice' });
+      const bob = buildPinUser({ id: 'user-bob', pinHash: 'hash-bob' });
+      usersRepository.findPinAccountsByEmail.mockResolvedValue([alice, bob]);
+      passwordService.compare.mockImplementation((pin, hash) =>
+        Promise.resolve(hash === 'hash-bob' && pin === '654321'),
+      );
+
+      const result = await service.validateCredentials('biuro@sklep.pl', '654321');
+      expect(result.id).toBe('user-bob');
+      expect(pinLoginAttemptStore.resetFailedCount).toHaveBeenCalledWith('biuro@sklep.pl');
+    });
+
+    it('rzuca AUTH-001 (bez ujawniania istnienia konta) i zapisuje nieudaną próbę per e-mail, gdy żaden PIN nie pasuje', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(null);
+      usersRepository.findPinAccountsByEmail.mockResolvedValue([buildPinUser()]);
+      passwordService.compare.mockResolvedValue(false);
+
+      await expect(service.validateCredentials('biuro@sklep.pl', '000000')).rejects.toMatchObject({
+        code: 'AUTH-001',
+      });
+      expect(pinLoginAttemptStore.recordFailedAttempt).toHaveBeenCalledWith(
+        'biuro@sklep.pl',
+        30 * 60,
+      );
+      expect(usersRepository.recordLoginEvent).not.toHaveBeenCalled();
+    });
+
+    it('rzuca AUTH-006, gdy licznik Redis dla e-maila osiągnął próg — NIE próbuje żadnego porównania PIN-u', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(null);
+      usersRepository.findPinAccountsByEmail.mockResolvedValue([buildPinUser()]);
+      pinLoginAttemptStore.getFailedCount.mockResolvedValue(3);
+
+      await expect(service.validateCredentials('biuro@sklep.pl', '123456')).rejects.toMatchObject({
+        code: 'AUTH-006',
+      });
+      expect(passwordService.compare).not.toHaveBeenCalled();
     });
   });
 
@@ -130,10 +282,18 @@ describe('AuthService', () => {
 
     it('payload access tokenu niesie role/uprawnienia, ale refresh token TYLKO sub+jti+type (BR-077-podobna minimalizacja)', async () => {
       await service.login(buildUser());
-      const accessCall = jwtService.signAsync.mock.calls.find((call) => (call[0] as { type: string }).type === 'access')!;
-      const refreshCall = jwtService.signAsync.mock.calls.find((call) => (call[0] as { type: string }).type === 'refresh')!;
+      const accessCall = jwtService.signAsync.mock.calls.find(
+        (call) => (call[0] as { type: string }).type === 'access',
+      )!;
+      const refreshCall = jwtService.signAsync.mock.calls.find(
+        (call) => (call[0] as { type: string }).type === 'refresh',
+      )!;
 
-      expect(accessCall[0]).toMatchObject({ sub: 'user-1', email: 'jan.kowalski@sklep.pl', roles: ['Pracownik'] });
+      expect(accessCall[0]).toMatchObject({
+        sub: 'user-1',
+        email: 'jan.kowalski@sklep.pl',
+        roles: ['Pracownik'],
+      });
       expect(Object.keys(refreshCall[0] as object).sort()).toEqual(['jti', 'sub', 'type']);
     });
 

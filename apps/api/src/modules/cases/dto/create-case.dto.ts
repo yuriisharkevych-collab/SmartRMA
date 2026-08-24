@@ -1,5 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { ComplaintSource, ComplaintType, SubmissionMode } from '@prisma/client';
+import {
+  CaseContactPreference,
+  ComplaintSource,
+  ComplaintType,
+  SubmissionMode,
+} from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
@@ -15,7 +20,18 @@ import {
 
 class CreateCaseItemDto {
   @ApiPropertyOptional() @IsOptional() @IsUUID() orderItemId?: string;
-  @ApiProperty() @IsUUID() productId!: string;
+  /** Pozycja katalogu istniejąca ZANIM zgłoszono sprawę. Dokładnie jedno z `productId`/`productName` musi być podane — walidacja międzypolowa w `CasesService.create` (DTO nie widzi, które pole nadeszło puste w kontekście drugiego). */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() productId?: string;
+  /**
+   * Model spoza katalogu (BR-072/BR-074) — używane WYŁĄCZNIE gdy `productId` nie podano.
+   * `CasesService.create` sam znajduje pasujący istniejący `Product` po nazwie+producencie
+   * albo tworzy nowy — pracownik ma do tego wystarczające `cases.create`, nie musi mieć
+   * osobno `products.manage` (ta rejestracja modelu jest nieodłącznym efektem ubocznym
+   * zgłoszenia reklamacji, nie samodzielnym zarządzaniem katalogiem).
+   */
+  @ApiPropertyOptional() @IsOptional() @IsString() productName?: string;
+  /** Marka nowego modelu (tylko z `productName`) — pole pomocnicze, "sugeruje, nie wymusza" (BR-076). */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() brandId?: string;
   @ApiPropertyOptional() @IsOptional() @IsUUID() manufacturerId?: string;
   @ApiProperty() @IsString() description!: string;
 
@@ -79,6 +95,19 @@ export class CreateCaseDto {
    * bez zmiany modelu danych/RBAC.
    */
   @ApiPropertyOptional() @IsOptional() @IsBoolean() clientPortalEnabled?: boolean;
+
+  /** Formularz rozgałęziony marki (np. Veres Meble) — `Contractor` (category=Distributor) który zgłosił sprawę, patrz komentarz przy `Case.reportedByContractorId` w schemacie. */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() reportedByContractorId?: string;
+  @ApiPropertyOptional({ enum: CaseContactPreference })
+  @IsOptional()
+  @IsEnum(CaseContactPreference)
+  contactPreference?: CaseContactPreference;
+
+  /** Zrzucona nazwa nadawcy e-mail dla WSZYSTKICH przyszłych powiadomień tej sprawy (np. "Veres Meble"), patrz komentarz przy `Case.notificationSenderName` w schemacie. `undefined` = zwykłe zachowanie (nazwa firmy z Ustawienia → E-mail). */
+  @ApiPropertyOptional() @IsOptional() @IsString() notificationSenderName?: string;
+
+  /** Formularz rozgałęziony marki, wariant "osobne konto Dystrybutora" — `Company` powiązana Partnership, patrz `Case.reportedByPartnerCompanyId` w schemacie. */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() reportedByPartnerCompanyId?: string;
 
   @ApiProperty({ type: [CreateCaseItemDto] })
   @IsArray()

@@ -1,6 +1,10 @@
 import { forwardRef, Module } from '@nestjs/common';
+import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
+import { CaseStatusesModule } from '../case-statuses/case-statuses.module';
 import { CasesModule } from '../cases/cases.module';
+import { CompanySettingsModule } from '../company-settings/company-settings.module';
+import { RolesModule } from '../roles/roles.module';
 import { UsersController } from './users.controller';
 import { UsersRepository } from './users.repository';
 import { UsersService } from './users.service';
@@ -17,6 +21,10 @@ import { UsersService } from './users.service';
     // wraca do punktu startu), więc forwardRef na poziomie modułu wystarcza,
     // dokładnie jak dla AuthModule↔UsersModule wyżej.
     forwardRef(() => CasesModule),
+    CaseStatusesModule,
+    CompanySettingsModule,
+    AuditModule,
+    RolesModule,
   ],
   controllers: [UsersController],
   providers: [UsersService, UsersRepository],

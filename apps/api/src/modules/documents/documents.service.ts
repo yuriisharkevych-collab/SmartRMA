@@ -116,9 +116,15 @@ export class DocumentsService {
    * `Document` + `CaseHistory(DocumentAdded)` + `AuditLog` atomowo;
    * `document.uploaded` publikowane DOPIERO po commicie.
    */
+  /**
+   * `uploadedById: string | null` — `null` oznacza wgranie przez klienta w Portalu
+   * (patrz komentarz przy `Document.uploadedById` w schemacie). Portal woła tę samą
+   * metodę co pracownik (`PortalService.uploadDocument`) — jedna ścieżka walidacji/
+   * zapisu/zdarzeń dla obu źródeł, bez duplikowania logiki.
+   */
   async uploadDocument(
     caseId: string,
-    uploadedById: string,
+    uploadedById: string | null,
     companyId: string,
     dto: CreateDocumentDto,
   ): Promise<DocumentEntity> {
@@ -247,7 +253,10 @@ export class DocumentsService {
 
   /** CASE-012 (goły `NotFoundException`, patrz `CasesService`) jeśli sprawa nie istnieje; izolacja dzierżawy (BR-086) jeśli należy do innej firmy. Zwraca `CaseEntity`, żeby wołający mógł od razu zweryfikować `caseItemId` bez kolejnego zapytania. */
   private async assertCaseAccessible(caseId: string, companyId: string) {
-    const caseEntity = await this.casesService.findById(caseId);
+    // `CasesService.findById` samo filtruje po `companyId` teraz (patrz audyt
+    // bezpieczeństwa) — jawny check niżej zostaje jako druga linia obrony,
+    // tańsza niż ponowne zapytanie, gdyby to kiedyś się rozjechało.
+    const caseEntity = await this.casesService.findById(caseId, companyId);
     if (caseEntity.companyId !== companyId) {
       throw new NotFoundException();
     }

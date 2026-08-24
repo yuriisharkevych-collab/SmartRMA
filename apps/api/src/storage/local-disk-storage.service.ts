@@ -56,4 +56,27 @@ export class LocalDiskStorageService implements IStorageService {
     }
     return fs.readFile(absolute);
   }
+
+  async copy(
+    sourceStoragePath: string,
+    companyId: string,
+    caseId: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<StoredFile> {
+    const buffer = await this.read(sourceStoragePath);
+    const dir = path.join(this.uploadsRoot, companyId, caseId);
+    await fs.mkdir(dir, { recursive: true });
+
+    const safeName = sanitizeFileName(fileName);
+    const diskName = `${randomUUID()}-${safeName}`;
+    await fs.writeFile(path.join(dir, diskName), buffer);
+
+    return {
+      storagePath: [companyId, caseId, diskName].join('/'),
+      fileName,
+      mimeType,
+      fileSize: buffer.length,
+    };
+  }
 }

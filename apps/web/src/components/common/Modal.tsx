@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode } from 'react';
 import { XIcon } from './icons';
 
 interface ModalProps {
@@ -8,26 +8,26 @@ interface ModalProps {
   footer?: ReactNode;
   children: ReactNode;
   wide?: boolean;
+  /** Błąd z ostatniej akcji w tym modalu — bez tego renderował się tylko na stronie POD nakładką `.modal-overlay`, więc był niewidoczny dopóki modal jest otwarty (użytkownik klikał "Wyślij" i wyglądało, jakby nic się nie stało). */
+  error?: string | null;
 }
 
-/** Odpowiednik `openModal()`/`closeModal()` + `.modal-overlay`/`.modal` z prototypu (`app.js` + `design-system.css`). Zamknięcie klawiszem Escape i kliknięciem tła — obu prototyp nie miał, ale są darmowe i oczekiwane w dialogu. */
-export function Modal({ open, title, onClose, footer, children, wide = false }: ModalProps) {
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
-
+/**
+ * Odpowiednik `openModal()`/`closeModal()` + `.modal-overlay`/`.modal` z
+ * prototypu (`app.js` + `design-system.css`). Świadomie BEZ zamykania przez
+ * kliknięcie w tło i klawisz Escape — użytkownik zgłosił, że przypadkowe
+ * kliknięcie obok okienka podczas wypełniania formularza (np. edycja
+ * producenta/użytkownika) kasowało niezapisane dane. Zamknięcie wyłącznie
+ * przez świadome akcje: X, "Anuluj" albo zapis (każdy z nich woła `onClose`
+ * z poziomu strony, po swojej stronie logiki).
+ */
+export function Modal({ open, title, onClose, footer, children, wide = false, error }: ModalProps) {
   if (!open) return null;
 
   return (
-    <div className="modal-overlay open" onClick={onClose}>
+    <div className="modal-overlay open">
       <div
         className={`modal ${wide ? 'modal-wide' : ''}`}
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -44,7 +44,14 @@ export function Modal({ open, title, onClose, footer, children, wide = false }: 
             <XIcon />
           </div>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className="modal-body">
+          {error && (
+            <p className="field-error" style={{ display: 'block', marginBottom: 12 }}>
+              {error}
+            </p>
+          )}
+          {children}
+        </div>
         {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>

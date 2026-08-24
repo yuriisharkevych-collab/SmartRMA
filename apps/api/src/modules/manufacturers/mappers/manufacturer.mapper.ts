@@ -27,6 +27,7 @@ export class ManufacturerMapper {
       maxPhotos,
       maxAttachmentSizeMb,
       active,
+      productCategories,
       sla,
       logistics,
       automation,
@@ -52,6 +53,7 @@ export class ManufacturerMapper {
       maxPhotos,
       maxAttachmentSizeMb,
       active,
+      productCategories,
       // `portalPasswordEncrypted` CELOWO nieeksponowane — `schema.prisma` oznacza
       // szyfrowanie aplikacyjne tego pola jako niezrealizowane ("BACKEND TODO"),
       // a hasło do portalu producenta musi być odzyskiwalne, nie hashowane.
@@ -62,6 +64,8 @@ export class ManufacturerMapper {
             repairDays: sla.repairDays,
             reminderAfterDays: sla.reminderAfterDays,
             escalationAfterDays: sla.escalationAfterDays,
+            statusStaleDaysOverride: sla.statusStaleDaysOverride,
+            caseAgeStaleDaysOverride: sla.caseAgeStaleDaysOverride,
           }
         : null,
       logistics: logistics

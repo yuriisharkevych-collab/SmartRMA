@@ -15,7 +15,13 @@ import { MessageEntity } from '../entities/message.entity';
 import { NoteEntity } from '../entities/note.entity';
 import { ReplacementProductEntity } from '../entities/replacement-product.entity';
 
-export type CaseWithItems = Prisma.CaseGetPayload<{ include: { items: true } }>;
+export type CaseWithItems = Prisma.CaseGetPayload<{
+  include: {
+    items: { include: { product: { select: { brandId: true } } } };
+    reportedByPartnerCompany: { select: { name: true } };
+    _count: { select: { messages: true } };
+  };
+}>;
 
 export class CaseMapper {
   /**
@@ -43,6 +49,12 @@ export class CaseMapper {
       complaintType: caseRecord.complaintType,
       submissionMode: caseRecord.submissionMode,
       source: caseRecord.source,
+      originType: caseRecord.originType,
+      reportedByContractorId: caseRecord.reportedByContractorId,
+      reportedByPartnerCompanyId: caseRecord.reportedByPartnerCompanyId,
+      reportedByPartnerCompanyName: caseRecord.reportedByPartnerCompany?.name ?? null,
+      contactPreference: caseRecord.contactPreference,
+      notificationSenderName: caseRecord.notificationSenderName,
 
       requestedResolution: caseRecord.requestedResolution,
       description: caseRecord.description,
@@ -54,6 +66,11 @@ export class CaseMapper {
       decision: caseRecord.decision,
       decisionAt: caseRecord.decisionAt,
       decisionByUserId: caseRecord.decisionByUserId,
+      decisionContractorId: caseRecord.decisionContractorId,
+      decisionIsPositive: caseRecord.decisionIsPositive,
+      decisionJustification: caseRecord.decisionJustification,
+      decisionFulfillmentMethod: caseRecord.decisionFulfillmentMethod,
+      decisionManufacturerResponse: caseRecord.decisionManufacturerResponse,
 
       nextAction: caseRecord.nextAction,
       nextActionDueDate: caseRecord.nextActionDueDate,
@@ -69,7 +86,16 @@ export class CaseMapper {
       cancelledAt: caseRecord.cancelledAt,
       archivedAt: caseRecord.archivedAt,
 
+      statusChangedAt: caseRecord.statusChangedAt,
+      // Bezpieczny domyślny — mapper nie zna ustawień firmy/producenta.
+      // Realną wartość dolicza `CasesService` po zmapowaniu (patrz
+      // `attachAttention`), tak samo dla listy jak i pojedynczej sprawy.
+      needsAttention: false,
+      attentionReasons: [],
+      waitingForCustomer: false,
+
       items: caseRecord.items.map(CaseMapper.itemToEntity),
+      unreadMessagesCount: caseRecord._count.messages,
     };
   }
 
@@ -77,7 +103,7 @@ export class CaseMapper {
     return cases.map(CaseMapper.toEntity);
   }
 
-  static itemToEntity(item: CaseItem): CaseItemEntity {
+  static itemToEntity(item: CaseItem & { product?: { brandId: string | null } }): CaseItemEntity {
     const {
       id,
       caseId,
@@ -103,16 +129,32 @@ export class CaseMapper {
       frameNumber,
       purchaseDate,
       purchaseProofNumber,
+      brandId: item.product?.brandId ?? null,
     };
   }
 
-  static historyToEntity(entry: CaseHistory): CaseHistoryEntity {
+  static historyToEntity(
+    entry: CaseHistory & { user?: { firstName: string; lastName: string } | null },
+  ): CaseHistoryEntity {
     const { id, caseId, userId, action, previousValue, newValue, visibleForCustomer, createdAt } =
       entry;
-    return { id, caseId, userId, action, previousValue, newValue, visibleForCustomer, createdAt };
+    return {
+      id,
+      caseId,
+      userId,
+      userFirstName: entry.user?.firstName ?? null,
+      userLastName: entry.user?.lastName ?? null,
+      action,
+      previousValue,
+      newValue,
+      visibleForCustomer,
+      createdAt,
+    };
   }
 
-  static historyToEntityList(entries: CaseHistory[]): CaseHistoryEntity[] {
+  static historyToEntityList(
+    entries: (CaseHistory & { user?: { firstName: string; lastName: string } | null })[],
+  ): CaseHistoryEntity[] {
     return entries.map(CaseMapper.historyToEntity);
   }
 
@@ -125,7 +167,10 @@ export class CaseMapper {
     return notes.map(CaseMapper.noteToEntity);
   }
 
-  static messageToEntity(message: Message): MessageEntity {
+  static messageToEntity(
+    message: Message,
+    documents: { id: string; fileName: string }[] = [],
+  ): MessageEntity {
     const {
       id,
       caseId,
@@ -147,13 +192,16 @@ export class CaseMapper {
       channel,
       subject,
       content,
+      documents,
       sentAt,
       readAt,
     };
   }
 
-  static messageToEntityList(messages: Message[]): MessageEntity[] {
-    return messages.map(CaseMapper.messageToEntity);
+  static messageToEntityList(
+    messages: (Message & { documents?: { id: string; fileName: string }[] })[],
+  ): MessageEntity[] {
+    return messages.map((m) => CaseMapper.messageToEntity(m, m.documents ?? []));
   }
 
   static replacementToEntity(replacement: ReplacementProduct): ReplacementProductEntity {

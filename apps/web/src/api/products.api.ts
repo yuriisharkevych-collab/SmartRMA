@@ -19,6 +19,29 @@ export interface Brand {
   manufacturerId: string;
   name: string;
   active: boolean;
+  /** Etap 3 — opcjonalne nadpisania wymagań/SLA producenta. `null` = dziedzicz z producenta (patrz `BrandOverridesPayload`). */
+  requiresSerialNumber: boolean | null;
+  requiresFrameNumber: boolean | null;
+  requiresProofOfPurchase: boolean | null;
+  minPhotos: number | null;
+  requiresVideo: boolean | null;
+  maxPhotos: number | null;
+  maxAttachmentSizeMb: number | null;
+  statusStaleDaysOverride: number | null;
+  caseAgeStaleDaysOverride: number | null;
+}
+
+/** `PATCH /brands/:id` — pola nadpisań, patrz `Brand`. Pominięcie pola = "nie zmieniaj", `null` wprost = "usuń nadpisanie, wróć do dziedziczenia z producenta". */
+export interface BrandOverridesPayload {
+  requiresSerialNumber?: boolean | null;
+  requiresFrameNumber?: boolean | null;
+  requiresProofOfPurchase?: boolean | null;
+  minPhotos?: number | null;
+  requiresVideo?: boolean | null;
+  maxPhotos?: number | null;
+  maxAttachmentSizeMb?: number | null;
+  statusStaleDaysOverride?: number | null;
+  caseAgeStaleDaysOverride?: number | null;
 }
 
 export const productsApi = {
@@ -40,6 +63,8 @@ export const brandsApi = {
   create: (payload: { manufacturerId: string; name: string }) =>
     apiClient.post<Brand>('/brands', payload).then((res) => res.data),
   /** Marki NIE usuwamy — `Product.brandId` na nią wskazuje, a historyczne reklamacje muszą zachować dane produktu. `active=false` to soft delete (ten sam wzorzec co `Shop`/`User`). */
-  update: (id: string, payload: { name?: string; manufacturerId?: string; active?: boolean }) =>
-    apiClient.patch<Brand>(`/brands/${id}`, payload).then((res) => res.data),
+  update: (
+    id: string,
+    payload: { name?: string; manufacturerId?: string; active?: boolean } & BrandOverridesPayload,
+  ) => apiClient.patch<Brand>(`/brands/${id}`, payload).then((res) => res.data),
 };

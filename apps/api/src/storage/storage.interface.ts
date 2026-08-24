@@ -17,4 +17,12 @@ export interface StoredFile {
 export interface IStorageService {
   save(companyId: string, caseId: string, file: Express.Multer.File): Promise<StoredFile>;
   read(storagePath: string): Promise<Buffer>;
+  /** CaseHandoff — kopiuje istniejący plik pod nową ścieżkę (inna firma/sprawa), bez przechodzenia przez upload multipart. */
+  copy(
+    sourceStoragePath: string,
+    companyId: string,
+    caseId: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<StoredFile>;
 }

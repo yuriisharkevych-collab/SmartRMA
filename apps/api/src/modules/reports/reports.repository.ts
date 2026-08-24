@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { CaseStatus, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /** Zakres raportu — KAŻDE zapytanie tego repozytorium przyjmuje go razem z `companyId`, żeby nie dało się przypadkiem policzyć danych innej firmy (BR-086). */
@@ -8,8 +8,6 @@ export interface ReportRange {
   from: Date;
   to: Date;
 }
-
-const CLOSED_STATUSES = [CaseStatus.Zamknieta, CaseStatus.Anulowana, CaseStatus.Zarchiwizowana];
 
 /**
  * Agregaty raportowe. Zasady:
@@ -79,20 +77,28 @@ export class ReportsRepository {
     });
   }
 
-  /** Sprawy zamknięte w zakresie — do średniego czasu obsługi i statystyk pracowników. */
-  findClosedCases(range: ReportRange) {
+  /**
+   * Sprawy zamknięte w zakresie — do średniego czasu obsługi i statystyk
+   * pracowników. Status Workflow Refactor — `closedStatusCodes` (zbiór
+   * `isFinal=true` z katalogu firmy, wyliczony przez `ReportsService`)
+   * zamiast dawnego hardcodowanego `CaseStatus.Zamknieta` (dawna
+   * niespójność: filtrowało WYŁĄCZNIE "Zamknięta", pomijając
+   * "Anulowana"/"Zarchiwizowana", mimo że `CLOSED_STATUSES` niżej w tym
+   * pliku uwzględniało wszystkie trzy — teraz jedno źródło prawdy).
+   */
+  findClosedCases(range: ReportRange, closedStatusCodes: string[]) {
     return this.prisma.case.findMany({
-      where: { ...this.where(range), status: CaseStatus.Zamknieta, closedAt: { not: null } },
+      where: { ...this.where(range), status: { in: closedStatusCodes }, closedAt: { not: null } },
       select: { id: true, ownerId: true, shopId: true, createdAt: true, closedAt: true },
     });
   }
 
   /** Sprawy otwarte po terminie — „przeterminowane" liczone tak samo jak na liście spraw i dashboardzie. */
-  findOverdueCases(range: ReportRange, now: Date) {
+  findOverdueCases(range: ReportRange, now: Date, closedStatusCodes: string[]) {
     return this.prisma.case.findMany({
       where: {
         ...this.where(range),
-        status: { notIn: CLOSED_STATUSES },
+        status: { notIn: closedStatusCodes },
         nextActionDueDate: { not: null, lt: now },
       },
       select: { id: true, ownerId: true },
@@ -145,15 +151,18 @@ export class ReportsRepository {
   }
 
   /**
-   * Wejścia w `WyslanaDoProducenta` i wpisy `DecisionSet` — z nich liczymy
-   * czas odpowiedzi producenta i naruszenia SLA. Pobieramy wyłącznie te dwa
-   * rodzaje wpisów, nie całą historię sprawy.
+   * Wejścia w status "przekazana do producenta/dystrybutora" i wpisy
+   * `DecisionSet` — z nich liczymy czas odpowiedzi producenta i naruszenia
+   * SLA. Pobieramy wyłącznie te dwa rodzaje wpisów, nie całą historię
+   * sprawy. Status Workflow Refactor — `sentToManufacturerStatusCode`
+   * przekazywany przez `ReportsService` (dawniej hardcodowane
+   * `CaseStatus.WyslanaDoProducenta`).
    */
-  findResponseTimeline(range: ReportRange) {
+  findResponseTimeline(range: ReportRange, sentToManufacturerStatusCode: string) {
     return this.prisma.caseHistory.findMany({
       where: {
         case: this.where(range),
-        OR: [{ newValue: CaseStatus.WyslanaDoProducenta }, { action: 'DecisionSet' }],
+        OR: [{ newValue: sentToManufacturerStatusCode }, { action: 'DecisionSet' }],
       },
       select: { caseId: true, action: true, newValue: true, createdAt: true },
       orderBy: { createdAt: 'asc' },

@@ -1,4 +1,5 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
+import { toValidationException } from '../src/common/validation/to-validation-exception';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as request from 'supertest';
@@ -10,8 +11,18 @@ import { EVENT_NAMES } from '../src/events/event-names.const';
 
 /**
  * Test integracyjny/e2e — WYMAGA prawdziwego Postgresa i Redisa (jak
- * `test/cases.e2e-spec.ts`). Nieuruchomiony w tym środowisku — patrz raport
- * końcowy Zadania 17.
+ * `test/cases.e2e-spec.ts`).
+ *
+ * `POST /cases/:caseId/documents` scenariusze zaktualizowane po wdrożeniu
+ * prawdziwego backendu plików (`IStorageService`/`LocalDiskStorageService`,
+ * `DocumentsController.upload`) — endpoint dziś przyjmuje `multipart/form-data`
+ * z prawdziwym plikiem (`file`), nie JSON z deklarowanym `fileName`/`fileType`/
+ * `mimeType`/`fileSize`/`storagePath` (te są dziś wyprowadzane z samego pliku
+ * w kontrolerze, `UploadDocumentDto` ich w ogóle nie przyjmuje — `whitelist:true`
+ * odrzucał je jako pola spoza DTO, VALIDATION-001, nie test na rzeczywiste
+ * zachowanie). Wzorzec `.attach('file', ...)` przejęty z
+ * `test/multi-tenant-idor.e2e-spec.ts`, gdzie ten sam endpoint jest już
+ * poprawnie testowany.
  */
 describe('Documents (e2e)', () => {
   let app: INestApplication;
@@ -31,7 +42,16 @@ describe('Documents (e2e)', () => {
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+        errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        exceptionFactory: toValidationException,
+      }),
+    );
     app.useGlobalFilters(new HttpExceptionFilter());
     app.setGlobalPrefix('api', { exclude: ['health', 'version'] });
     await app.init();
@@ -50,6 +70,7 @@ describe('Documents (e2e)', () => {
     const caseRecord = await prisma.case.create({
       data: {
         companyId,
+        status: 'Nowa',
         customerId: customer.id,
         caseNumber: `RMA/E2E-DOCS/${Date.now()}`,
         complaintType: 'Warranty',
@@ -66,7 +87,7 @@ describe('Documents (e2e)', () => {
     const otherCompany = await prisma.company.create({ data: { name: `E2E Documents Other ${Date.now()}` } });
     const otherCustomer = await prisma.customer.create({ data: { companyId: otherCompany.id, firstName: 'Anna', lastName: 'Nowak', phone: '600000001' } });
     const otherCase = await prisma.case.create({
-      data: { companyId: otherCompany.id, customerId: otherCustomer.id, caseNumber: `RMA/E2E-DOCS-OTHER/${Date.now()}`, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis' },
+      data: { companyId: otherCompany.id, status: 'Nowa', customerId: otherCustomer.id, caseNumber: `RMA/E2E-DOCS-OTHER/${Date.now()}`, complaintType: 'Warranty', requestedResolution: 'Naprawa', description: 'Opis' },
     });
     otherCompanyCaseId = otherCase.id;
 
@@ -110,18 +131,14 @@ describe('Documents (e2e)', () => {
   });
 
   const authHeader = (token: string) => ({ Authorization: `Bearer ${token}` });
-  const uploadBody = (overrides: Record<string, unknown> = {}) => ({
-    fileName: 'zdjecie.jpg',
-    fileType: 'JPG',
-    mimeType: 'image/jpeg',
-    fileSize: 204800,
-    storagePath: '/uploads/zdjecie.jpg',
-    ...overrides,
-  });
+  const pdfBuffer = () => Buffer.from('%PDF-1.4 e2e-test-content');
 
   describe('POST /api/cases/:caseId/documents', () => {
     it('odmawia dostępu bez uprawnienia `documents.upload` (RBAC-001)', async () => {
-      const res = await request(app.getHttpServer()).post(`/api/cases/${caseId}/documents`).set(authHeader(noPermAccessToken)).send(uploadBody());
+      const res = await request(app.getHttpServer())
+        .post(`/api/cases/${caseId}/documents`)
+        .set(authHeader(noPermAccessToken))
+        .attach('file', pdfBuffer(), 'zdjecie.pdf');
       expect(res.status).toBe(403);
       expect(res.body.error.code).toBe('RBAC-001');
     });
@@ -130,31 +147,52 @@ describe('Documents (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post('/api/cases/00000000-0000-0000-0000-000000000000/documents')
         .set(authHeader(adminAccessToken))
-        .send(uploadBody());
+        .attach('file', pdfBuffer(), 'zdjecie.pdf');
       expect(res.status).toBe(404);
     });
 
     it('zwraca 404 dla sprawy należącej do INNEJ firmy (izolacja dzierżawy)', async () => {
-      const res = await request(app.getHttpServer()).post(`/api/cases/${otherCompanyCaseId}/documents`).set(authHeader(adminAccessToken)).send(uploadBody());
+      const res = await request(app.getHttpServer())
+        .post(`/api/cases/${otherCompanyCaseId}/documents`)
+        .set(authHeader(adminAccessToken))
+        .attach('file', pdfBuffer(), 'zdjecie.pdf');
       expect(res.status).toBe(404);
     });
 
-    it('zwraca 422 dla nieprawidłowego fileType (poza enumem DocumentType)', async () => {
-      const res = await request(app.getHttpServer()).post(`/api/cases/${caseId}/documents`).set(authHeader(adminAccessToken)).send(uploadBody({ fileType: 'BMP' }));
-      expect(res.status).toBe(422);
+    it('zwraca 415 FILE-003 dla nieobsługiwanego formatu pliku (poza enumem DocumentType)', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/cases/${caseId}/documents`)
+        .set(authHeader(adminAccessToken))
+        .attach('file', Buffer.from('nieobslugiwany format'), { filename: 'plik.bmp', contentType: 'image/bmp' });
+      expect(res.status).toBe(415);
+      expect(res.body.error.code).toBe('FILE-003');
     });
 
     it('zwraca 404, gdy caseItemId nie należy do tej sprawy', async () => {
       const res = await request(app.getHttpServer())
         .post(`/api/cases/${caseId}/documents`)
         .set(authHeader(adminAccessToken))
-        .send(uploadBody({ caseItemId: '00000000-0000-0000-0000-000000000000' }));
+        .field('caseItemId', '00000000-0000-0000-0000-000000000000')
+        .attach('file', pdfBuffer(), 'zdjecie.pdf');
       expect(res.status).toBe(404);
     });
 
     it('odrzuca próbę ustawienia pola systemowego spoza DTO (status) — VALIDATION-001', async () => {
-      const res = await request(app.getHttpServer()).post(`/api/cases/${caseId}/documents`).set(authHeader(adminAccessToken)).send(uploadBody({ status: 'Bledny' }));
+      const res = await request(app.getHttpServer())
+        .post(`/api/cases/${caseId}/documents`)
+        .set(authHeader(adminAccessToken))
+        .field('status', 'Bledny')
+        .attach('file', pdfBuffer(), 'zdjecie.pdf');
       expect(res.status).toBe(422);
+    });
+
+    it('zwraca 422 VALIDATION-001, gdy brak pliku (`file`)', async () => {
+      const res = await request(app.getHttpServer())
+        .post(`/api/cases/${caseId}/documents`)
+        .set(authHeader(adminAccessToken))
+        .field('category', 'Photo');
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('VALIDATION-001');
     });
 
     it('przesyła dokument, zapisuje AuditLog+CaseHistory(DocumentAdded) i publikuje `document.uploaded`', async () => {
@@ -164,7 +202,10 @@ describe('Documents (e2e)', () => {
       const res = await request(app.getHttpServer())
         .post(`/api/cases/${caseId}/documents`)
         .set(authHeader(adminAccessToken))
-        .send(uploadBody({ caseItemId, category: 'Photo', visibility: 'Public' }));
+        .field('caseItemId', caseItemId)
+        .field('category', 'Photo')
+        .field('visibility', 'Public')
+        .attach('file', pdfBuffer(), 'zdjecie.pdf');
 
       expect(res.status).toBe(201);
       expect(res.body.caseId).toBe(caseId);

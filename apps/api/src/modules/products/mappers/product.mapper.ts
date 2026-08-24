@@ -12,8 +12,38 @@ export class ProductMapper {
   }
 
   static brandToEntity(brand: Brand): BrandEntity {
-    const { id, companyId, manufacturerId, name, active } = brand;
-    return { id, companyId, manufacturerId, name, active };
+    const {
+      id,
+      companyId,
+      manufacturerId,
+      name,
+      active,
+      requiresSerialNumber,
+      requiresFrameNumber,
+      requiresProofOfPurchase,
+      minPhotos,
+      requiresVideo,
+      maxPhotos,
+      maxAttachmentSizeMb,
+      statusStaleDaysOverride,
+      caseAgeStaleDaysOverride,
+    } = brand;
+    return {
+      id,
+      companyId,
+      manufacturerId,
+      name,
+      active,
+      requiresSerialNumber,
+      requiresFrameNumber,
+      requiresProofOfPurchase,
+      minPhotos,
+      requiresVideo,
+      maxPhotos,
+      maxAttachmentSizeMb,
+      statusStaleDaysOverride,
+      caseAgeStaleDaysOverride,
+    };
   }
 
   static brandsToEntities(brands: Brand[]): BrandEntity[] {

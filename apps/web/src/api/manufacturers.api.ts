@@ -8,6 +8,9 @@ export interface ManufacturerSla {
   repairDays: number | null;
   reminderAfterDays: number | null;
   escalationAfterDays: number | null;
+  /** Przypomnienia o reakcji — nadpisanie wartości domyślnej firmy (Ustawienia → Przypomnienia). `null` = użyj wartości domyślnej. */
+  statusStaleDaysOverride: number | null;
+  caseAgeStaleDaysOverride: number | null;
 }
 
 export interface ManufacturerLogistics {
@@ -51,6 +54,8 @@ export interface Manufacturer {
   maxPhotos: number;
   maxAttachmentSizeMb: number;
   active: boolean;
+  /** Etap 3 — kategorie produktowe formularza publicznego marki (`/reklamacja-marka/:brandSlug`), per producent. */
+  productCategories: string[];
   sla: ManufacturerSla | null;
   logistics: ManufacturerLogistics | null;
   automation: ManufacturerAutomation | null;
@@ -73,6 +78,8 @@ export interface ManufacturerProfilePayload {
   maxPhotos?: number;
   maxAttachmentSizeMb?: number;
   active?: boolean;
+  /** Etap 3 — kategorie produktowe formularza publicznego marki, per producent. */
+  productCategories?: string[];
 }
 
 export interface LogisticsPayload {
@@ -99,6 +106,8 @@ export interface SlaPayload {
   repairDays?: number | null;
   reminderAfterDays?: number | null;
   escalationAfterDays?: number | null;
+  statusStaleDaysOverride?: number | null;
+  caseAgeStaleDaysOverride?: number | null;
 }
 
 export const manufacturersApi = {
@@ -113,4 +122,6 @@ export const manufacturersApi = {
     apiClient.put<Manufacturer>(`/manufacturers/${id}/automation`, payload).then((res) => res.data),
   updateSla: (id: string, payload: SlaPayload) =>
     apiClient.put<Manufacturer>(`/manufacturers/${id}/sla`, payload).then((res) => res.data),
+  /** `manufacturers.delete` — TRWAŁE usunięcie, wyłącznie Administrator. Zablokowane, gdy producent ma przypisane produkty/marki. */
+  delete: (id: string) => apiClient.delete<void>(`/manufacturers/${id}`).then(() => undefined),
 };

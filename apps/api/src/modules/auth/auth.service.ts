@@ -2,14 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
+import { isEmail } from 'class-validator';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
 import { AuthorizationService } from '../../rbac/authorization.service';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { UserWithRoles } from '../users/mappers/user.mapper';
 import { UsersRepository } from '../users/users.repository';
 import { AuthTokensEntity } from './entities/auth-tokens.entity';
 import { JwtAccessPayload, JwtRefreshPayload } from './interfaces/jwt-payload.interface';
 import { PasswordService } from './services/password.service';
+import { PinLoginAttemptStoreService } from './services/pin-login-attempt-store.service';
 import { RefreshTokenStoreService } from './services/refresh-token-store.service';
 
 /** Kontekst żądania dla `LoginEvent` — przekazywany z kontrolera/strategii, bo serwis nie zna `Request`. */
@@ -32,31 +35,85 @@ export class AuthService {
     private readonly authorizationService: AuthorizationService,
     private readonly passwordService: PasswordService,
     private readonly refreshTokenStore: RefreshTokenStoreService,
+    private readonly pinLoginAttemptStore: PinLoginAttemptStoreService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly companySettingsService: CompanySettingsService,
   ) {}
 
   /**
-   * AUTH-001/AUTH-002 — wołane przez `LocalStrategy`.
-   *
-   * Nieudane próby zapisujemy do `LoginEvent` TYLKO wtedy, gdy e-mail
-   * wskazuje istniejące konto — dla nieistniejącego nie ma `userId`, a
-   * `LoginEvent.userId` jest wymagane. Komunikat błędu pozostaje ten sam
-   * (AUTH-001) w obu przypadkach, żeby nie zdradzać, które adresy istnieją.
+   * AUTH-001/AUTH-002/AUTH-005/AUTH-006 — wołane przez `LocalStrategy`.
+   * `secret` niesie hasło ALBO PIN — `LoginDto`/kontrakt `/auth/login` się
+   * nie zmienia (nadal pole `password`), rozstrzygnięcie który to przypadek
+   * zależy WYŁĄCZNIE od tego, jaki `loginMethod` mają konta pod danym
+   * e-mailem (patrz komentarz przy `User.loginMethod` w schema.prisma —
+   * właściciel: wiele stanowisk w firmie dzieli jeden e-mail firmowy, PIN
+   * odróżnia pracownika).
    */
   async validateCredentials(
     email: string,
-    password: string,
+    secret: string,
     context?: LoginContext,
   ): Promise<UserWithRoles> {
-    const user = await this.usersRepository.findByEmail(email);
-    if (!user) {
+    // `LoginDto.email` niesie `@IsEmail({message:'VALIDATION-002'})`, ale `LocalAuthGuard`
+    // (Passport) wykonuje się PRZED `ValidationPipe` w cyklu życia żądania Nest — ten
+    // dekorator nigdy by się nie uruchomił dla tego endpointu bez powtórzenia sprawdzenia
+    // tutaj. Sam format e-maila (bez odpytania bazy) nie ujawnia, czy konto istnieje.
+    if (!isEmail(email)) {
+      throw new AppException(
+        ERROR_CODES.VALIDATION_002.code,
+        ERROR_CODES.VALIDATION_002.message,
+        ERROR_CODES.VALIDATION_002.status,
+        { field: 'email' },
+      );
+    }
+
+    const passwordAccount = await this.usersRepository.findPasswordAccountByEmail(email);
+    if (passwordAccount) {
+      return this.validatePasswordLogin(passwordAccount, secret, context);
+    }
+
+    const pinCandidates = await this.usersRepository.findPinAccountsByEmail(email);
+    if (pinCandidates.length === 0) {
       throw new AppException(
         ERROR_CODES.AUTH_001.code,
         ERROR_CODES.AUTH_001.message,
         ERROR_CODES.AUTH_001.status,
       );
     }
+    return this.validatePinLogin(email, pinCandidates, secret);
+  }
+
+  /**
+   * Ścieżka logowania hasłem — DOKŁADNIE dotychczasowa logika (blokada
+   * per-konto przez `LoginEvent`, AUTH-002 nieaktywne, bcrypt), tylko
+   * wydzielona do osobnej metody. Nieudane próby zapisujemy do `LoginEvent`
+   * TYLKO wtedy, gdy e-mail wskazuje istniejące konto Password — dla
+   * nieistniejącego nie ma `userId`, a `LoginEvent.userId` jest wymagane.
+   * Komunikat błędu pozostaje ten sam (AUTH-001) niezależnie od przyczyny,
+   * żeby nie zdradzać, które adresy istnieją.
+   */
+  private async validatePasswordLogin(
+    user: UserWithRoles,
+    password: string,
+    context?: LoginContext,
+  ): Promise<UserWithRoles> {
+    const { maxLoginAttempts, lockoutDurationMinutes } =
+      await this.companySettingsService.getSettings(user.companyId);
+    const lockoutWindowStart = new Date(Date.now() - lockoutDurationMinutes * 60_000);
+    const recentFailures = await this.usersRepository.countRecentFailedLoginEvents(
+      user.id,
+      lockoutWindowStart,
+    );
+    if (recentFailures >= maxLoginAttempts) {
+      await this.recordLoginAttempt(user.id, context, false);
+      throw new AppException(
+        ERROR_CODES.AUTH_005.code,
+        ERROR_CODES.AUTH_005.message,
+        ERROR_CODES.AUTH_005.status,
+      );
+    }
+
     if (!user.active) {
       await this.recordLoginAttempt(user.id, context, false);
       throw new AppException(
@@ -65,7 +122,10 @@ export class AuthService {
         ERROR_CODES.AUTH_002.status,
       );
     }
-    const passwordMatches = await this.passwordService.compare(password, user.passwordHash);
+    // `passwordHash` jest nullable w schemacie (kolumna dzielona z kontami
+    // Pin), ale ZAWSZE ustawiony dla loginMethod=Password — pilnowane
+    // aplikacyjnie w UsersService.create/resetPassword, nie przez typ.
+    const passwordMatches = await this.passwordService.compare(password, user.passwordHash!);
     if (!passwordMatches) {
       await this.recordLoginAttempt(user.id, context, false);
       throw new AppException(
@@ -77,23 +137,69 @@ export class AuthService {
     return user;
   }
 
-  /** POST /auth/login — wydaje NOWĄ parę tokenów i NOWY `jti` (nadpisuje ewentualną poprzednią sesję w Redis). */
+  /**
+   * Ścieżka logowania PIN-em — `candidates` to WSZYSTKIE aktywne konta
+   * `loginMethod=Pin` dzielące dany e-mail. Blokada (AUTH-006) liczona per
+   * e-mail w Redis (`PinLoginAttemptStoreService`), PRZED próbą
+   * dopasowania — dopóki żaden PIN się nie zgodzi, nie wiadomo, które
+   * konto ktoś atakuje, więc nie da się (i nie trzeba) zapisywać
+   * `LoginEvent` dla nieudanych prób PIN — dokładnie ta sama zasada co
+   * "e-mail nie istnieje" w `validateCredentials`.
+   */
+  private async validatePinLogin(
+    email: string,
+    candidates: UserWithRoles[],
+    pin: string,
+  ): Promise<UserWithRoles> {
+    const { maxPinAttempts, pinLockoutDurationMinutes } =
+      await this.companySettingsService.getSettings(candidates[0].companyId);
+    const failedCount = await this.pinLoginAttemptStore.getFailedCount(email);
+    if (failedCount >= maxPinAttempts) {
+      throw new AppException(
+        ERROR_CODES.AUTH_006.code,
+        ERROR_CODES.AUTH_006.message,
+        ERROR_CODES.AUTH_006.status,
+      );
+    }
+
+    for (const candidate of candidates) {
+      // pinHash ZAWSZE ustawiony dla loginMethod=Pin, aktywny — pilnowane
+      // aplikacyjnie w UsersService.create/resetPin.
+      const matches = await this.passwordService.compare(pin, candidate.pinHash!);
+      if (matches) {
+        await this.pinLoginAttemptStore.resetFailedCount(email);
+        return candidate;
+      }
+    }
+
+    await this.pinLoginAttemptStore.recordFailedAttempt(email, pinLockoutDurationMinutes * 60);
+    throw new AppException(
+      ERROR_CODES.AUTH_001.code,
+      ERROR_CODES.AUTH_001.message,
+      ERROR_CODES.AUTH_001.status,
+    );
+  }
+
+  /** POST /auth/login — wydaje NOWĄ parę tokenów i NOWY `jti` (nadpisuje ewentualną poprzednią sesję w Redis). Czas życia refresh tokena (realna "długość sesji") pochodzi z Ustawień firmy, nie ze statycznego `JWT_REFRESH_EXPIRES_IN`. */
   async login(user: UserWithRoles, context?: LoginContext): Promise<AuthTokensEntity> {
     await this.usersRepository.touchLastLogin(user.id);
     await this.recordLoginAttempt(user.id, context, true);
     const permissions = await this.authorizationService.getEffectivePermissions(user.id);
     const roles = user.roles.map((assignment) => assignment.role.code);
+    const { sessionTimeoutMinutes } = await this.companySettingsService.getSettings(user.companyId);
 
     const accessPayload: JwtAccessPayload = {
       sub: user.id,
       email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
       companyId: user.companyId,
       shopId: user.shopId,
       roles,
       permissions,
       type: 'access',
     };
-    return this.issueTokenPair(user.id, accessPayload);
+    return this.issueTokenPair(user.id, accessPayload, sessionTimeoutMinutes * 60);
   }
 
   /**
@@ -139,12 +245,16 @@ export class AuthService {
     }
   }
 
+  /** `refreshExpiresInSecondsOverride` — długość sesji skonfigurowana per firma (Ustawienia › Bezpieczeństwo); brak (np. `refresh()`, gdzie sesja już trwa i tylko wydajemy nową parę w jej ramach) = statyczny `JWT_REFRESH_EXPIRES_IN`. */
   private async issueTokenPair(
     userId: string,
     accessPayload: JwtAccessPayload,
+    refreshExpiresInSecondsOverride?: number,
   ): Promise<AuthTokensEntity> {
     const accessExpiresIn = this.config.get<string>('jwt.accessExpiresIn')!;
-    const refreshExpiresIn = this.config.get<string>('jwt.refreshExpiresIn')!;
+    const refreshExpiresInSeconds =
+      refreshExpiresInSecondsOverride ??
+      this.parseExpiresInSeconds(this.config.get<string>('jwt.refreshExpiresIn')!);
     const jti = randomUUID();
     const refreshPayload: JwtRefreshPayload = { sub: userId, jti, type: 'refresh' };
 
@@ -155,11 +265,10 @@ export class AuthService {
       }),
       this.jwtService.signAsync(refreshPayload, {
         secret: this.config.get<string>('jwt.refreshSecret'),
-        expiresIn: refreshExpiresIn,
+        expiresIn: refreshExpiresInSeconds,
       }),
     ]);
 
-    const refreshExpiresInSeconds = this.parseExpiresInSeconds(refreshExpiresIn);
     await this.refreshTokenStore.store(userId, jti, refreshExpiresInSeconds);
 
     return { accessToken, refreshToken, expiresIn: this.parseExpiresInSeconds(accessExpiresIn) };

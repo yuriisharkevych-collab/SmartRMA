@@ -11,5 +11,12 @@ export class UpdateManufacturerSlaDto {
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() responseDays?: number | null;
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() repairDays?: number | null;
   @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() reminderAfterDays?: number | null;
-  @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() escalationAfterDays?: number | null;
+  @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() escalationAfterDays?:
+    number | null;
+
+  /** Przypomnienia o reakcji — nadpisuje `CompanySettings.defaultStatusStaleDays`/`defaultCaseAgeStaleDays` dla spraw tego producenta. `null` = użyj wartości domyślnej firmy (patrz komentarz nad `ManufacturerSLA` w schema.prisma). */
+  @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() statusStaleDaysOverride?:
+    number | null;
+  @ApiPropertyOptional({ nullable: true }) @IsOptional() @IsInt() caseAgeStaleDaysOverride?:
+    number | null;
 }

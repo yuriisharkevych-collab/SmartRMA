@@ -28,10 +28,13 @@ export class CaseOwnerChangedNotificationHandler {
 
   @DomainEventHandler(EVENT_NAMES.CASE_OWNER_CHANGED)
   async handle(event: DomainEvent<CaseOwnerChangedPayload>): Promise<void> {
-    const isFirst = await this.idempotencyService.tryMarkProcessed(event.eventId, CaseOwnerChangedNotificationHandler.name);
+    const isFirst = await this.idempotencyService.tryMarkProcessed(
+      event.eventId,
+      CaseOwnerChangedNotificationHandler.name,
+    );
     if (!isFirst) return;
 
-    const caseEntity = await this.casesService.findById(event.aggregateId);
+    const caseEntity = await this.casesService.findById(event.aggregateId, event.companyId);
 
     await this.notificationsService.createNotificationFromTemplate({
       companyId: caseEntity.companyId,

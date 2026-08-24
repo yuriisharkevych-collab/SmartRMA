@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
@@ -50,8 +61,11 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Użytkownik znaleziony.', type: UserEntity })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.view`.' })
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<UserEntity> {
-    return this.usersService.findById(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserEntity> {
+    return this.usersService.findById(id, user.companyId);
   }
 
   @Post()
@@ -90,8 +104,12 @@ export class UsersController {
     description: 'USER-001 — nowy adres e-mail już zajęty przez innego użytkownika.',
   })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.edit`.' })
-  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto): Promise<UserEntity> {
-    return this.usersService.update(id, dto);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserEntity> {
+    return this.usersService.update(id, user.companyId, dto);
   }
 
   @Post(':id/deactivate')
@@ -109,8 +127,11 @@ export class UsersController {
   })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.deactivate`.' })
-  deactivate(@Param('id', ParseUUIDPipe) id: string): Promise<DeactivateUserResponseEntity> {
-    return this.usersService.deactivate(id);
+  deactivate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<DeactivateUserResponseEntity> {
+    return this.usersService.deactivate(id, user.companyId);
   }
 
   @Post(':id/reset-password')
@@ -129,8 +150,26 @@ export class UsersController {
   })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.resetPassword`.' })
-  resetPassword(@Param('id', ParseUUIDPipe) id: string): Promise<{ temporaryPassword: string }> {
-    return this.usersService.resetPassword(id);
+  resetPassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ temporaryPassword: string }> {
+    return this.usersService.resetPassword(id, user.companyId);
+  }
+
+  /** Odpowiednik `reset-password` dla kont `loginMethod=Pin` — to samo uprawnienie (`users.resetPassword`), bez nowego kodu uprawnienia. */
+  @Post(':id/reset-pin')
+  @RequirePermissions(PERMISSIONS.USERS_RESET_PASSWORD)
+  @ApiOperation({ summary: 'Reset PIN-u (konta logujące się PIN-em)' })
+  @ApiResponse({ status: 201, description: 'Tymczasowy PIN wygenerowany i zahashowany.' })
+  @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
+  @ApiResponse({ status: 409, description: 'USER-009 — to konto loguje się hasłem, nie PIN-em.' })
+  @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.resetPassword`.' })
+  resetPin(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ temporaryPin: string }> {
+    return this.usersService.resetPin(id, user.companyId);
   }
 
   /** Odwrotność `deactivate` — prototypowy przełącznik „Konto aktywne" działa w obie strony. To samo uprawnienie co dezaktywacja. */
@@ -143,8 +182,11 @@ export class UsersController {
   @ApiResponse({ status: 201, description: 'Konto aktywne.', type: UserEntity })
   @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.deactivate`.' })
-  activate(@Param('id', ParseUUIDPipe) id: string): Promise<UserEntity> {
-    return this.usersService.activate(id);
+  activate(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<UserEntity> {
+    return this.usersService.activate(id, user.companyId);
   }
 
   /** `LoginEvent` (BR-089) — historia logowań konta, wraz z próbami nieudanymi. */
@@ -156,8 +198,11 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'Lista zdarzeń logowania.', type: [LoginEventEntity] })
   @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.view`.' })
-  findLoginEvents(@Param('id', ParseUUIDPipe) id: string): Promise<LoginEventEntity[]> {
-    return this.usersService.findLoginEvents(id);
+  findLoginEvents(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<LoginEventEntity[]> {
+    return this.usersService.findLoginEvents(id, user.companyId);
   }
 
   @Put(':id/roles')
@@ -178,7 +223,32 @@ export class UsersController {
   assignRoles(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignRolesDto,
+    @CurrentUser() user: AuthenticatedUser,
   ): Promise<UserEntity> {
-    return this.usersService.assignRoles(id, dto.roleIds);
+    return this.usersService.assignRoles(id, user.companyId, dto.roleIds);
+  }
+
+  /**
+   * RBAC.md §5 — TRWAŁE usunięcie, wyłącznie Administrator. Zablokowane
+   * (USER-004), gdy konto ma ślad realnej pracy w systemie; zablokowane
+   * (USER-005) przy próbie usunięcia własnego konta. Do usuwania kont
+   * testowych.
+   */
+  @Delete(':id')
+  @HttpCode(204)
+  @RequirePermissions(PERMISSIONS.USERS_DELETE)
+  @ApiOperation({ summary: 'Trwałe usunięcie konta (wyłącznie Administrator)' })
+  @ApiResponse({ status: 204, description: 'Konto usunięte.' })
+  @ApiResponse({ status: 404, description: 'USER-002 — nie znaleziono użytkownika.' })
+  @ApiResponse({
+    status: 409,
+    description: 'USER-004 — konto ma historię działań; USER-005 — próba usunięcia własnego konta.',
+  })
+  @ApiResponse({ status: 403, description: 'RBAC-001 — brak uprawnienia `users.delete`.' })
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    await this.usersService.hardDelete(id, user.companyId, user.userId);
   }
 }

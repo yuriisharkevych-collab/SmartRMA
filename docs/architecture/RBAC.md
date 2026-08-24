@@ -130,7 +130,7 @@ Konwencja nazewnictwa: `moduł.encja.akcja` lub `moduł.akcja`.
 | `cases.view` | Przeglądanie listy i szczegółów spraw |
 | `cases.create` | Rejestracja nowej reklamacji |
 | `cases.edit` | Edycja danych sprawy (opis, oczekiwane rozwiązanie, priorytet, ręczna edycja `nextAction`/`nextActionDueDate` niezależna od zmiany statusu — `WORKFLOW.md` §6 poz. 22) |
-| `cases.status.change` | Zmiana statusu sprawy zgodnie z dozwolonymi przejściami (`WORKFLOW.md`) |
+| `cases.status.change` | Zmiana statusu sprawy — od Status Workflow Refactor dowolny aktywny status jest dozwolonym celem (żadnej sztywnej tabeli przejść), UI ostrzega przy nietypowej zmianie, nie blokuje |
 | `cases.decision.set` | Ustawienie decyzji (naprawa/wymiana/odrzucenie) |
 | `cases.decision.approve` | Zatwierdzenie decyzji **wymagających dodatkowej odpowiedzialności** (zwrot środków, sprawy rękojmi, sprawy nietypowe) |
 | `cases.cancel` | Anulowanie sprawy |
@@ -140,6 +140,9 @@ Konwencja nazewnictwa: `moduł.encja.akcja` lub `moduł.akcja`.
 | `cases.infoRequest.send` | Wysłanie prośby o uzupełnienie danych do klienta |
 | `cases.portal.manage` | Włączanie/wyłączanie Portalu Klienta, generowanie kodów/linków dostępu |
 | `cases.replacement.manage` | Wydawanie i przyjmowanie produktów zastępczych |
+| `cases.handoff.send` | Producent/Dystrybutor + Partnerzy B2B (Faza 5) — przekazanie sprawy do aktywnego partnera B2B (`CaseHandoff`), tworzy nową, niezależną sprawę w tenancie partnera |
+| `caseStatuses.view` | Odczyt per-firma katalogu statusów reklamacji (`CaseStatusDefinition`) — potrzebne każdej roli, która zmienia status sprawy, nie tylko administratorowi |
+| `caseStatuses.manage` | Tworzenie/edycja/kolejność/aktywacja/dezaktywacja statusów (Ustawienia → Statusy reklamacji) — wyłącznie Administrator |
 
 ### Moduł: Documents / Notes / Messages
 
@@ -173,7 +176,10 @@ Konwencja nazewnictwa: `moduł.encja.akcja` lub `moduł.akcja`.
 | `contractors.manage` | Dodawanie/edycja danych firmowych kontrahenta |
 | `manufacturers.view` | Przeglądanie listy producentów (profili obsługi reklamacji) |
 | `manufacturers.manage` | Pełna konfiguracja profilu producenta (sposób zgłoszenia, procedura, logistyka, automatyzacja, SLA) — **nie obejmuje** edycji danych firmowych, które żyją na `Contractor` (`contractors.manage`) |
+| `manufacturers.delete` | TRWAŁE usunięcie profilu producenta (patrz §5) — wyłącznie Administrator, zablokowane (MANUFACTURER-003) gdy producent ma przypisane produkty/marki |
 | `brands.manage` | Zarządzanie markami przypisanymi do producentów |
+| `partnerships.view` | Przeglądanie własnych partnerstw B2B (Sklep↔Producent/Dystrybutor) — WYŁĄCZNIE partnerstw, których stroną jest firma wołającego (izolacja strukturalna, nie filtr) |
+| `partnerships.manage` | Zapraszanie/akceptowanie/dezaktywacja partnerstwa + przypisywanie marek do partnerstwa; wysyłka sprawy do partnera (`CaseHandoff`) — patrz Producent/Dystrybutor + Partnerzy B2B, Faza 2 |
 
 ### Moduł: Users / Roles (administracja)
 
@@ -183,6 +189,7 @@ Konwencja nazewnictwa: `moduł.encja.akcja` lub `moduł.akcja`.
 | `users.create` | Dodawanie nowych użytkowników |
 | `users.edit` | Edycja danych użytkownika |
 | `users.deactivate` | Dezaktywacja konta (patrz `DATABASE.md` §1.4 — nie fizyczne usunięcie) |
+| `users.delete` | TRWAŁE usunięcie konta (patrz §5) — wyłącznie Administrator, zablokowane (USER-004) gdy konto ma jakąkolwiek historię działań, zablokowane też dla własnego konta (USER-005) |
 | `users.resetPassword` | Reset hasła użytkownika |
 | `users.roles.assign` | Przypisywanie/odbieranie ról użytkownikom |
 | `roles.manage` | Tworzenie/edycja ról niestandardowych i ich uprawnień |
@@ -222,10 +229,13 @@ Legenda: ✅ pełny dostęp · 🟡 dostęp częściowy/warunkowy (opisany w uwa
 | `cases.cancel` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
 | `cases.archive` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
 | `cases.assign` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
-| `cases.delete` | 🟡 *(patrz §5 — wyjątkowe)* | ⬜ | ⬜ | ⬜ | ⬜ |
+| `cases.delete` | ✅ *(patrz §5 — wyjątkowe, TRWAŁE usunięcie)* | ⬜ | ⬜ | ⬜ | ⬜ |
 | `cases.infoRequest.send` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
 | `cases.portal.manage` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
 | `cases.replacement.manage` | ✅ | ✅ | ✅ | ✅ | ⬜ |
+| `cases.handoff.send` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
+| `caseStatuses.view` | ✅ | ✅ | ✅ | ✅ | ✅ *(modal zmiany statusu potrzebuje katalogu, nie tylko podgląd sprawy)* |
+| `caseStatuses.manage` | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 | `documents.upload` | ✅ | ✅ | ✅ | ✅ | ⬜ |
 | `documents.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `documents.markInvalid` | ✅ | ✅ | ✅ | ⬜ | ⬜ |
@@ -237,11 +247,15 @@ Legenda: ✅ pełny dostęp · 🟡 dostęp częściowy/warunkowy (opisany w uwa
 | `products.manage` / `orders.manage` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
 | `manufacturers.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `manufacturers.manage` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
+| `manufacturers.delete` | ✅ *(patrz §5 — wyjątkowe, TRWAŁE usunięcie)* | ⬜ | ⬜ | ⬜ | ⬜ |
+| `partnerships.view` | ✅ | ✅ | ⬜ | ⬜ | ✅ |
+| `partnerships.manage` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
 | `contractors.view` | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `contractors.manage` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
 | `brands.manage` | ✅ | ✅ | ⬜ | ⬜ | ⬜ |
 | `users.view` | ✅ | 🟡 *(tylko pracownicy własnego oddziału)* | ⬜ | ⬜ | ⬜ |
 | `users.create` / `.edit` / `.deactivate` | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
+| `users.delete` | ✅ *(patrz §5 — wyjątkowe, TRWAŁE usunięcie)* | ⬜ | ⬜ | ⬜ | ⬜ |
 | `users.resetPassword` | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 | `users.roles.assign` | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
 | `roles.manage` | ✅ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -321,15 +335,94 @@ przez posiadanie ważnej sesji (`sessionStorage`/token) dla konkretnego
 
 ## 5. Uwagi szczególne
 
-- **`cases.delete` (trwałe usunięcie sprawy)** — celowo nieprzypisane
-  żadnej roli w standardowej macierzy. `docs/source/ROLES_AND_PERMISSIONS.md`
-  nie przewiduje usuwania spraw przez nikogo (Pracownik *"nie może usuwać
-  spraw"*, o Kierowniku/Administratorze dokument milczy w tej kwestii —
-  interpretacja: nie przewidziano tej operacji w ogóle). Jeśli operacyjnie
-  okaże się potrzebna (np. RODO — prawo do usunięcia danych), powinna być
-  osobną, silnie audytowaną procedurą (np. wymagającą potwierdzenia
-  dwuosobowego), nie zwykłym uprawnieniem — **rekomendacja**, nie
-  gotowa decyzja.
+- **`cases.delete` (trwałe usunięcie sprawy) — ZAIMPLEMENTOWANE, wyłącznie
+  Administrator.** Pierwotnie (patrz historia tego dokumentu) uprawnienie
+  istniało w katalogu, ale celowo nieprzypisane żadnej roli — decyzja
+  odwrócona na wyraźne, dwukrotnie potwierdzone żądanie właściciela produktu
+  (czyszczenie spraw testowych z panelu admina). `docs/source/ROLES_AND_PERMISSIONS.md`
+  nadal nie przewiduje tej operacji dla żadnej roli — to świadome odejście od
+  tamtego dokumentu, nie jego reinterpretacja.
+  - Pierwszy hard-delete w całej aplikacji (od tego czasu dołączyły
+    `manufacturers.delete`/`users.delete` niżej) — każda inna encja jest
+    wyłącznie dezaktywowana/anulowana, nigdy fizycznie skasowana (BR-020,
+    DATABASE.md §22/§23/§25 i inne — patrz doc-commenty przy
+    `DocumentsRepository`/`CaseHistoryRepository`/`CaseConsentRepository`,
+    każdy dostał JEDEN wyraźnie oznaczony wyjątek od swojej
+    "insert-only"/"brak delete" zasady).
+  - `CasesService.hardDelete` kasuje sprawę i WSZYSTKIE powiązane dane
+    (pozycje, dokumenty, wiadomości, historię, notatki, logistykę, zgody
+    RODO, powiadomienia) w jednej transakcji, w kolejności zgodnej z kluczami
+    obcymi. Wpis w `AuditLog` (`CASE_DELETED`) zapisywany PRZED skasowaniem —
+    to jedyny trwały ślad, że sprawa w ogóle istniała.
+  - Endpoint `DELETE /cases/:id` (kontroler), frontend: przycisk "Usuń
+    sprawę" w `CaseDetailPage` wymaga wpisania numeru sprawy jako
+    potwierdzenia (nie samego kliknięcia) — to jest realizacja
+    "silnie audytowanej procedury" z poprzedniej wersji tej uwagi, bez
+    formalnego potwierdzenia dwuosobowego (uznane za nadmiarowe dla tego
+    zastosowania — sprawy testowe, nie realne reklamacje klientów).
+  - Świadomie NIE usuwa plików `Document` z dysku — `IStorageService` nie
+    ma metody `delete` (nigdzie w aplikacji nie istniała), poza zakresem
+    tej zmiany.
+- **`manufacturers.delete` (trwałe usunięcie producenta) — ZAIMPLEMENTOWANE,
+  wyłącznie Administrator.** Ten sam wzorzec co `cases.delete` powyżej, ale
+  z BLOKADĄ zamiast pełnej kaskady — `Product.manufacturerId` jest polem
+  WYMAGANYM (nie nullable), więc usunięcie producenta z przypisanymi
+  produktami skasowałoby (albo osierociło) dane katalogowe używane przez
+  realne sprawy. `ManufacturersService.hardDelete` rzuca MANUFACTURER-003,
+  gdy istnieje choć jeden `Product` lub `Brand` tego producenta — usunięcie
+  jest więc możliwe wyłącznie dla świeżo utworzonego, nieużywanego jeszcze
+  producenta (dokładnie profil danych testowych, o które prosił właściciel).
+  Kasuje `ManufacturerSLA`/`ManufacturerLogistics`/`ManufacturerAutomation`
+  (relacje 1:1) i sam wiersz `Manufacturer` — celowo NIE kasuje leżącego pod
+  spodem `Contractor` (może być używany niezależnie jako zwykły kontrahent).
+- **`users.delete` (trwałe usunięcie konta) — ZAIMPLEMENTOWANE, wyłącznie
+  Administrator.** Analogicznie zablokowane, gdy konto ma jakikolwiek ślad
+  działań: `ownedCases`/`decidedCases`/`uploadedDocuments`/`historyEntries`/
+  `notes`/`messages`/`auditLogs` (jako aktor) — `UsersService.hardDelete`
+  rzuca USER-004 w tym przypadku (usuwanie kogoś, kto faktycznie pracował w
+  systemie, zniszczyłoby dane historyczne innych spraw; do tego celu służy
+  istniejąca dezaktywacja, `users.deactivate`). Dodatkowo USER-005 blokuje
+  próbę usunięcia WŁASNEGO konta, niezależnie od jego historii. Kasuje
+  `UserRoleAssignment`/`Employee`/`LoginEvent` (dane czysto kontowe, bez
+  znaczenia biznesowego) i sam wiersz `User`.
+- **Logowanie PIN-em (`User.loginMethod=Pin`) — ZAIMPLEMENTOWANE, jako
+  alternatywa dla hasła.** Na wyraźne żądanie właściciela: w firmie wiele
+  stanowisk dzieli jeden wspólny adres e-mail firmowy, więc `email` przestał
+  być wystarczającym identyfikatorem konta — PIN (domyślnie 6 cyfr,
+  konfigurowalny w Ustawienia › Bezpieczeństwo) odróżnia konkretnego
+  pracownika pod tym samym e-mailem. Ekran logowania (`POST /auth/login`)
+  pozostaje niezmieniony (`email`+`password`) — `AuthService.validateCredentials`
+  sam rozstrzyga, czy wartość to hasło czy PIN, zależnie od tego, jaki
+  `loginMethod` mają konta pod danym e-mailem.
+  - **Rola-gating (USER-006):** konto `loginMethod=Pin` NIE MOŻE mieć roli
+    `Administrator` ani `Kierownik` — sprawdzane w `UsersService.create` i
+    `assignRoles`, w obie strony (ani nadanie takiej roli kontu Pin, ani
+    przełączenie na Pin konta z taką rolą). To jedyne miejsce w aplikacji,
+    gdzie sposób logowania ogranicza dostępne role — świadomy kompromis
+    bezpieczeństwa: PIN ma dużo mniejszą przestrzeń kombinacji niż hasło,
+    więc trafia wyłącznie do kont, które nie mogą wyrządzić poważnej szkody.
+  - **Wspólny e-mail = częściowy unikalny indeks.** `User.email` przestał
+    być globalnie `@unique` w schemacie — unikalność jest teraz egzekwowana
+    WYŁĄCZNIE wśród kont `loginMethod=Password` (częściowy indeks
+    `User_email_password_key`, dopisany ręcznym SQL-em w migracji `pin_login`,
+    dokładnie ten sam wzorzec co ręczne ograniczenie dla `Role.code`
+    opisane wyżej w tym dokumencie). Konta `loginMethod=Pin` mogą świadomie
+    dzielić e-mail.
+  - **Blokada logowania PIN-em (AUTH-006) liczona per e-mail, nie per
+    konto** — w Redis (`PinLoginAttemptStoreService`, ten sam wzorzec co
+    `RefreshTokenStoreService`), bo dopóki żaden PIN się nie zgodzi, nie
+    wiadomo, które z kont dzielących e-mail ktoś atakuje. Próg
+    (`maxPinAttempts`, domyślnie 3) i okno (`pinLockoutDurationMinutes`,
+    domyślnie 30 min) są celowo surowsze niż dla haseł (`maxLoginAttempts=5`,
+    `lockoutDurationMinutes=15`).
+  - **Firma musi świadomie włączyć** logowanie PIN-em
+    (`CompanySettings.pinLoginEnabled`, domyślnie `false`, Ustawienia ›
+    Bezpieczeństwo) — próba utworzenia/zresetowania konta Pin bez tego
+    kończy się USER-008.
+  - Zero automatycznej migracji istniejących kont — wszystkie dzisiejsze
+    konta mają `loginMethod=Password` (wartość domyślna kolumny); admin
+    przełącza konkretnego pracownika na PIN świadomie, przez formularz
+    tworzenia konta.
 - **Role `Serwis` i `Odczyt`** nie mają odpowiednika w
   `docs/source/ROLES_AND_PERMISSIONS.md` — powstały podczas prototypowania
   panelu administracyjnego jako realistyczne uzupełnienie (technik

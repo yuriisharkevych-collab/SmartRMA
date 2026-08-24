@@ -1,4 +1,5 @@
-import { Controller, Get, INestApplication, UseGuards, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, HttpStatus, INestApplication, UseGuards, ValidationPipe } from '@nestjs/common';
+import { toValidationException } from '../src/common/validation/to-validation-exception';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -59,7 +60,16 @@ describe('Auth (e2e)', () => {
     app = moduleRef.createNestApplication();
     // Powiela istotną część main.ts (whitelist/transform/forbidNonWhitelisted) —
     // main.ts celowo nie eksportuje `bootstrap()` do ponownego użycia (fire-and-forget).
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: { enableImplicitConversion: true },
+        errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+        exceptionFactory: toValidationException,
+      }),
+    );
     app.useGlobalFilters(new HttpExceptionFilter());
     app.setGlobalPrefix('api', { exclude: ['health', 'version'] });
     await app.init();

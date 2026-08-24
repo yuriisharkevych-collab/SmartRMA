@@ -78,6 +78,32 @@ export const ERROR_CODES = {
     status: HttpStatus.CONFLICT,
     message: 'Numer sprawy już istnieje.',
   },
+  CASE_014: {
+    code: 'CASE-014',
+    status: HttpStatus.CONFLICT,
+    message:
+      'Rodzaj zgłoszenia (gwarancja/rękojmia) można zmienić wyłącznie przed przekazaniem sprawy do dalszego etapu procesu.',
+  },
+  // Status Workflow Refactor — `CASE-001` ("Nieprawidłowe przejście statusu")
+  // jest odtąd martwe/nieużywane: pracownik może wybrać KAŻDY aktywny status
+  // (patrz `CaseStatusDefinition`), nie ma już pojęcia "nielegalnego przejścia".
+  // Zostawione w katalogu (nie renumerowane), na wypadek zewnętrznych
+  // odwołań do kodu.
+  CASE_015: {
+    code: 'CASE-015',
+    status: HttpStatus.CONFLICT,
+    message: 'Status jest używany w aktywnej sprawie i nie może zostać dezaktywowany.',
+  },
+  CASE_016: {
+    code: 'CASE-016',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Nieznany lub nieaktywny status reklamacji.',
+  },
+  CASE_017: {
+    code: 'CASE-017',
+    status: HttpStatus.CONFLICT,
+    message: 'Archiwizacja jest możliwa wyłącznie dla sprawy w statusie końcowym.',
+  },
 
   // --- AUTH ---
   AUTH_001: {
@@ -95,6 +121,16 @@ export const ERROR_CODES = {
     code: 'AUTH-004',
     status: HttpStatus.BAD_REQUEST,
     message: 'Hasło nie spełnia wymagań bezpieczeństwa.',
+  },
+  AUTH_005: {
+    code: 'AUTH-005',
+    status: HttpStatus.TOO_MANY_REQUESTS,
+    message: 'Konto tymczasowo zablokowane z powodu zbyt wielu nieudanych prób logowania.',
+  },
+  AUTH_006: {
+    code: 'AUTH-006',
+    status: HttpStatus.TOO_MANY_REQUESTS,
+    message: 'Zbyt wiele nieudanych prób logowania PIN-em — spróbuj ponownie później.',
   },
 
   // --- RBAC ---
@@ -195,6 +231,41 @@ export const ERROR_CODES = {
     status: HttpStatus.OK,
     message: 'Użytkownik jest właścicielem otwartych spraw.',
   },
+  /** `UsersService.hardDelete` (RBAC.md §5, `users.delete`) — blokada TRWAŁEGO usunięcia, gdy konto ma jakikolwiek ślad działań (sprawy, dokumenty, historia, notatki, wiadomości, audyt jako aktor). Dezaktywacja pozostaje dostępna zawsze. */
+  USER_004: {
+    code: 'USER-004',
+    status: HttpStatus.CONFLICT,
+    message:
+      'Nie można trwale usunąć użytkownika — ma powiązaną historię działań w systemie. Dezaktywuj konto zamiast usuwać.',
+  },
+  /** Jak `USER_004`, dla samego siebie — chroni przed sytuacją, w której zalogowany administrator usuwa własne konto. */
+  USER_005: {
+    code: 'USER-005',
+    status: HttpStatus.CONFLICT,
+    message: 'Nie możesz usunąć własnego konta.',
+  },
+  /** Konto `loginMethod=Pin` nie może mieć roli Administrator/Kierownik (i odwrotnie) — sprawdzane w `UsersService.create`/`assignRoles`. */
+  USER_006: {
+    code: 'USER-006',
+    status: HttpStatus.CONFLICT,
+    message: 'Konto logujące się PIN-em nie może mieć roli Administrator ani Kierownik.',
+  },
+  USER_007: {
+    code: 'USER-007',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'PIN nie spełnia wymagań firmy.',
+  },
+  USER_008: {
+    code: 'USER-008',
+    status: HttpStatus.CONFLICT,
+    message: 'Logowanie PIN-em nie jest włączone dla tej firmy (Ustawienia → Bezpieczeństwo).',
+  },
+  /** `POST /users/:id/reset-pin` wywołane na koncie `loginMethod=Password` — odpowiednikiem dla takich kont jest `resetPassword`. */
+  USER_009: {
+    code: 'USER-009',
+    status: HttpStatus.CONFLICT,
+    message: 'To konto loguje się hasłem, nie PIN-em.',
+  },
 
   // --- CONTRACTOR / MANUFACTURER ---
   CONTRACTOR_001: {
@@ -211,6 +282,48 @@ export const ERROR_CODES = {
     code: 'MANUFACTURER-002',
     status: HttpStatus.CONFLICT,
     message: 'Ten kontrahent ma już profil producenta.',
+  },
+  /** `ManufacturersService.hardDelete` (RBAC.md §5, `manufacturers.delete`) — blokada TRWAŁEGO usunięcia, gdy producent ma przypisane produkty i/lub marki (usunięcie skasowałoby dane katalogowe używane przez sprawy). Dezaktywacja (`Manufacturer.active=false`) pozostaje dostępna zawsze, przez zwykłą edycję. */
+  MANUFACTURER_003: {
+    code: 'MANUFACTURER-003',
+    status: HttpStatus.CONFLICT,
+    message:
+      'Nie można trwale usunąć producenta — ma przypisane produkty lub marki. Dezaktywuj go zamiast usuwać.',
+  },
+
+  // --- PARTNERSHIP (Producent/Dystrybutor + Partnerzy B2B) ---
+  PARTNERSHIP_001: {
+    code: 'PARTNERSHIP-001',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Wskazana organizacja nie jest producentem ani dystrybutorem.',
+  },
+  PARTNERSHIP_002: {
+    code: 'PARTNERSHIP-002',
+    status: HttpStatus.CONFLICT,
+    message: 'Partnerstwo z tą organizacją już istnieje.',
+  },
+  /** `PartnershipsService.accept/reject` — tylko strona Producenta/Dystrybutora (`distributorCompanyId`) może zaakceptować/odrzucić zaproszenie; strona Sklepu je wysyła, nie potwierdza sama sobie. */
+  PARTNERSHIP_003: {
+    code: 'PARTNERSHIP-003',
+    status: HttpStatus.FORBIDDEN,
+    message: 'Tylko zaproszona organizacja może zaakceptować lub odrzucić partnerstwo.',
+  },
+  /** `PartnershipsService.invite` — marka musi należeć do WŁASNEGO profilu (`Manufacturer`) organizacji zapraszanej, inaczej Sklep mógłby scope'ować partnerstwo do marki, do której dystrybutor nie ma żadnego związku. */
+  PARTNERSHIP_004: {
+    code: 'PARTNERSHIP-004',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Wskazana marka nie należy do zapraszanej organizacji.',
+  },
+  /** `CaseHandoffService.send` — Sklep może przekazać sprawę wyłącznie do partnera z AKTYWNYM partnerstwem obejmującym markę tej pozycji (walidacja serwerowa, nie tylko filtr w UI — patrz audyt bezpieczeństwa). */
+  PARTNERSHIP_005: {
+    code: 'PARTNERSHIP-005',
+    status: HttpStatus.CONFLICT,
+    message: 'Brak aktywnego partnerstwa obejmującego markę tej sprawy.',
+  },
+  PARTNERSHIP_006: {
+    code: 'PARTNERSHIP-006',
+    status: HttpStatus.CONFLICT,
+    message: 'Ta sprawa została już przekazana partnerowi.',
   },
 
   // --- ORDER ---
@@ -240,6 +353,11 @@ export const ERROR_CODES = {
     code: 'VALIDATION-004',
     status: HttpStatus.UNPROCESSABLE_ENTITY,
     message: 'Wymagane zaznaczenie wszystkich zgód.',
+  },
+  VALIDATION_005: {
+    code: 'VALIDATION-005',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Nieprawidłowy adres — musi zaczynać się od http:// lub https://.',
   },
 
   // --- NOTIFICATION ---

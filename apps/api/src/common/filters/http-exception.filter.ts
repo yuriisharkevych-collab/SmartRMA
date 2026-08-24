@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { AppException } from '../exceptions/app.exception';
+import { ERROR_CODES } from '../exceptions/error-codes.const';
 import { ApiErrorResponse } from '../interfaces/api-error-response.interface';
 
 /**
@@ -67,12 +68,33 @@ export class HttpExceptionFilter implements ExceptionFilter {
         typeof payload === 'string'
           ? payload
           : ((payload as { message?: string | string[] }).message ?? exception.message);
+      const isValidation = exception.getStatus() === HttpStatus.UNPROCESSABLE_ENTITY;
+      // Multer (`FileInterceptor`, limit `fileSize`) rzuca `PayloadTooLargeException` z gołym,
+      // angielskim `err.message` ("File too large") — nie przechodzi przez `exceptionFactory`
+      // z `main.ts` (to ścieżka DTO/`ValidationPipe`, nie interceptora pliku), więc bez tej
+      // gałęzi trafiało to wprost na ekran (UAT — Sekcja 8, za duży załącznik). `FILE-001` już
+      // jest zarejestrowany w katalogu z właściwą polską treścią — tylko nigdy nie podłączony.
+      const isPayloadTooLarge = exception.getStatus() === HttpStatus.PAYLOAD_TOO_LARGE;
       return {
         error: {
-          code: exception instanceof HttpException && exception.getStatus() === HttpStatus.UNPROCESSABLE_ENTITY
+          code: isValidation
             ? 'VALIDATION-001'
-            : 'HTTP-ERROR',
-          message: Array.isArray(message) ? message.join('; ') : message,
+            : isPayloadTooLarge
+              ? ERROR_CODES.FILE_001.code
+              : 'HTTP-ERROR',
+          // `ValidationPipe` (class-validator) generuje domyślne komunikaty PO ANGIELSKU i w
+          // technicznym rejestrze ("email must be an email") — żaden z ~50 DTO w projekcie nie
+          // ma własnych `{ message: '...' }`, więc bez tego zdanie wprost z walidatora trafiało
+          // klientowi (formularz publiczny, Portal, panel pracownika) na ekran. Jedno wspólne,
+          // zrozumiałe zdanie zamiast tego — pole, którego dotyczy błąd, i tak jest podświetlone
+          // w formularzu, więc nie tracimy informacji, tylko nie pokazujemy jej po angielsku.
+          message: isValidation
+            ? 'Nie udało się zapisać — sprawdź, czy wszystkie wymagane pola są poprawnie wypełnione.'
+            : isPayloadTooLarge
+              ? ERROR_CODES.FILE_001.message
+              : Array.isArray(message)
+                ? message.join('; ')
+                : message,
         },
       };
     }

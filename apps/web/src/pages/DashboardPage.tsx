@@ -1,27 +1,24 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { casesApi, type CaseSummary } from '@/api/cases.api';
-import { dashboardApi } from '@/api/dashboard.api';
+import { dashboardApi, type DashboardSource } from '@/api/dashboard.api';
 import { LoadingIndicator } from '@/components/common/LoadingIndicator';
 import { PermissionGate } from '@/components/common/PermissionGate';
 import { ClockIcon, PlusIcon } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  daysUntil,
-  isDueToday,
-  isOpenCase,
-  isOverdue,
-  statusLabel,
-  statusTone,
-} from '@/lib/case-filters';
+import { useCaseStatuses } from '@/hooks/useCaseStatuses';
+import { daysUntil, isDueToday, isOpenCase, isOverdue } from '@/lib/case-filters';
 
 /**
  * Odpowiednik `dashboard.html` + `js/dashboard.js`.
  *
  * Kafelki są linkami do `/cases?filter=…` — dokładnie jak w prototypie, gdzie
- * każdy `.stat-card` był `<a href="cases.html?filter=…">`. Backend liczy 6
- * wskaźników (prototyp miał 4), więc doszły filtry `awaiting`/`ready`/`mine`
- * — patrz `CASE_FILTERS` w `lib/case-filters.ts`.
+ * każdy `.stat-card` był `<a href="cases.html?filter=…">`. Backend liczy 5
+ * wskaźników (prototyp miał 4), więc doszły filtry `ready`/`mine` — patrz
+ * `CASE_FILTERS` w `lib/case-filters.ts`. Kafelek "Oczekiwanie na klienta"
+ * (Status Workflow Refactor) został usunięty — status, na którym się opierał,
+ * nie ma już odpowiednika w nowym katalogu statusów.
  *
  * Sekcje "Sprawy wymagające uwagi" i "Zadania na dziś" liczone są po stronie
  * klienta z `GET /cases`, tak jak prototyp liczył je z `SMARTRMA_DATA.cases`
@@ -30,16 +27,36 @@ import {
 export function DashboardPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const caseStatuses = useCaseStatuses();
 
+  // Producent/Dystrybutor + Partnerzy B2B (Faza 6) — przełącznik Wszystkie/B2B/B2C.
+  // `all` zachowuje dokładnie dotychczasowe zachowanie (zero zmiany dla firm bez
+  // ani jednego przekazania B2B).
+  const [source, setSource] = useState<DashboardSource>('all');
+
+  // Odświeżanie co 30s — dashboard bywa otwarty na stałe (np. na ekranie w sklepie),
+  // a bez tego nowe/zmienione sprawy pojawiały się dopiero po ręcznym przeładowaniu strony.
   const { data: summary, isLoading: loadingSummary } = useQuery({
-    queryKey: ['dashboard-summary'],
-    queryFn: dashboardApi.getSummary,
+    queryKey: ['dashboard-summary', source],
+    queryFn: () => dashboardApi.getSummary(source),
+    refetchInterval: 30_000,
   });
-  const { data: cases } = useQuery({ queryKey: ['cases'], queryFn: casesApi.list });
+  const { data: cases } = useQuery({
+    queryKey: ['cases'],
+    queryFn: casesApi.list,
+    refetchInterval: 30_000,
+  });
 
-  const openCases = (cases ?? []).filter(isOpenCase);
-  const overdueCases = (cases ?? []).filter(isOverdue);
-  const dueTodayCases = (cases ?? []).filter(isDueToday);
+  const casesForSource = (cases ?? []).filter((c) =>
+    source === 'all'
+      ? true
+      : source === 'b2b'
+        ? c.originType === 'PartnerB2B'
+        : c.originType === 'DirectCustomer',
+  );
+  const openCases = casesForSource.filter((c) => isOpenCase(c, caseStatuses.finalStatusCodes));
+  const overdueCases = casesForSource.filter((c) => isOverdue(c, caseStatuses.finalStatusCodes));
+  const dueTodayCases = casesForSource.filter((c) => isDueToday(c, caseStatuses.finalStatusCodes));
 
   const tiles = summary
     ? [
@@ -65,13 +82,6 @@ export function DashboardPage() {
           trend: 'Termin Next Action mija dzisiaj',
         },
         {
-          filter: 'awaiting',
-          label: 'Oczekiwanie na klienta',
-          value: summary.awaitingCustomer,
-          accent: 'accent-blue',
-          trend: 'Sprawy wstrzymane do odpowiedzi klienta',
-        },
-        {
           filter: 'ready',
           label: 'Gotowe do odbioru',
           value: summary.readyForPickup,
@@ -84,6 +94,20 @@ export function DashboardPage() {
           value: summary.myCases,
           accent: '',
           trend: 'Przypisane do Ciebie jako opiekuna',
+        },
+        {
+          filter: 'unread',
+          label: 'Nieodczytane wiadomości',
+          value: summary.unreadMessages,
+          accent: 'accent-red',
+          trend: 'Klient napisał — wymaga odpowiedzi',
+        },
+        {
+          filter: 'attention',
+          label: 'Sprawy wymagające reakcji',
+          value: summary.casesNeedingAttention,
+          accent: summary.casesNeedingAttention > 0 ? 'accent-amber' : '',
+          trend: 'Brak zmiany statusu lub zbyt długo od zgłoszenia',
         },
       ]
     : [];
@@ -102,7 +126,7 @@ export function DashboardPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1>Witaj{user?.email ? `, ${user.email.split('@')[0]}` : ''}</h1>
+          <h1>Witaj{user?.firstName ? `, ${user.firstName}` : ''}</h1>
           <p className="page-subtitle">
             {summary
               ? `Masz ${summary.totalActive} otwartych spraw, w tym ${summary.overdue} przeterminowanych.`
@@ -116,6 +140,34 @@ export function DashboardPage() {
           </Link>
         </PermissionGate>
       </div>
+
+      {/* Producent/Dystrybutor + Partnerzy B2B (Faza 6) — przełącznik Wszystkie/B2B/B2C. Liczby w nawiasach to CAŁKOWITA liczba spraw danego pochodzenia (niezależna od przełącznika), patrz `DashboardSummary.directCustomerTotal/partnerB2BTotal`. */}
+      {summary && (
+        <div className="tabs mb-16" role="tablist" aria-label="Źródło spraw">
+          {(
+            [
+              {
+                key: 'all',
+                label: 'Wszystkie',
+                count: summary.directCustomerTotal + summary.partnerB2BTotal,
+              },
+              { key: 'b2c', label: 'B2C', count: summary.directCustomerTotal },
+              { key: 'b2b', label: 'B2B', count: summary.partnerB2BTotal },
+            ] as const
+          ).map((tab) => (
+            <div
+              key={tab.key}
+              className={`tab ${source === tab.key ? 'active' : ''}`}
+              onClick={() => setSource(tab.key)}
+              role="tab"
+              aria-selected={source === tab.key}
+              tabIndex={0}
+            >
+              {tab.label} ({tab.count})
+            </div>
+          ))}
+        </div>
+      )}
 
       {loadingSummary && <LoadingIndicator />}
 
@@ -195,6 +247,7 @@ function truncate(value: string, max: number): string {
 
 /** Wiersz z prototypowego `attentionRow()` — numer sprawy + odznaka statusu + Next Action + odznaka terminu. */
 function AttentionRow({ caseRecord, onClick }: { caseRecord: CaseSummary; onClick: () => void }) {
+  const caseStatuses = useCaseStatuses();
   const d = daysUntil(caseRecord.nextActionDueDate);
   const dueLabel =
     d === null
@@ -218,8 +271,8 @@ function AttentionRow({ caseRecord, onClick }: { caseRecord: CaseSummary; onClic
           <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
             {caseRecord.caseNumber}
           </span>
-          <span className={`badge badge-${statusTone(caseRecord.status)}`}>
-            {statusLabel(caseRecord.status)}
+          <span className={`badge badge-${caseStatuses.statusTone(caseRecord.status)}`}>
+            {caseStatuses.statusLabel(caseRecord.status)}
           </span>
         </div>
         <div className="mt-4" style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>

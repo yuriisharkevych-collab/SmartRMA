@@ -1,0 +1,123 @@
+<title>Checklista Pilotażu SmartRMA</title>
+<style>
+  :root {
+    --paper: #f3f4f1; --paper-raised: #ffffff; --ink: #1b2229; --ink-soft: #4a535c; --ink-faint: #7c8790;
+    --line: #d7dad4; --line-soft: #e7e9e4; --accent: #2c4a72; --accent-soft: #e8edf4; --accent-ink: #1c3252;
+    --code-bg: #eceeea; --pass-bg: #e4efe4; --pass-ink: #2e5d34; --pass-line: #b9d3ba;
+    --warn-bg: #f6ecd9; --warn-ink: #7a5518; --warn-line: #e3c98e;
+    --block-bg: #f5e3df; --block-ink: #8a3c2a; --block-line: #e3b6a9;
+    --shadow: 0 1px 2px rgba(27,34,41,0.04), 0 8px 24px rgba(27,34,41,0.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #14181c; --paper-raised: #1b2126; --ink: #e9ecee; --ink-soft: #b0b9c1; --ink-faint: #7d8791;
+      --line: #333c43; --line-soft: #262e34; --accent: #7fa4d6; --accent-soft: #202c3a; --accent-ink: #a9c4e8;
+      --code-bg: #20262b; --pass-bg: #1d2b1f; --pass-ink: #8fc496; --pass-line: #34492f;
+      --warn-bg: #2c2517; --warn-ink: #e0bd7c; --warn-line: #4a3e21;
+      --block-bg: #2b201c; --block-ink: #e2a292; --block-line: #4a2f27;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14181c; --paper-raised: #1b2126; --ink: #e9ecee; --ink-soft: #b0b9c1; --ink-faint: #7d8791;
+    --line: #333c43; --line-soft: #262e34; --accent: #7fa4d6; --accent-soft: #202c3a; --accent-ink: #a9c4e8;
+    --code-bg: #20262b; --pass-bg: #1d2b1f; --pass-ink: #8fc496; --pass-line: #34492f;
+    --warn-bg: #2c2517; --warn-ink: #e0bd7c; --warn-line: #4a3e21;
+    --block-bg: #2b201c; --block-ink: #e2a292; --block-line: #4a2f27;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px rgba(0,0,0,0.35);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .sheet { max-width: 720px; margin: 0 auto; padding: 48px 24px 88px; }
+  .masthead { border-bottom: 3px solid var(--ink); padding-bottom: 18px; margin-bottom: 30px; }
+  .kicker { font-size: 12.5px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; margin-bottom: 8px; }
+  h1 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-size: clamp(26px, 4vw, 34px); font-weight: 600; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  .meta { font-size: 13.5px; color: var(--ink-soft); margin-top: 10px; }
+  h2 { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-size: 20px; font-weight: 600; margin: 40px 0 4px; display: flex; align-items: baseline; gap: 10px; }
+  h2 .num { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 13px; font-weight: 600; color: var(--paper-raised); background: var(--accent); border-radius: 5px; padding: 2px 7px; flex-shrink: 0; }
+  p { margin: 0 0 12px; }
+  code { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 0.87em; background: var(--code-bg); padding: 0.1em 0.4em; border-radius: 4px; color: var(--accent-ink); }
+  .checklist { list-style: none; padding-left: 0; margin: 10px 0 8px; }
+  .checklist li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--line-soft); font-size: 14.5px; }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist .mark { flex-shrink: 0; width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; margin-top: 1px; }
+  .checklist .mark.ok { background: var(--pass-bg); color: var(--pass-ink); }
+  .checklist .mark.todo { background: var(--warn-bg); color: var(--warn-ink); }
+  .checklist .mark.block { background: var(--block-bg); color: var(--block-ink); }
+  ol.steps { list-style: none; padding-left: 0; counter-reset: step; margin: 10px 0 8px; }
+  ol.steps li { counter-increment: step; position: relative; padding-left: 36px; margin-bottom: 12px; font-size: 14.5px; }
+  ol.steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 6px; background: var(--accent); color: white; font-family: ui-monospace, monospace; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .callout { padding: 12px 15px; border-radius: 9px; margin: 14px 0; font-size: 13.5px; border: 1px solid var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); background: var(--paper-raised); margin: 10px 0 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 0; }
+  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  thead th { background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 700; }
+  tbody tr:last-child td { border-bottom: none; }
+  .closing { margin-top: 40px; padding: 18px 20px; background: var(--accent-soft); border: 1px solid var(--line); border-radius: 12px; font-size: 14.5px; }
+</style>
+<div class="sheet">
+  <div class="masthead">
+    <div class="kicker">Przed pierwszą prawdziwą reklamacją</div>
+    <h1>Checklista startu pilotażowego SmartRMA — DAWIDAM</h1>
+    <div class="meta">17.08.2026 · cel etapu: kontrolowany pilotaż na rzeczywistych reklamacjach w DAWIDAM</div>
+  </div>
+
+  <h2><span class="num">1</span>Co musi być skonfigurowane</h2>
+  <ul class="checklist">
+    <li><span class="mark ok">✓</span><span>Nazwa, adres, telefon, WWW, link do Polityki Prywatności — obecne w Ustawieniach, wymagają Twojego potwierdzenia (patrz pytania w wiadomości).</span></li>
+    <li><span class="mark block">!</span><span>NIP — puste pole, wymaga podania.</span></li>
+    <li><span class="mark block">!</span><span>E-mail/SMTP — obecnie skonfigurowany na testowy adres Resend (<code>onboarding@resend.dev</code>), nie nadaje się do wysyłki do prawdziwych klientów. Wymaga decyzji i danych od Ciebie przed pierwszą realną sprawą.</span></li>
+    <li><span class="mark ok">✓</span><span>Katalog statusów — 9 domyślnych + „Oczekujemy na części”, gotowe.</span></li>
+    <li><span class="mark ok">✓</span><span>Katalog producentów — Cybex Polska, Britax Romer, Scandynawian baby już skonfigurowani.</span></li>
+  </ul>
+
+  <h2><span class="num">2</span>Jakie konta/użytkownicy muszą istnieć</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Konto</th><th>Rola</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>info@dawidam.pl (Jarosław Mendel)</td><td>Pracownik</td><td>istnieje</td></tr>
+        <tr><td>k.nowak@smartrma.local (Katarzyna Nowak-Kowalska)</td><td>Pracownik</td><td>istnieje</td></tr>
+        <tr><td>admin@smartrma.local</td><td>Administrator (konto techniczne)</td><td>istnieje — potwierdź, czy ma pozostać, czy zastąpić realnym adresem administratora DAWIDAM</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Przed startem: sprawdź, czy każdy pracownik, który będzie faktycznie obsługiwał reklamacje, ma własne konto z właściwą rolą (nie współdzielone hasło) — <code>Użytkownicy</code> w panelu.</p>
+
+  <h2><span class="num">3</span>Jakie firmy/producenci muszą być skonfigurowani</h2>
+  <p>DAWIDAM (Sklep) — gotowy. Katalog producentów zawiera Cybex Polska, Britax Romer, Scandynawian baby z wymaganiami reklamacyjnymi (numer seryjny/zdjęcia/dowód zakupu). Jeśli DAWIDAM sprzedaje produkty innych marek, dodaj je w <code>Producenci</code> przed startem — bez wpisu w katalogu pracownik nie może przypisać reklamacji do tego producenta.</p>
+
+  <h2><span class="num">4</span>Jakie statusy muszą być dostępne</h2>
+  <p>Domyślny katalog 9 statusów (Nowa → Przyjęta → Przekazana do producenta/dystrybutora → Decyzja pozytywna/negatywna → Towar wysłany/wrócił z serwisu → Zakończona, plus „Reklamacja zgłoszona ponownie”) + „Oczekujemy na części”. Zmiana statusu jest teraz uporządkowana w dwie grupy (typowy następny krok / pozostałe), ale wybór dowolnego aktywnego statusu nadal działa — patrz punkt 6 wiadomości głównej.</p>
+
+  <h2><span class="num">5</span>Co sprawdzić przed pierwszą prawdziwą reklamacją</h2>
+  <ol class="steps">
+    <li>SMTP/e-mail skonfigurowane docelowymi danymi (nie Resend sandbox) — wysłana i odebrana wiadomość testowa z <code>Ustawienia → E-mail</code>.</li>
+    <li>NIP i pozostałe dane firmy potwierdzone/uzupełnione.</li>
+    <li>Każdy pracownik obsługujący reklamacje ma własne konto i zna hasło.</li>
+    <li>Katalog producentów kompletny dla marek faktycznie sprzedawanych przez DAWIDAM.</li>
+    <li>Formularz publiczny <code>/reklamacja/dawidam</code> otwiera się i pokazuje właściwą markę DAWIDAM.</li>
+  </ol>
+
+  <h2><span class="num">6</span>Jak wykonać pierwszą reklamację testową</h2>
+  <ol class="steps">
+    <li>Zaloguj się kontem docelowego pracownika (nie kontem testowym).</li>
+    <li>Otwórz <code>Nowa reklamacja</code>, wypełnij danymi <strong>oznaczonymi jako testowe</strong> (np. imię „TEST — [Twoje imię]”, telefon nieprawdziwy) — żeby łatwo odróżnić ją później od prawdziwych zgłoszeń.</li>
+    <li>Przejdź pełną ścieżkę: przyjęcie → decyzja → zmiana statusu → zamknięcie.</li>
+    <li>Sprawdź, czy e-mail potwierdzający i e-mail zamknięcia faktycznie dotarły na Twoją prywatną skrzynkę.</li>
+    <li>Sprawdź Portal Klienta pod linkiem z e-maila.</li>
+    <li>Dopiero po tym pozytywnym przebiegu zacznij przyjmować prawdziwe reklamacje.</li>
+  </ol>
+
+  <h2><span class="num">7</span>Jakie dane testowe usunąć lub oznaczyć</h2>
+  <div class="callout">Usuwanie danych to działanie nieodwracalne — nie usunąłem niczego samodzielnie. Poniżej lista do Twojej decyzji.</div>
+  <ul class="checklist">
+    <li><span class="mark todo">•</span><span>Sprawy testowe DAWIDAM (RMA/2026/00001–00032 — utworzone podczas audytów/testów tej sesji) — usunąć albo oznaczyć w opisie jako testowe, żeby nie mylić ich z prawdziwymi zgłoszeniami.</span></li>
+    <li><span class="mark todo">•</span><span>Organizacje testowe na tej samej instalacji (TekstylPro, FabrykaWłókiennicza, „Nowy Klient”/„Nowy Klient 2” i liczne organizacje <code>E2E …</code>/<code>Dist/Shop/Outsider …</code> z automatycznych testów) — nie wpływają na DAWIDAM, ale warto je usunąć, jeśli ta sama baza ma być używana produkcyjnie.</span></li>
+    <li><span class="mark todo">•</span><span>Konto <code>admin@nowyklient2.local</code> i podobne — utworzone wyłącznie do testu onboardingu, do usunięcia.</span></li>
+  </ul>
+
+  <div class="closing">
+    Ten dokument jest celowo krótki i operacyjny — pełne uzasadnienia i ustalenia znajdują się w <em>Raporcie Wdrożeniowym SmartRMA</em> z tej samej sesji. Etap: <strong>gotowy do kontrolowanego wdrożenia pilotażowego w DAWIDAM</strong> — po uzupełnieniu punktów 1–2 powyżej.
+  </div>
+</div>

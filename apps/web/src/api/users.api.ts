@@ -1,6 +1,9 @@
 import { apiClient } from './client';
 
-/** Kształt odzwierciedla `UserEntity` z `apps/api` — NIGDY `passwordHash` (DATABASE.md zasada #3). */
+/** `User.loginMethod` — Password (domyślny) albo Pin (nowość: PIN zamiast hasła, wyłącznie konta bez roli Administrator/Kierownik). */
+export type LoginMethod = 'Password' | 'Pin';
+
+/** Kształt odzwierciedla `UserEntity` z `apps/api` — NIGDY `passwordHash`/`pinHash` (DATABASE.md zasada #3). */
 export interface User {
   id: string;
   companyId: string;
@@ -8,6 +11,7 @@ export interface User {
   firstName: string;
   lastName: string;
   email: string;
+  loginMethod: LoginMethod;
   active: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -35,11 +39,14 @@ export interface LoginEvent {
   createdAt: string;
 }
 
+/** `password` wymagane, gdy `loginMethod` pominięte albo `Password`; `pin` wymagane, gdy `loginMethod='Pin'`. */
 export interface CreateUserPayload {
   firstName: string;
   lastName: string;
   email: string;
-  password: string;
+  loginMethod?: LoginMethod;
+  password?: string;
+  pin?: string;
   shopId?: string;
   roleIds: string[];
 }
@@ -73,8 +80,13 @@ export const usersApi = {
     apiClient
       .post<{ temporaryPassword: string }>(`/users/${id}/reset-password`)
       .then((res) => res.data),
+  /** Odpowiednik `resetPassword` dla kont `loginMethod=Pin`. */
+  resetPin: (id: string) =>
+    apiClient.post<{ temporaryPin: string }>(`/users/${id}/reset-pin`).then((res) => res.data),
   loginEvents: (id: string) =>
     apiClient.get<LoginEvent[]>(`/users/${id}/login-events`).then((res) => res.data),
+  /** `users.delete` — TRWAŁE usunięcie, wyłącznie Administrator. Zablokowane, gdy konto ma historię działań, lub przy próbie usunięcia własnego konta. */
+  delete: (id: string) => apiClient.delete<void>(`/users/${id}`).then(() => undefined),
 };
 
 export const rolesApi = {

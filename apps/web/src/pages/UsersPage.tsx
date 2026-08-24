@@ -2,7 +2,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { casesApi } from '@/api/cases.api';
 import { isApiError } from '@/api/client';
-import { rolesApi, shopsApi, usersApi, type LoginEvent, type User } from '@/api/users.api';
+import { settingsApi } from '@/api/settings.api';
+import {
+  rolesApi,
+  shopsApi,
+  usersApi,
+  type LoginEvent,
+  type LoginMethod,
+  type User,
+} from '@/api/users.api';
 import { LoadingIndicator } from '@/components/common/LoadingIndicator';
 import { Modal } from '@/components/common/Modal';
 import { PermissionGate } from '@/components/common/PermissionGate';
@@ -37,7 +45,9 @@ interface FormState {
   firstName: string;
   lastName: string;
   email: string;
+  loginMethod: LoginMethod;
   password: string;
+  pin: string;
   shopId: string;
   roleIds: string[];
   active: boolean;
@@ -47,11 +57,16 @@ const EMPTY_FORM: FormState = {
   firstName: '',
   lastName: '',
   email: '',
+  loginMethod: 'Password',
   password: '',
+  pin: '',
   shopId: '',
   roleIds: [],
   active: true,
 };
+
+/** Role, których nie można połączyć z logowaniem PIN-em (USER-006, RBAC.md §5) — PIN trafia wyłącznie do kont, które nie mogą wyrządzić poważnej szkody. */
+const ROLES_INCOMPATIBLE_WITH_PIN = new Set(['Administrator', 'Kierownik']);
 
 /**
  * Odpowiednik `users.html` + `js/users.js`.
@@ -62,12 +77,13 @@ const EMPTY_FORM: FormState = {
  *    doprecyzowana przy implementacji"). `User.roles` to relacja
  *    wiele-do-wielu, więc rola jest tu listą kart wyboru — dokładnie ta
  *    funkcja, którą prototyp zapowiadał.
- *  - **Brak trwałego usuwania konta.** Prototyp miał „Usuń użytkownika"
- *    (`splice` z tablicy w pamięci). W realnym modelu `User` jest
- *    właścicielem spraw oraz autorem wpisów `CaseHistory`, notatek i
- *    `AuditLog` — skasowanie wiersza zerwałoby klucze obce i wyczyściło ślad
- *    audytowy (BR-088/090). Odpowiednikiem jest dezaktywacja
- *    (`active=false`), która blokuje logowanie (AUTH-002) i zachowuje historię.
+ *  - **Trwałe usuwanie konta jest wyjątkiem, nie regułą.** Domyślnym
+ *    działaniem pozostaje dezaktywacja (`active=false`) — blokuje logowanie
+ *    (AUTH-002) i zachowuje historię. `users.delete` (RBAC.md §5) istnieje
+ *    obok niej wyłącznie do czyszczenia kont testowych: backend blokuje
+ *    usunięcie (USER-004), gdy konto jest właścicielem/autorem czegokolwiek
+ *    w systemie (sprawa, dokument, wpis historii/notatka/wiadomość,
+ *    `AuditLog`), oraz samo-usunięcie (USER-005).
  *  - **Podgląd uprawnień przy rolach.** Prototyp pokazywał samą nazwę roli;
  *    tutaj rozwijana lista kodów uprawnień, żeby administrator widział, co
  *    faktycznie nadaje, bez zaglądania do RBAC.md.
@@ -79,11 +95,20 @@ export function UsersPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { user: currentUser, hasPermission } = useAuth();
+  const canDelete = hasPermission('users.delete');
 
   const { data: users, isLoading } = useQuery({ queryKey: ['users'], queryFn: usersApi.list });
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: rolesApi.list });
   const { data: shops } = useQuery({ queryKey: ['shops'], queryFn: shopsApi.list, retry: false });
   const { data: cases } = useQuery({ queryKey: ['cases'], queryFn: casesApi.list, retry: false });
+  // `retry:false` — brak `settings.view` (np. rola bez tego uprawnienia) po prostu chowa opcję PIN, nie wywraca strony.
+  const { data: settingsOverview } = useQuery({
+    queryKey: ['settings-overview'],
+    queryFn: settingsApi.overview,
+    retry: false,
+  });
+  const pinLoginEnabled = settingsOverview?.security.pinLoginEnabled ?? false;
+  const pinLength = settingsOverview?.security.pinLength ?? 6;
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -97,8 +122,13 @@ export function UsersPage() {
   const [resetModalOpen, setResetModalOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<User | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [tempPin, setTempPin] = useState<string | null>(null);
 
   const [historyTarget, setHistoryTarget] = useState<User | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { data: loginEvents } = useQuery({
     queryKey: ['login-events', historyTarget?.id],
     queryFn: () => usersApi.loginEvents(historyTarget!.id),
@@ -147,7 +177,9 @@ export function UsersPage() {
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
+      loginMethod: user.loginMethod,
       password: '',
+      pin: '',
       shopId: user.shopId ?? '',
       roleIds: (roles ?? []).filter((r) => user.roles.includes(r.code)).map((r) => r.id),
       active: user.active,
@@ -202,7 +234,9 @@ export function UsersPage() {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         email: form.email.trim(),
-        password: form.password,
+        loginMethod: form.loginMethod,
+        password: form.loginMethod === 'Pin' ? undefined : form.password,
+        pin: form.loginMethod === 'Pin' ? form.pin.trim() : undefined,
         shopId: form.shopId || undefined,
         roleIds: form.roleIds,
       });
@@ -235,6 +269,43 @@ export function UsersPage() {
       ),
   });
 
+  const resetPinMutation = useMutation({
+    mutationFn: () => usersApi.resetPin(resetTarget!.id),
+    onSuccess: ({ temporaryPin }) => {
+      setTempPin(temporaryPin);
+      showToast('PIN tymczasowy wygenerowany.');
+    },
+    onError: (err) =>
+      setError(
+        isApiError(err)
+          ? (err.response?.data.error.message ?? 'Nie udało się zresetować PIN-u.')
+          : 'Nie udało się zresetować PIN-u.',
+      ),
+  });
+
+  /** `users.delete` (RBAC.md §5) — TRWAŁE, nieodwracalne usunięcie. Zablokowane przez backend (USER-004), gdy konto ma ślad realnej pracy w systemie, lub (USER-005) przy próbie usunięcia własnego konta. */
+  const deleteMutation = useMutation({
+    mutationFn: () => usersApi.delete(deleteTarget!.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['users'] });
+      showToast('Konto trwale usunięte.');
+      setDeleteTarget(null);
+    },
+    onError: (err) => {
+      setDeleteError(
+        isApiError(err)
+          ? (err.response?.data.error.message ?? 'Nie udało się usunąć konta.')
+          : 'Nie udało się usunąć konta.',
+      );
+    },
+  });
+
+  function openDelete(user: User) {
+    setDeleteTarget(user);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+  }
+
   function handleSave() {
     setError(null);
     if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
@@ -245,9 +316,16 @@ export function UsersPage() {
       setError('Przypisz co najmniej jedną rolę (RBAC-004).');
       return;
     }
-    if (!editing && form.password.length < 8) {
-      setError('Hasło początkowe musi mieć co najmniej 8 znaków (AUTH-004).');
-      return;
+    if (!editing) {
+      if (form.loginMethod === 'Pin') {
+        if (!/^\d+$/.test(form.pin) || form.pin.length !== pinLength) {
+          setError(`PIN musi mieć dokładnie ${pinLength} cyfr.`);
+          return;
+        }
+      } else if (form.password.length < 8) {
+        setError('Hasło początkowe musi mieć co najmniej 8 znaków (AUTH-004).');
+        return;
+      }
     }
     saveMutation.mutate();
   }
@@ -261,6 +339,8 @@ export function UsersPage() {
   }, [form.roleIds, roleById]);
 
   const isSelf = editing?.id === currentUser?.userId;
+  /** USER-006 (RBAC.md §5) — w edycji sposób logowania jest ustalony przy tworzeniu (patrz `openEdit`/`form.loginMethod` niezmieniane tutaj), więc ograniczenie ról liczymy z ISTNIEJĄCEGO konta; przy tworzeniu — z wyboru w formularzu. */
+  const pinRestricted = editing ? editing.loginMethod === 'Pin' : form.loginMethod === 'Pin';
 
   return (
     <div>
@@ -377,7 +457,18 @@ export function UsersPage() {
                         </span>
                       </div>
                     </td>
-                    <td className="cell-secondary">{u.email}</td>
+                    <td className="cell-secondary">
+                      {u.email}
+                      {u.loginMethod === 'Pin' && (
+                        <span
+                          className="badge badge-gray"
+                          style={{ marginLeft: 6 }}
+                          title="Logowanie PIN-em"
+                        >
+                          PIN
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <div className="flex gap-6" style={{ flexWrap: 'wrap' }}>
                         {u.roles.length === 0 && <span className="cell-secondary">—</span>}
@@ -405,17 +496,26 @@ export function UsersPage() {
                     <td className="cell-secondary">
                       {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'Nigdy'}
                     </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setHistoryTarget(u);
-                        }}
-                      >
-                        Historia
-                      </button>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-6">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setHistoryTarget(u)}
+                        >
+                          Historia
+                        </button>
+                        {canDelete && u.id !== currentUser?.userId && (
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => openDelete(u)}
+                            title="Trwałe, nieodwracalne usunięcie konta — wyłącznie do kont testowych"
+                          >
+                            Usuń
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -440,10 +540,13 @@ export function UsersPage() {
                   onClick={() => {
                     setResetTarget(editing);
                     setTempPassword(null);
+                    setTempPin(null);
+                    setError(null);
+                    setModalOpen(false);
                     setResetModalOpen(true);
                   }}
                 >
-                  Resetuj hasło
+                  {editing.loginMethod === 'Pin' ? 'Resetuj PIN' : 'Resetuj hasło'}
                 </button>
               </PermissionGate>
             )}
@@ -496,7 +599,55 @@ export function UsersPage() {
                 onChange={(e) => set('email', e.target.value)}
               />
             </div>
-            {!editing && (
+            {!editing && pinLoginEnabled && (
+              <div className="field span-2">
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontWeight: 500 }}>Sposób logowania</span>
+                  <span className="flex gap-8">
+                    <label
+                      className={`radio-card ${form.loginMethod === 'Password' ? 'selected' : ''}`}
+                      style={{ flex: 1 }}
+                    >
+                      <input
+                        type="radio"
+                        name="u-login-method"
+                        checked={form.loginMethod === 'Password'}
+                        onChange={() => set('loginMethod', 'Password')}
+                      />
+                      <div className="radio-card-title">Hasło</div>
+                    </label>
+                    <label
+                      className={`radio-card ${form.loginMethod === 'Pin' ? 'selected' : ''}`}
+                      style={{ flex: 1 }}
+                    >
+                      <input
+                        type="radio"
+                        name="u-login-method"
+                        checked={form.loginMethod === 'Pin'}
+                        onChange={() =>
+                          setForm((current) => ({
+                            ...current,
+                            loginMethod: 'Pin',
+                            // Przełączenie na PIN od razu usuwa niekompatybilne role (USER-006) —
+                            // zamiast zostawiać zaznaczony, ale wyszarzony/zablokowany checkbox.
+                            roleIds: current.roleIds.filter(
+                              (id) =>
+                                !ROLES_INCOMPATIBLE_WITH_PIN.has(roleById.get(id)?.code ?? ''),
+                            ),
+                          }))
+                        }
+                      />
+                      <div className="radio-card-title">PIN</div>
+                    </label>
+                  </span>
+                </label>
+                <span className="hint">
+                  PIN — dla pracowników bez roli Administrator/Kierownik, przydatne, gdy wiele
+                  stanowisk dzieli jeden e-mail firmowy (odróżnia wtedy konkretnego pracownika).
+                </span>
+              </div>
+            )}
+            {!editing && form.loginMethod === 'Password' && (
               <div className="field span-2">
                 <label htmlFor="u-password">Hasło początkowe</label>
                 <input
@@ -507,6 +658,31 @@ export function UsersPage() {
                 />
                 <span className="hint">
                   Min. 8 znaków (AUTH-004). Pracownik powinien je zmienić po pierwszym logowaniu.
+                </span>
+              </div>
+            )}
+            {!editing && form.loginMethod === 'Pin' && (
+              <div className="field span-2">
+                <label htmlFor="u-pin">PIN początkowy</label>
+                <input
+                  id="u-pin"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={pinLength}
+                  value={form.pin}
+                  onChange={(e) => set('pin', e.target.value.replace(/\D/g, ''))}
+                />
+                <span className="hint">
+                  Dokładnie {pinLength} cyfr. Pracownik może go później zmienić przez reset PIN-u.
+                </span>
+              </div>
+            )}
+            {editing && (
+              <div className="field span-2">
+                <span className="hint">
+                  Sposób logowania:{' '}
+                  <strong>{editing.loginMethod === 'Pin' ? 'PIN' : 'Hasło'}</strong> — ustalany przy
+                  tworzeniu konta, nie do zmiany w edycji.
                 </span>
               </div>
             )}
@@ -531,36 +707,47 @@ export function UsersPage() {
           <div className="modal-section-label">Role</div>
           <div className="field">
             <div className="flex gap-8" style={{ flexWrap: 'wrap' }}>
-              {(roles ?? []).map((r) => (
-                <label
-                  key={r.id}
-                  className={`radio-card ${form.roleIds.includes(r.id) ? 'selected' : ''}`}
-                  style={{ flex: '1 1 190px' }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={form.roleIds.includes(r.id)}
-                    onChange={(e) =>
-                      set(
-                        'roleIds',
-                        e.target.checked
-                          ? [...form.roleIds, r.id]
-                          : form.roleIds.filter((id) => id !== r.id),
-                      )
+              {(roles ?? []).map((r) => {
+                const disabledByPin = pinRestricted && ROLES_INCOMPATIBLE_WITH_PIN.has(r.code);
+                return (
+                  <label
+                    key={r.id}
+                    className={`radio-card ${form.roleIds.includes(r.id) ? 'selected' : ''}`}
+                    style={{ flex: '1 1 190px', opacity: disabledByPin ? 0.5 : 1 }}
+                    title={
+                      disabledByPin
+                        ? 'Niedostępne dla kont logujących się PIN-em (USER-006).'
+                        : undefined
                     }
-                  />
-                  <div>
-                    <div className="radio-card-title">{r.name}</div>
-                    <div className="radio-card-desc">
-                      {r.description ?? `${r.permissionCodes.length} uprawnień`}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={disabledByPin}
+                      checked={form.roleIds.includes(r.id)}
+                      onChange={(e) =>
+                        set(
+                          'roleIds',
+                          e.target.checked
+                            ? [...form.roleIds, r.id]
+                            : form.roleIds.filter((id) => id !== r.id),
+                        )
+                      }
+                    />
+                    <div>
+                      <div className="radio-card-title">{r.name}</div>
+                      <div className="radio-card-desc">
+                        {r.description ?? `${r.permissionCodes.length} uprawnień`}
+                      </div>
                     </div>
-                  </div>
-                </label>
-              ))}
+                  </label>
+                );
+              })}
             </div>
             <span className="hint">
               Jedna osoba może pełnić kilka ról naraz (np. właściciel jako Kierownik i
               Administrator) — uprawnienia się sumują.
+              {pinRestricted &&
+                ' Konto logujące się PIN-em nie może mieć roli Administrator ani Kierownik.'}
             </span>
           </div>
 
@@ -603,40 +790,71 @@ export function UsersPage() {
         </form>
       </Modal>
 
-      {/* --- Modal: reset hasła --- */}
+      {/* --- Modal: reset hasła / PIN-u --- */}
       <Modal
         open={resetModalOpen}
-        title="Resetuj hasło"
+        title={resetTarget?.loginMethod === 'Pin' ? 'Resetuj PIN' : 'Resetuj hasło'}
         onClose={() => setResetModalOpen(false)}
+        error={error}
         footer={
           <>
             <button className="btn btn-secondary" onClick={() => setResetModalOpen(false)}>
               Zamknij
             </button>
-            {!tempPassword && (
-              <button
-                className="btn btn-primary"
-                onClick={() => resetMutation.mutate()}
-                disabled={resetMutation.isPending}
-              >
-                {resetMutation.isPending ? 'Generowanie…' : 'Wygeneruj nowe hasło'}
-              </button>
-            )}
+            {resetTarget?.loginMethod === 'Pin'
+              ? !tempPin && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => resetPinMutation.mutate()}
+                    disabled={resetPinMutation.isPending}
+                  >
+                    {resetPinMutation.isPending ? 'Generowanie…' : 'Wygeneruj nowy PIN'}
+                  </button>
+                )
+              : !tempPassword && (
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => resetMutation.mutate()}
+                    disabled={resetMutation.isPending}
+                  >
+                    {resetMutation.isPending ? 'Generowanie…' : 'Wygeneruj nowe hasło'}
+                  </button>
+                )}
           </>
         }
       >
-        <p className="text-sm text-secondary">
-          Wygeneruj nowe, tymczasowe hasło dla {resetTarget?.firstName} {resetTarget?.lastName}.
-          Poprzednie hasło przestanie działać.
-        </p>
-        {tempPassword && (
-          <div>
-            <div className="access-code-display">{tempPassword}</div>
-            <p className="text-sm text-muted mt-8">
-              Przekaż to hasło pracownikowi bezpiecznym kanałem — nie jest nigdzie zapisane jawnie
-              poza tym oknem.
+        {resetTarget?.loginMethod === 'Pin' ? (
+          <>
+            <p className="text-sm text-secondary">
+              Wygeneruj nowy, tymczasowy PIN dla {resetTarget?.firstName} {resetTarget?.lastName}.
+              Poprzedni PIN przestanie działać.
             </p>
-          </div>
+            {tempPin && (
+              <div>
+                <div className="access-code-display">{tempPin}</div>
+                <p className="text-sm text-muted mt-8">
+                  Przekaż ten PIN pracownikowi bezpiecznym kanałem — nie jest nigdzie zapisany
+                  jawnie poza tym oknem.
+                </p>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-secondary">
+              Wygeneruj nowe, tymczasowe hasło dla {resetTarget?.firstName} {resetTarget?.lastName}.
+              Poprzednie hasło przestanie działać.
+            </p>
+            {tempPassword && (
+              <div>
+                <div className="access-code-display">{tempPassword}</div>
+                <p className="text-sm text-muted mt-8">
+                  Przekaż to hasło pracownikowi bezpiecznym kanałem — nie jest nigdzie zapisane
+                  jawnie poza tym oknem.
+                </p>
+              </div>
+            )}
+          </>
         )}
       </Modal>
 
@@ -670,6 +888,50 @@ export function UsersPage() {
         <p className="hint">
           Rejestrowane są także próby nieudane — błędne hasło oraz logowanie na konto nieaktywne.
         </p>
+      </Modal>
+
+      {/* --- Modal: TRWAŁE usunięcie (RBAC.md §5, wyłącznie Administrator) --- */}
+      <Modal
+        open={deleteTarget !== null}
+        title={`Trwale usunąć konto ${deleteTarget?.firstName ?? ''} ${deleteTarget?.lastName ?? ''}?`}
+        onClose={() => setDeleteTarget(null)}
+        error={deleteError}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setDeleteTarget(null)}>
+              Wróć
+            </button>
+            <button
+              className="btn btn-danger"
+              onClick={() => deleteMutation.mutate()}
+              disabled={
+                deleteConfirmText.trim() !== deleteTarget?.email || deleteMutation.isPending
+              }
+            >
+              {deleteMutation.isPending ? 'Usuwanie…' : 'Usuń trwale'}
+            </button>
+          </>
+        }
+      >
+        <p className="field-error" role="alert" style={{ display: 'block', marginBottom: 14 }}>
+          Tej operacji NIE da się cofnąć. Zablokowana automatycznie, jeśli konto jest
+          właścicielem/autorem czegokolwiek w systemie (sprawa, dokument, wpis historii, notatka,
+          wiadomość, wpis audytu) — w takim wypadku dezaktywuj konto zamiast usuwać.
+        </p>
+        <div className="field">
+          <label htmlFor="u-delete-confirm">
+            Wpisz adres e-mail <strong className="mono">{deleteTarget?.email}</strong>, aby
+            potwierdzić
+          </label>
+          <input
+            id="u-delete-confirm"
+            type="text"
+            value={deleteConfirmText}
+            onChange={(e) => setDeleteConfirmText(e.target.value)}
+            placeholder={deleteTarget?.email}
+            autoComplete="off"
+          />
+        </div>
       </Modal>
     </div>
   );
