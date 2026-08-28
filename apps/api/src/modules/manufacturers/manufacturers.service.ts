@@ -58,8 +58,8 @@ export class ManufacturersService {
    * Etap 3 — JEDYNE miejsce, które łączy wymagania producenta z opcjonalnym
    * nadpisaniem marki (`requirements-resolver.ts`). Wołające: `CasesService.
    * assertManufacturerRequirements`/`assertRequiredDocuments`/`computeCompleteness`,
-   * `IntakeService` (formularz publiczny, zawsze z `brandId=null` dziś — patrz
-   * komentarz przy `Manufacturer.productCategories`). `brandId` musi należeć do
+   * `IntakeService` (formularz publiczny — od Etapu 4 z rzeczywistym `brandId`
+   * wybranego produktu katalogowego, `getBrandRequirements`). `brandId` musi należeć do
    * TEGO `manufacturerId` i TEJ firmy — inaczej nadpisanie po prostu się nie
    * zastosuje (`findBrandRequirementOverride` zwróci `null`), zamiast rzucić
    * błąd na coś, co i tak nie powinno wpłynąć na wynik.

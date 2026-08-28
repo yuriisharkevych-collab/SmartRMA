@@ -27,7 +27,6 @@ export class ManufacturerMapper {
       maxPhotos,
       maxAttachmentSizeMb,
       active,
-      productCategories,
       sla,
       logistics,
       automation,
@@ -53,7 +52,10 @@ export class ManufacturerMapper {
       maxPhotos,
       maxAttachmentSizeMb,
       active,
-      productCategories,
+      // Etap 4 — kategorie produktowe przeniesione do `ProductCategory`
+      // (`GET /product-categories?manufacturerId=`), zastępując dawne
+      // `Manufacturer.productCategories: String[]` z Etapu 3 — jedno źródło
+      // prawdy, ten sam wzorzec co `Brand`/`Product` (`ProductsService`).
       // `portalPasswordEncrypted` CELOWO nieeksponowane — `schema.prisma` oznacza
       // szyfrowanie aplikacyjne tego pola jako niezrealizowane ("BACKEND TODO"),
       // a hasło do portalu producenta musi być odzyskiwalne, nie hashowane.

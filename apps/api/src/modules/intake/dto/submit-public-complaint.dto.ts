@@ -58,8 +58,20 @@ export class SubmitPublicComplaintDto {
   customer!: PublicComplaintCustomerDto;
 
   @ApiProperty() @IsUUID() manufacturerId!: string;
-  /** Krok 2 — nazwa/model "tak jak na paragonie", nie wybór z katalogu (patrz `IntakeRepository`). */
-  @ApiProperty() @IsString() @MinLength(1) @MaxLength(200) productName!: string;
+
+  /**
+   * Etap 4 — gdy producent ma skonfigurowany katalog (`GET /intake/:orgSlug/manufacturers/:manufacturerId/products`),
+   * frontend wysyła `productId` (wybór z listy, jak formularz marki). Gdy
+   * katalog jest pusty (typowy stan dla świeżo dodanego zewnętrznego
+   * producenta w formularzu firmowym), zostaje dotychczasowy wolny tekst
+   * `productName` — "tak jak na paragonie" (patrz `IntakeRepository`).
+   * Dokładnie jedno z obu musi być podane — walidacja międzypolowa w
+   * `IntakeService.submitComplaint` (ten sam wzorzec co `submissionMode` w
+   * `CasesService.create`).
+   */
+  @ApiPropertyOptional() @IsOptional() @IsUUID() productId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsUUID() brandId?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200) productName?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) serialNumber?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) frameNumber?: string;

@@ -426,6 +426,7 @@ model Company {
   manufacturers             Manufacturer[]
   brands                    Brand[]
   products                  Product[]
+  productCategories         ProductCategory[]
   orders                    Order[]
   cases                     Case[]
   roles                     Role[]
@@ -900,19 +901,12 @@ model Manufacturer {
   publicFormLogoPath    String?
   publicFormDisplayName String?
 
-  // Etap 3 (Marki i konfiguracja procesu reklamacyjnego) — kategorie produktowe
-  // formularza publicznego marki (`BrandComplaintFormPage.tsx`), PER PRODUCENT
-  // zamiast wcześniejszego hardcoded `BRAND_PRODUCT_CATEGORIES` (osiem kategorii
-  // mebli dziecięcych, zaszytych w kodzie dla pilota Veres Meble — nie do
-  // użycia przez drugą firmę z innej branży). Pusta tablica = formularz marki
-  // tego producenta jeszcze nieskonfigurowany (walidowane w serwisie, nie tu).
-  productCategories String[] @default([])
-
   logistics  ManufacturerLogistics?
   automation ManufacturerAutomation?
   sla        ManufacturerSLA?
   brands     Brand[]
   products   Product[]
+  categories ProductCategory[]
   caseItems  CaseItem[]
 
   @@index([companyId])
@@ -1043,6 +1037,33 @@ model Brand {
   @@index([manufacturerId])
 }
 
+// Etap 4 (Produkty i konfiguracja formularza) — kategoria produktowa jako
+// PEŁNOPRAWNA encja, nie wolny tekst (`Product.category`, zostaje nietknięte
+// dla kompatybilności) ani płaska tablica (dawne `Manufacturer.productCategories`
+// z Etapu 3, zmigrowane tutaj i USUNIĘTE — jedno źródło prawdy). Dokładnie ten
+// sam wzorzec co `Brand`: własna marka/kategoria per Manufacturer, żeby druga
+// firma z innej branży (np. TekstylPol) miała WŁASNY katalog, nigdy współdzielony
+// z żadną inną firmą. `active=false` = dezaktywacja WIDOCZNOŚCI (formularz
+// publiczny/panel), NIGDY usunięcie — istniejące `Product.categoryId` i
+// historyczne sprawy zostają nietknięte (właściciel wprost tego wymagał).
+model ProductCategory {
+  id             String       @id @default(uuid())
+  companyId      String
+  company        Company      @relation(fields: [companyId], references: [id])
+  manufacturerId String
+  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+
+  name   String
+  active Boolean @default(true)
+
+  createdAt DateTime @default(now())
+
+  products Product[]
+
+  @@index([companyId])
+  @@index([manufacturerId])
+}
+
 // ============================================================================
 // PRODUCENT/DYSTRYBUTOR + PARTNERZY B2B
 // ============================================================================
@@ -1143,17 +1164,26 @@ model Product {
   brandId        String?
   brand          Brand?       @relation(fields: [brandId], references: [id])
 
-  name      String // model/nazwa produktu
-  sku       String?
-  category  String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  name        String // model/nazwa produktu
+  sku         String?
+  // Etap 3 — wolny tekst, ZOSTAJE nietknięty dla istniejących wierszy (właściciel
+  // wprost zabronił destrukcyjnej zmiany produktów). Nowe produkty (panel/formularz
+  // publiczny od Etapu 4) ustawiają WYŁĄCZNIE `categoryId` poniżej — to pole jest
+  // czystą kompatybilnością wsteczną, nieużywaną przez żaden nowy kod poza
+  // odczytem/wyświetleniem starych wierszy.
+  category    String?
+  categoryId  String?
+  categoryRef ProductCategory? @relation(fields: [categoryId], references: [id])
+  active      Boolean          @default(true)
+  createdAt   DateTime         @default(now())
 
   orderItems OrderItem[]
   caseItems  CaseItem[]
 
   @@index([companyId])
   @@index([manufacturerId])
+  @@index([brandId])
+  @@index([categoryId])
   @@index([name])
 }
 
@@ -1238,8 +1268,8 @@ model Case {
   // `reportedByPartnerCompanyId` dla marek z prawdziwym osobnym kontem — pole
   // zostaje w schemacie (nie usuwamy działającej ścieżki), przyda się każdej
   // przyszłej marce, która rzeczywiście dzieli NIP z właścicielem panelu.
-  reportedByContractorId String?
-  reportedByContractor   Contractor?            @relation("CaseReportedByContractor", fields: [reportedByContractorId], references: [id])
+  reportedByContractorId     String?
+  reportedByContractor       Contractor?            @relation("CaseReportedByContractor", fields: [reportedByContractorId], references: [id])
   // Formularz rozgałęziony marki, WARIANT "osobne konto Dystrybutora" (Veres Meble od
   // teraz) — realna `Company` powiązana AKTYWNYM `Partnership` (shopCompanyId) z tą
   // firmą (distributorCompanyId), wybrana w kroku "Wybór partnera". Odróżnij od
@@ -1247,7 +1277,7 @@ model Case {
   // przekazanie już istniejącej sprawy między panelami. `null` dla zwykłych B2C.
   reportedByPartnerCompanyId String?
   reportedByPartnerCompany   Company?               @relation("CaseReportedByPartnerCompany", fields: [reportedByPartnerCompanyId], references: [id])
-  contactPreference           CaseContactPreference?
+  contactPreference          CaseContactPreference?
 
   // Nazwa nadawcy dla WSZYSTKICH przyszłych powiadomień e-mail tej sprawy (np. "Veres
   // Meble") — zrzut wykonywany RAZ przy tworzeniu sprawy z formularza marki
@@ -1540,8 +1570,8 @@ model CaseConsent {
   // joina przez Case, i pod izolację dzierżawy gdyby kiedyś potrzebny był bezpośredni odczyt.
   companyId String
 
-  requiredConsent  Boolean // zgoda na przetwarzanie danych w celu obsługi reklamacji — obowiązkowa, formularz blokuje wysyłkę bez niej
-  marketingConsent Boolean @default(false) // zgoda na kontakt e-mail/SMS — opcjonalna, sugestia z zadania
+  requiredConsent        Boolean // zgoda na przetwarzanie danych w celu obsługi reklamacji — obowiązkowa, formularz blokuje wysyłkę bez niej
+  marketingConsent       Boolean @default(false) // zgoda na kontakt e-mail/SMS — opcjonalna, sugestia z zadania
   // Zgoda na udostępnienie załączonych dokumentów/zdjęć producentowi lub dystrybutorowi w celu
   // weryfikacji sprawy — opcjonalna (dotyczy wyłącznie spraw, które mogą zostać przekazane dalej,
   // patrz CaseHandoffService.copyDocuments). Domyślnie false dla wierszy sprzed tej kolumny.
@@ -1629,18 +1659,18 @@ model Notification {
   relatedCaseId String?
   relatedCase   Case?   @relation(fields: [relatedCaseId], references: [id])
 
-  subject       String?
-  body          String
-  status        NotificationStatus @default(Pending)
-  sentAt        DateTime?
-  readAt        DateTime?
-  failureReason String?
+  subject            String?
+  body               String
+  status             NotificationStatus @default(Pending)
+  sentAt             DateTime?
+  readAt             DateTime?
+  failureReason      String?
   // Liczba prób faktycznej wysyłki przez NotificationDispatcherService — rośnie
   // przy każdej nieudanej próbie, dispatcher przestaje ponawiać po osiągnięciu
   // limitu (MAX_ATTEMPTS w mail module), żeby trwale zepsuta konfiguracja
   // e-mail nie była odpytywana w nieskończoność (EVENTS.md §11.2).
-  attempts      Int                @default(0)
-  createdAt     DateTime           @default(now())
+  attempts           Int                @default(0)
+  createdAt          DateTime           @default(now())
   // Zrzut `Case.notificationSenderName` w chwili tworzenia TEGO powiadomienia (patrz
   // komentarz przy tym polu) — `MailService` nadpisuje nim nazwę nadawcy z Ustawienia →
   // E-mail przy faktycznej wysyłce. `null` = zachowanie bez zmian (nazwa firmy).

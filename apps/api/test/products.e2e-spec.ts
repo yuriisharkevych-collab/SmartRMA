@@ -11,8 +11,7 @@ import { EVENT_NAMES } from '../src/events/event-names.const';
 
 /**
  * Test integracyjny/e2e — WYMAGA prawdziwego Postgresa i Redisa (jak
- * `test/companies.e2e-spec.ts`/`test/customers.e2e-spec.ts`). Nieuruchomiony
- * w tym środowisku — patrz raport końcowy Zadania 14.
+ * `test/companies.e2e-spec.ts`/`test/customers.e2e-spec.ts`).
  */
 describe('Products (e2e)', () => {
   let app: INestApplication;
@@ -106,6 +105,7 @@ describe('Products (e2e)', () => {
   afterAll(async () => {
     await prisma.auditLog.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.product.deleteMany({ where: { companyId } }).catch(() => undefined);
+    await prisma.productCategory.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.brand.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.manufacturer.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.contractor.deleteMany({ where: { companyId } }).catch(() => undefined);
@@ -140,21 +140,34 @@ describe('Products (e2e)', () => {
       expect(res.status).toBe(404);
     });
 
-    it('tworzy produkt, zapisuje AuditLog i publikuje `product.created`', async () => {
+    it('tworzy produkt z kategorią (Etap 4 — categoryId), zapisuje AuditLog i publikuje `product.created`', async () => {
+      const category = await prisma.productCategory.create({
+        data: { companyId, manufacturerId, name: 'Rowery' },
+      });
+
       const received: unknown[] = [];
       emitter.once(EVENT_NAMES.PRODUCT_CREATED, (event) => received.push(event));
 
       const res = await request(app.getHttpServer())
         .post('/api/products')
         .set(authHeader(adminAccessToken))
-        .send({ manufacturerId, name: 'Rower X', sku: 'SKU-1', category: 'Rowery' });
+        .send({ manufacturerId, name: 'Rower X', sku: 'SKU-1', categoryId: category.id });
 
       expect(res.status).toBe(201);
       expect(res.body.companyId).toBe(companyId);
+      expect(res.body.categoryId).toBe(category.id);
       expect(received).toHaveLength(1);
 
       const auditEntries = await prisma.auditLog.findMany({ where: { companyId, action: 'PRODUCT_CREATED', entityId: res.body.id } });
       expect(auditEntries).toHaveLength(1);
+    });
+
+    it('zwraca 404, gdy categoryId nie istnieje', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/products')
+        .set(authHeader(adminAccessToken))
+        .send({ manufacturerId, name: 'Rower Y', categoryId: '00000000-0000-0000-0000-000000000000' });
+      expect(res.status).toBe(404);
     });
   });
 
@@ -235,12 +248,37 @@ describe('Products (e2e)', () => {
       expect(received).toHaveLength(1);
     });
 
-    it('odrzuca próbę zmiany pola systemowego spoza DTO (active) — VALIDATION-001', async () => {
+    it('odrzuca próbę zmiany pola systemowego spoza DTO (createdAt) — VALIDATION-001', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/products/${productId}`)
+        .set(authHeader(adminAccessToken))
+        .send({ createdAt: '2020-01-01T00:00:00.000Z' });
+      expect(res.status).toBe(422);
+    });
+
+    it('Etap 4 — dezaktywuje produkt przez `active:false` (panel "Dezaktywuj"), NIE usuwa go — pozostaje w danych historycznych', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/api/products/${productId}`)
         .set(authHeader(adminAccessToken))
         .send({ active: false });
-      expect(res.status).toBe(422);
+
+      expect(res.status).toBe(200);
+      expect(res.body.active).toBe(false);
+      expect(res.body.id).toBe(productId);
+
+      const stillFound = await request(app.getHttpServer())
+        .get(`/api/products/${productId}`)
+        .set(authHeader(adminAccessToken));
+      expect(stillFound.status).toBe(200);
+      expect(stillFound.body.active).toBe(false);
+
+      // Reaktywacja — ta sama ścieżka działa w obie strony.
+      const reactivated = await request(app.getHttpServer())
+        .patch(`/api/products/${productId}`)
+        .set(authHeader(adminAccessToken))
+        .send({ active: true });
+      expect(reactivated.status).toBe(200);
+      expect(reactivated.body.active).toBe(true);
     });
   });
 

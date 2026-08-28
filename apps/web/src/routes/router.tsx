@@ -10,6 +10,7 @@ import { CasesListPage } from '@/pages/CasesListPage';
 import { DashboardRouter } from '@/pages/DashboardRouter';
 import { LoginPage } from '@/pages/LoginPage';
 import { ManufacturersPage } from '@/pages/ManufacturersPage';
+import { ProductsPage } from '@/pages/ProductsPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { UsersPage } from '@/pages/UsersPage';
@@ -54,6 +55,7 @@ export const router = createBrowserRouter([
           { path: '/cases/new', element: <CaseNewPage /> },
           { path: '/cases/:id', element: <CaseDetailPage /> },
           { path: '/manufacturers', element: <ManufacturersPage /> },
+          { path: '/products', element: <ProductsPage /> },
           { path: '/users', element: <UsersPage /> },
           { path: '/settings', element: <SettingsPage /> },
           { path: '/reports', element: <ReportsPage /> },

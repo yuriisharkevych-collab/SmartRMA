@@ -54,8 +54,6 @@ export interface Manufacturer {
   maxPhotos: number;
   maxAttachmentSizeMb: number;
   active: boolean;
-  /** Etap 3 — kategorie produktowe formularza publicznego marki (`/reklamacja-marka/:brandSlug`), per producent. */
-  productCategories: string[];
   sla: ManufacturerSla | null;
   logistics: ManufacturerLogistics | null;
   automation: ManufacturerAutomation | null;
@@ -78,8 +76,6 @@ export interface ManufacturerProfilePayload {
   maxPhotos?: number;
   maxAttachmentSizeMb?: number;
   active?: boolean;
-  /** Etap 3 — kategorie produktowe formularza publicznego marki, per producent. */
-  productCategories?: string[];
 }
 
 export interface LogisticsPayload {

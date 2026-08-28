@@ -1,6 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { Brand, Prisma, Product } from '@prisma/client';
+import { Brand, Prisma, Product, ProductCategory } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+/** `GET /products` — filtry katalogowe Etapu 4 (panel "Produkty", formularz publiczny). */
+export interface ProductFilters {
+  manufacturerId?: string;
+  brandId?: string;
+  categoryId?: string;
+  active?: boolean;
+}
 
 /**
  * Typy pól zawężone do `Pick<Product/Brand, ...>` (nie `Prisma.XxxUpdateInput`
@@ -14,13 +22,17 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class ProductsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findAllForCompany(companyId: string): Promise<Product[]> {
-    return this.prisma.product.findMany({ where: { companyId }, orderBy: { createdAt: 'desc' } });
+  findAllForCompany(companyId: string, filters: ProductFilters = {}): Promise<Product[]> {
+    return this.prisma.product.findMany({
+      where: { companyId, ...filters },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  search(companyId: string, query: string): Promise<Product[]> {
+  search(companyId: string, query: string, filters: ProductFilters = {}): Promise<Product[]> {
     const where: Prisma.ProductWhereInput = {
       companyId,
+      ...filters,
       OR: [
         { name: { contains: query, mode: 'insensitive' } },
         { sku: { contains: query, mode: 'insensitive' } },
@@ -42,6 +54,7 @@ export class ProductsRepository {
       name: string;
       sku?: string;
       category?: string;
+      categoryId?: string;
       brandId?: string;
     },
   ): Promise<Product> {
@@ -50,7 +63,12 @@ export class ProductsRepository {
 
   update(
     id: string,
-    data: Partial<Pick<Product, 'name' | 'sku' | 'category' | 'manufacturerId' | 'brandId'>>,
+    data: Partial<
+      Pick<
+        Product,
+        'name' | 'sku' | 'category' | 'categoryId' | 'manufacturerId' | 'brandId' | 'active'
+      >
+    >,
   ): Promise<Product> {
     return this.prisma.product.update({ where: { id }, data });
   }
@@ -70,7 +88,7 @@ export class ProductsRepository {
     return this.prisma.brand.findFirst({ where: { id, companyId } });
   }
 
-  /** Nieużywane dziś przez żaden serwis (dead code ze scaffoldu) — zostawione jako potencjalny helper dla przyszłego BR-076 (podpowiedź marki→producent w CaseItem). */
+  /** Reużyte przez `IntakeRepository`-owy odpowiednik formularza publicznego (podpowiedź marki→producent w CaseItem, BR-076) — patrz doc-comment tam. */
   findBrandsForManufacturer(manufacturerId: string): Promise<Brand[]> {
     return this.prisma.brand.findMany({ where: { manufacturerId } });
   }
@@ -100,5 +118,36 @@ export class ProductsRepository {
     >,
   ): Promise<Brand> {
     return this.prisma.brand.update({ where: { id }, data });
+  }
+
+  // --- Etap 4 (Produkty i konfiguracja formularza) — ProductCategory ---
+
+  findAllCategoriesForCompany(
+    companyId: string,
+    filters: { manufacturerId?: string; active?: boolean } = {},
+  ): Promise<ProductCategory[]> {
+    return this.prisma.productCategory.findMany({
+      where: { companyId, ...filters },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /** `companyId` obowiązkowy — ten sam IDOR co `findById`/`findBrandById` powyżej. */
+  findCategoryById(id: string, companyId: string): Promise<ProductCategory | null> {
+    return this.prisma.productCategory.findFirst({ where: { id, companyId } });
+  }
+
+  createCategory(
+    companyId: string,
+    data: { manufacturerId: string; name: string },
+  ): Promise<ProductCategory> {
+    return this.prisma.productCategory.create({ data: { ...data, companyId } });
+  }
+
+  updateCategory(
+    id: string,
+    data: Partial<Pick<ProductCategory, 'name' | 'active'>>,
+  ): Promise<ProductCategory> {
+    return this.prisma.productCategory.update({ where: { id }, data });
   }
 }

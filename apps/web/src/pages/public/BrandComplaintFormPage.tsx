@@ -151,6 +151,20 @@ export function BrandComplaintFormPage() {
     retry: false,
   });
 
+  // Etap 4 — Organizacja → Producent → Marka → Kategoria → Produkt.
+  const brandsQuery = useQuery({
+    queryKey: ['intake-brand', 'brands', brandSlug],
+    queryFn: () => intakeApi.getBrandBrands(brandSlug!),
+    enabled: !!brandSlug,
+    retry: false,
+  });
+  const categoriesQuery = useQuery({
+    queryKey: ['intake-brand', 'categories', brandSlug],
+    queryFn: () => intakeApi.getBrandCategories(brandSlug!),
+    enabled: !!brandSlug,
+    retry: false,
+  });
+
   const [stepIndex, setStepIndex] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -180,8 +194,11 @@ export function BrandComplaintFormPage() {
   const [partnerPhone, setPartnerPhone] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
 
-  const [category, setCategory] = useState('');
-  const [productName, setProductName] = useState('');
+  // Etap 4 — Organizacja → Producent → Marka → Kategoria → Produkt (zastępuje
+  // dawną wolnotekstową kategorię+model z Etapu 3).
+  const [brandId, setBrandId] = useState<string | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [productId, setProductId] = useState<string | null>(null);
   const [color, setColor] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
 
@@ -205,6 +222,42 @@ export function BrandComplaintFormPage() {
   const videoInputRef = useRef<HTMLInputElement | null>(null);
 
   const manufacturer: PublicManufacturer | undefined = manufacturerQuery.data;
+
+  // Etap 4 — krok "Marka" pomijany w UI, gdy producent ma dokładnie jedną aktywną
+  // markę (typowy przypadek samoopisanej organizacji, patrz `create-organization.ts`)
+  // — auto-wybór, żeby nie pytać klienta o coś, co i tak ma tylko jedną odpowiedź.
+  const brands = brandsQuery.data ?? [];
+  const effectiveBrandId = brandId ?? (brands.length === 1 ? brands[0].id : null);
+  const showBrandStep = brands.length > 1;
+
+  const categories = categoriesQuery.data ?? [];
+  const showCategoryStep = categories.length > 0;
+
+  const productsQuery = useQuery({
+    queryKey: ['intake-brand', 'products', brandSlug, effectiveBrandId, categoryId],
+    queryFn: () =>
+      intakeApi.getBrandProducts(brandSlug!, {
+        brandId: effectiveBrandId ?? undefined,
+        categoryId: categoryId ?? undefined,
+      }),
+    enabled:
+      !!brandSlug && (!showBrandStep || !!effectiveBrandId) && (!showCategoryStep || !!categoryId),
+    retry: false,
+  });
+  const products = productsQuery.data ?? [];
+  const selectedProduct = products.find((p) => p.id === productId) ?? null;
+
+  // Ten sam resolver co `CasesService`/Portal Klienta (`resolveRequirements`) — checklista
+  // pokazuje dokładnie to, co faktycznie zostanie wyegzekwowane po wysłaniu DLA WYBRANEJ marki,
+  // nie tylko domyślne wartości producenta (`manufacturer.requiresXxx` to fallback przed wyborem marki).
+  const requirementsQuery = useQuery({
+    queryKey: ['intake-brand', 'requirements', brandSlug, effectiveBrandId],
+    queryFn: () => intakeApi.getBrandRequirements(brandSlug!, effectiveBrandId ?? undefined),
+    enabled: !!brandSlug,
+    retry: false,
+  });
+  const requirements = requirementsQuery.data ?? manufacturer;
+
   const activeSteps = useMemo(
     () => computeSteps(reporterType, partnerRequestType),
     [reporterType, partnerRequestType],
@@ -214,25 +267,25 @@ export function BrandComplaintFormPage() {
 
   const requiresPartNumber = issueType === 'MissingPart' || issueType === 'DamagedPart';
 
-  /** Ten sam silnik reguł co formularz firmowy (`PublicComplaintFormPage`) — liczony po stronie klienta, PRZED utworzeniem sprawy. */
+  /** Ten sam silnik reguł co formularz firmowy (`PublicComplaintFormPage`) — liczony po stronie klienta, PRZED utworzeniem sprawy. Od Etapu 4: `requirements` rozwiązane DLA WYBRANEJ marki (`resolveRequirements`), nie tylko domyślne wartości producenta. */
   const missing = useMemo(() => {
-    if (!manufacturer) return [];
+    if (!requirements) return [];
     const items: string[] = [];
-    if (manufacturer.requiresSerialNumber && !serialNumber.trim()) items.push('Numer seryjny');
+    if (requirements.requiresSerialNumber && !serialNumber.trim()) items.push('Numer seryjny');
     if (
-      manufacturer.requiresProofOfPurchase &&
+      requirements.requiresProofOfPurchase &&
       !purchaseProofNumber.trim() &&
       proofFiles.length === 0
     ) {
       items.push('Dowód zakupu (numer lub skan)');
     }
-    if (manufacturer.minPhotos > 0 && photoFiles.length < manufacturer.minPhotos) {
-      items.push(`Zdjęcia (min. ${manufacturer.minPhotos}, dodano ${photoFiles.length})`);
+    if (requirements.minPhotos > 0 && photoFiles.length < requirements.minPhotos) {
+      items.push(`Zdjęcia (min. ${requirements.minPhotos}, dodano ${photoFiles.length})`);
     }
-    if (manufacturer.requiresVideo && videoFiles.length === 0)
+    if (requirements.requiresVideo && videoFiles.length === 0)
       items.push('Film przedstawiający usterkę');
     return items;
-  }, [manufacturer, serialNumber, purchaseProofNumber, proofFiles, photoFiles, videoFiles]);
+  }, [requirements, serialNumber, purchaseProofNumber, proofFiles, photoFiles, videoFiles]);
 
   const canSubmit = missing.length === 0 && requiredConsent;
 
@@ -284,8 +337,9 @@ export function BrandComplaintFormPage() {
           return 'Podaj prawidłowy adres e-mail osoby kontaktowej.';
         return null;
       case 'product':
-        if (!category) return 'Wybierz kategorię produktu.';
-        if (!productName.trim()) return 'Wpisz model produktu.';
+        if (showBrandStep && !brandId) return 'Wybierz markę.';
+        if (showCategoryStep && !categoryId) return 'Wybierz kategorię produktu.';
+        if (!productId) return 'Wybierz produkt z listy.';
         return null;
       case 'issue':
         if (!issueType) return 'Wybierz, czego dotyczy reklamacja.';
@@ -323,14 +377,14 @@ export function BrandComplaintFormPage() {
     reporterType === 'Partner' && partnerRequestType === 'Presale' ? partnerEmail : email;
 
   async function handleSubmit() {
-    if (!canSubmit || !reporterType) return;
+    if (!canSubmit || !reporterType || !productId) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
       const payload: SubmitBrandComplaintPayload = {
         reporterType,
-        category,
-        productName: productName.trim(),
+        brandId: effectiveBrandId ?? undefined,
+        productId,
         color: color.trim() || undefined,
         serialNumber: serialNumber.trim() || undefined,
         purchaseProofNumber: purchaseProofNumber.trim() || undefined,
@@ -744,35 +798,82 @@ export function BrandComplaintFormPage() {
 
           {currentKey === 'product' && (
             <>
-              <div className="field">
-                <label htmlFor="category">
-                  Kategoria produktu <span className="required-star">*</span>
-                </label>
-                <select
-                  id="category"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+              {showBrandStep && (
+                <div className="field">
+                  <label htmlFor="brand">
+                    Marka <span className="required-star">*</span>
+                  </label>
+                  <select
+                    id="brand"
+                    value={brandId ?? ''}
+                    onChange={(e) => {
+                      setBrandId(e.target.value || null);
+                      setCategoryId(null);
+                      setProductId(null);
+                    }}
+                    disabled={brandsQuery.isLoading}
+                  >
+                    <option value="">— wybierz —</option>
+                    {brands.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {showCategoryStep && (!showBrandStep || !!effectiveBrandId) && (
+                <div className="field" style={{ marginTop: showBrandStep ? 14 : 0 }}>
+                  <label htmlFor="category">
+                    Kategoria produktu <span className="required-star">*</span>
+                  </label>
+                  <select
+                    id="category"
+                    value={categoryId ?? ''}
+                    onChange={(e) => {
+                      setCategoryId(e.target.value || null);
+                      setProductId(null);
+                    }}
+                    disabled={categoriesQuery.isLoading}
+                  >
+                    <option value="">— wybierz —</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {(!showBrandStep || !!effectiveBrandId) && (!showCategoryStep || !!categoryId) && (
+                <div
+                  className="field"
+                  style={{ marginTop: showBrandStep || showCategoryStep ? 14 : 0 }}
                 >
-                  <option value="">— wybierz —</option>
-                  {(manufacturer?.productCategories ?? []).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="field" style={{ marginTop: 14 }}>
-                <label htmlFor="productName">
-                  Model <span className="required-star">*</span>
-                </label>
-                <input
-                  id="productName"
-                  type="text"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  placeholder="Podaj model zgodnie z dokumentem zakupu"
-                />
-              </div>
+                  <label htmlFor="product">
+                    Produkt <span className="required-star">*</span>
+                  </label>
+                  <select
+                    id="product"
+                    value={productId ?? ''}
+                    onChange={(e) => setProductId(e.target.value || null)}
+                    disabled={productsQuery.isLoading}
+                  >
+                    <option value="">— wybierz —</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                  {products.length === 0 && !productsQuery.isLoading && (
+                    <p className="field-hint-static">
+                      Brak produktów w tej kategorii — skontaktuj się z nami, aby zgłosić reklamację
+                      ręcznie.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="field" style={{ marginTop: 14 }}>
                 <label htmlFor="color">Kolor</label>
                 <input
@@ -782,7 +883,7 @@ export function BrandComplaintFormPage() {
                   onChange={(e) => setColor(e.target.value)}
                 />
               </div>
-              {manufacturer?.requiresSerialNumber && (
+              {requirements?.requiresSerialNumber && (
                 <div className="field" style={{ marginTop: 14 }}>
                   <label htmlFor="serialNumber">
                     Numer seryjny <span className="required-star">*</span>
@@ -807,7 +908,7 @@ export function BrandComplaintFormPage() {
               <div className="field">
                 <label htmlFor="purchaseProofNumber">
                   Numer paragonu / faktury{' '}
-                  {manufacturer?.requiresProofOfPurchase && (
+                  {requirements?.requiresProofOfPurchase && (
                     <span className="required-star">*</span>
                   )}
                 </label>
@@ -881,7 +982,7 @@ export function BrandComplaintFormPage() {
           {currentKey === 'photos' && (
             <>
               <FileDropzone
-                label={`Zdjęcia${manufacturer && manufacturer.minPhotos > 0 ? ` (min. ${manufacturer.minPhotos})` : ''}`}
+                label={`Zdjęcia${requirements && requirements.minPhotos > 0 ? ` (min. ${requirements.minPhotos})` : ''}`}
                 hint={
                   requiresPartNumber
                     ? 'Dodaj zdjęcie całego produktu ORAZ zdjęcie konkretnego uszkodzonego/brakującego elementu — z galerii albo prosto z aparatu'
@@ -892,10 +993,10 @@ export function BrandComplaintFormPage() {
                 files={photoFiles}
                 onPick={(files) => pickFiles(setPhotoFiles, files)}
                 onRemove={(key) => removeFile(setPhotoFiles, key)}
-                counterOk={manufacturer ? photoFiles.length >= manufacturer.minPhotos : true}
+                counterOk={requirements ? photoFiles.length >= requirements.minPhotos : true}
                 counterLabel={
-                  manufacturer && manufacturer.minPhotos > 0
-                    ? `${photoFiles.length} / ${manufacturer.minPhotos} wymaganych`
+                  requirements && requirements.minPhotos > 0
+                    ? `${photoFiles.length} / ${requirements.minPhotos} wymaganych`
                     : `${photoFiles.length} dodanych`
                 }
               />
@@ -993,8 +1094,19 @@ export function BrandComplaintFormPage() {
                     value={`${partnerFirstName} ${partnerLastName} · ${partnerPhone} · ${partnerEmail}`}
                   />
                 )}
-                <SummaryRow label="Kategoria" value={category || '—'} />
-                <SummaryRow label="Model" value={productName || '—'} />
+                {showBrandStep && (
+                  <SummaryRow
+                    label="Marka"
+                    value={brands.find((b) => b.id === effectiveBrandId)?.name ?? '—'}
+                  />
+                )}
+                {showCategoryStep && (
+                  <SummaryRow
+                    label="Kategoria"
+                    value={categories.find((c) => c.id === categoryId)?.name ?? '—'}
+                  />
+                )}
+                <SummaryRow label="Produkt" value={selectedProduct?.name ?? '—'} />
                 <SummaryRow label="Kolor" value={color || '—'} />
                 <SummaryRow label="Numer seryjny" value={serialNumber || '—'} />
                 <SummaryRow

@@ -28,6 +28,12 @@ import {
 import { SubmitPublicComplaintDto } from './dto/submit-public-complaint.dto';
 import { PublicCompanyBrandingEntity } from './entities/public-company-branding.entity';
 import { PublicComplaintCreatedEntity } from './entities/public-complaint-created.entity';
+import {
+  PublicBrandEntity,
+  PublicProductCategoryEntity,
+  PublicProductEntity,
+  PublicRequirementsEntity,
+} from './entities/public-catalog.entity';
 import { PublicManufacturerEntity } from './entities/public-manufacturer.entity';
 import { PublicPartnerEntity } from './entities/public-partner.entity';
 import { IntakeRepository } from './intake.repository';
@@ -92,6 +98,41 @@ export class IntakeService {
     }));
   }
 
+  // --- Etap 4 (Produkty i konfiguracja formularza) — katalog producenta na
+  // formularzu firmowym. `manufacturersService.findById` rzuca 404, gdy
+  // `manufacturerId` nie należy do TEJ firmy (IDOR — ten sam wzorzec co
+  // `submitComplaint` niżej), więc każda z tych metod jest bezpieczna, mimo
+  // że `manufacturerId` przychodzi wprost z adresu URL. ---
+
+  async getManufacturerBrands(
+    orgSlug: string,
+    manufacturerId: string,
+  ): Promise<PublicBrandEntity[]> {
+    const company = await this.companiesService.findBySlug(orgSlug);
+    await this.manufacturersService.findById(manufacturerId, company.id);
+    return this.intakeRepository.findPublicBrandsForManufacturer(manufacturerId);
+  }
+
+  async getManufacturerCategories(
+    orgSlug: string,
+    manufacturerId: string,
+  ): Promise<PublicProductCategoryEntity[]> {
+    const company = await this.companiesService.findBySlug(orgSlug);
+    await this.manufacturersService.findById(manufacturerId, company.id);
+    return this.intakeRepository.findPublicCategoriesForManufacturer(manufacturerId);
+  }
+
+  async getManufacturerProducts(
+    orgSlug: string,
+    manufacturerId: string,
+    brandId?: string,
+    categoryId?: string,
+  ): Promise<PublicProductEntity[]> {
+    const company = await this.companiesService.findBySlug(orgSlug);
+    await this.manufacturersService.findById(manufacturerId, company.id);
+    return this.intakeRepository.findPublicProducts(manufacturerId, brandId, categoryId);
+  }
+
   /**
    * Krok "Wyślij" (9/9). Kolejność ma znaczenie: klient → producent zweryfikowany →
    * produkt (dopasowany po nazwie lub utworzony) → sprawa (przez `CasesService.create`,
@@ -131,16 +172,39 @@ export class IntakeService {
         ? `${dto.description}\n\n[Zamówienie niekompletne — brakujące elementy] ${dto.incompleteOrderDetails.trim()}`
         : dto.description;
 
-    let product = await this.intakeRepository.findProductByExactName(
-      companyId,
-      dto.manufacturerId,
-      dto.productName,
-    );
-    if (!product) {
-      product = await this.intakeRepository.createFreeTextProduct(
+    // Etap 4 — `productId` (wybór z katalogu, gdy producent go skonfigurował) ma
+    // pierwszeństwo przed wolnym tekstem `productName` (dotychczasowe zachowanie,
+    // zachowane dla producentów bez katalogu — patrz doc-comment DTO). Dokładnie
+    // jedno z obu musi być podane.
+    let product;
+    let productDisplayName: string;
+    if (dto.productId) {
+      product = await this.intakeRepository.findPublicProductById(
+        dto.productId,
+        dto.manufacturerId,
+      );
+      if (!product) throw new NotFoundException();
+      productDisplayName = product.name;
+    } else if (dto.productName) {
+      product = await this.intakeRepository.findProductByExactName(
         companyId,
         dto.manufacturerId,
         dto.productName,
+      );
+      if (!product) {
+        product = await this.intakeRepository.createFreeTextProduct(
+          companyId,
+          dto.manufacturerId,
+          dto.productName,
+        );
+      }
+      productDisplayName = dto.productName;
+    } else {
+      throw new AppException(
+        ERROR_CODES.VALIDATION_001.code,
+        ERROR_CODES.VALIDATION_001.message,
+        ERROR_CODES.VALIDATION_001.status,
+        { field: 'productId' },
       );
     }
 
@@ -221,7 +285,7 @@ export class IntakeService {
         customerPhone: dto.customer.phone,
         customerEmail: dto.customer.email,
         customerAddress,
-        productName: dto.productName,
+        productName: productDisplayName,
         description: dto.description,
         portalUrl,
         accessCode: credential.value,
@@ -277,9 +341,6 @@ export class IntakeService {
       requiresVideo: m.requiresVideo,
       maxPhotos: m.maxPhotos,
       maxAttachmentSizeMb: m.maxAttachmentSizeMb,
-      // Etap 3 — kategorie KONFIGUROWANE per producent (zastępuje dawny hardcoded
-      // `BRAND_PRODUCT_CATEGORIES`), żeby druga firma z innej branży mogła mieć własną listę.
-      productCategories: m.productCategories,
     };
   }
 
@@ -297,6 +358,56 @@ export class IntakeService {
   async getBrandPartners(brandSlug: string): Promise<PublicPartnerEntity[]> {
     const manufacturer = await this.resolveBrand(brandSlug);
     return this.intakeRepository.findActivePartnerShops(manufacturer.companyId);
+  }
+
+  // --- Etap 4 (Produkty i konfiguracja formularza) — Organizacja → Producent →
+  // Marka → Kategoria → Produkt. `resolveBrand` już gwarantuje, że producent
+  // istnieje i jest aktywny — te metody dziedziczą tę granicę bez powtarzania jej. ---
+
+  async getBrandBrands(brandSlug: string): Promise<PublicBrandEntity[]> {
+    const manufacturer = await this.resolveBrand(brandSlug);
+    return this.intakeRepository.findPublicBrandsForManufacturer(manufacturer.id);
+  }
+
+  async getBrandCategories(brandSlug: string): Promise<PublicProductCategoryEntity[]> {
+    const manufacturer = await this.resolveBrand(brandSlug);
+    return this.intakeRepository.findPublicCategoriesForManufacturer(manufacturer.id);
+  }
+
+  async getBrandProducts(
+    brandSlug: string,
+    brandId?: string,
+    categoryId?: string,
+  ): Promise<PublicProductEntity[]> {
+    const manufacturer = await this.resolveBrand(brandSlug);
+    return this.intakeRepository.findPublicProducts(manufacturer.id, brandId, categoryId);
+  }
+
+  /** Ten sam resolver co `CasesService`/Portal Klienta (`ManufacturersService.resolveRequirementsForItem`) — checklista formularza pokazuje DOKŁADNIE to, co `submitBrandComplaint`/`CasesService.create` faktycznie wyegzekwują, bez drugiego mechanizmu wymagań. */
+  async getBrandRequirements(
+    brandSlug: string,
+    brandId?: string,
+  ): Promise<PublicRequirementsEntity> {
+    const manufacturer = await this.resolveBrand(brandSlug);
+    const resolved = await this.manufacturersService.resolveRequirementsForItem(
+      manufacturer.id,
+      brandId ?? null,
+      manufacturer.companyId,
+    );
+    // `resolveRequirementsForItem` zwraca `null` wyłącznie, gdy `manufacturerId`
+    // nie istnieje/nie należy do firmy — tu producent jest już zweryfikowany przez
+    // `resolveBrand`, więc to gałąź teoretyczna (bezpieczny fallback na wartości producenta).
+    return (
+      resolved ?? {
+        requiresSerialNumber: manufacturer.requiresSerialNumber,
+        requiresFrameNumber: manufacturer.requiresFrameNumber,
+        requiresProofOfPurchase: manufacturer.requiresProofOfPurchase,
+        minPhotos: manufacturer.minPhotos,
+        requiresVideo: manufacturer.requiresVideo,
+        maxPhotos: manufacturer.maxPhotos,
+        maxAttachmentSizeMb: manufacturer.maxAttachmentSizeMb,
+      }
+    );
   }
 
   /**
@@ -317,17 +428,23 @@ export class IntakeService {
     const companyId = manufacturer.companyId;
     const company = await this.companiesService.findByIdTrusted(companyId);
 
-    // Etap 3 — lista dozwolona jest DYNAMICZNA per producent (`Manufacturer.productCategories`),
-    // więc nie da się jej wyrazić statycznym `@IsIn` w DTO (patrz komentarz tam) — ten sam
-    // wzorzec co warunkowa wymagalność `customer`/`partnerCompanyId` kilka linii niżej.
-    if (!manufacturer.productCategories.includes(dto.category)) {
+    // Etap 4 — `productId` musi być pozycją AKTYWNEGO katalogu TEGO producenta
+    // (`findPublicProductById` filtruje po `manufacturerId` — IDOR, klient nie
+    // może podstawić produktu innej firmy/innego producenta). Marka sprawy
+    // wynika WYŁĄCZNIE z `product.brandId` (BR-076, ten sam wzorzec co
+    // katalogowe produkty pracownika) — `dto.brandId` był tylko krokiem
+    // zawężającym listę w `GET /intake/brand/:brandSlug/products`, nie jest
+    // osobno zapisywany.
+    const product = await this.intakeRepository.findPublicProductById(
+      dto.productId,
+      manufacturer.id,
+    );
+    if (!product) {
       throw new AppException(
         ERROR_CODES.VALIDATION_001.code,
         ERROR_CODES.VALIDATION_001.message,
         ERROR_CODES.VALIDATION_001.status,
-        {
-          field: 'category',
-        },
+        { field: 'productId' },
       );
     }
 
@@ -439,20 +556,6 @@ export class IntakeService {
     if (dto.color?.trim()) descriptionParts.push(`[Kolor: ${dto.color.trim()}]`);
     const description = `${descriptionParts.join(' ')}\n\n${dto.description}`;
 
-    let product = await this.intakeRepository.findProductByExactName(
-      companyId,
-      manufacturer.id,
-      dto.productName,
-    );
-    if (!product) {
-      product = await this.intakeRepository.createFreeTextProduct(
-        companyId,
-        manufacturer.id,
-        dto.productName,
-        dto.category,
-      );
-    }
-
     // Zrzucona TU, żeby zarówno sprawa (przyszłe powiadomienia), jak i e-mail
     // potwierdzenia niżej (`case.created.public.customer`) pokazywały tę samą,
     // poprawną nazwę nadawcy — patrz komentarz przy `Case.notificationSenderName`.
@@ -524,7 +627,7 @@ export class IntakeService {
         customerAddress: contactAddress
           ? `${contactAddress}, ${contactPostalCode} ${contactCity}`
           : '—',
-        productName: dto.productName,
+        productName: product.name,
         description: dto.description,
         portalUrl,
         accessCode: credential.value,

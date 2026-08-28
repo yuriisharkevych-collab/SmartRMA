@@ -5,6 +5,12 @@ describe('ProductsRepository', () => {
   let prisma: {
     product: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
     brand: { findMany: jest.Mock; findFirst: jest.Mock; create: jest.Mock; update: jest.Mock };
+    productCategory: {
+      findMany: jest.Mock;
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
   };
   let repository: ProductsRepository;
 
@@ -12,6 +18,12 @@ describe('ProductsRepository', () => {
     prisma = {
       product: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
       brand: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
+      productCategory: {
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
     };
     repository = new ProductsRepository(prisma as unknown as PrismaService);
   });
@@ -102,6 +114,67 @@ describe('ProductsRepository', () => {
     expect(prisma.brand.update).toHaveBeenCalledWith({
       where: { id: 'brand-1' },
       data: { name: 'Acme Corp' },
+    });
+  });
+
+  it('findAllForCompany() z filtrami Etapu 4 (manufacturerId/brandId/categoryId/active) zawęża `where`', async () => {
+    prisma.product.findMany.mockResolvedValue([]);
+    await repository.findAllForCompany('company-1', {
+      manufacturerId: 'manufacturer-1',
+      brandId: 'brand-1',
+      categoryId: 'category-1',
+      active: true,
+    });
+    expect(prisma.product.findMany).toHaveBeenCalledWith({
+      where: {
+        companyId: 'company-1',
+        manufacturerId: 'manufacturer-1',
+        brandId: 'brand-1',
+        categoryId: 'category-1',
+        active: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  });
+
+  describe('ProductCategory (Etap 4)', () => {
+    it('findAllCategoriesForCompany() filtruje po companyId i opcjonalnie manufacturerId/active', async () => {
+      prisma.productCategory.findMany.mockResolvedValue([]);
+      await repository.findAllCategoriesForCompany('company-1', {
+        manufacturerId: 'manufacturer-1',
+      });
+      expect(prisma.productCategory.findMany).toHaveBeenCalledWith({
+        where: { companyId: 'company-1', manufacturerId: 'manufacturer-1' },
+        orderBy: { createdAt: 'asc' },
+      });
+    });
+
+    it('findCategoryById() filtruje po id i companyId (IDOR — patrz audyt bezpieczeństwa)', async () => {
+      prisma.productCategory.findFirst.mockResolvedValue(null);
+      await repository.findCategoryById('category-1', 'company-1');
+      expect(prisma.productCategory.findFirst).toHaveBeenCalledWith({
+        where: { id: 'category-1', companyId: 'company-1' },
+      });
+    });
+
+    it('createCategory() dowiązuje companyId do danych kategorii', async () => {
+      prisma.productCategory.create.mockResolvedValue({});
+      await repository.createCategory('company-1', {
+        manufacturerId: 'manufacturer-1',
+        name: 'Rowery',
+      });
+      expect(prisma.productCategory.create).toHaveBeenCalledWith({
+        data: { manufacturerId: 'manufacturer-1', name: 'Rowery', companyId: 'company-1' },
+      });
+    });
+
+    it('updateCategory() przekazuje dane wprost do prisma.productCategory.update', async () => {
+      prisma.productCategory.update.mockResolvedValue({});
+      await repository.updateCategory('category-1', { active: false });
+      expect(prisma.productCategory.update).toHaveBeenCalledWith({
+        where: { id: 'category-1' },
+        data: { active: false },
+      });
     });
   });
 });

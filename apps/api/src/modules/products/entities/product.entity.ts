@@ -7,7 +7,18 @@ export class ProductEntity {
   @ApiPropertyOptional({ nullable: true }) brandId!: string | null;
   @ApiProperty() name!: string;
   @ApiPropertyOptional({ nullable: true }) sku!: string | null;
+  /** Etap 3 — wolny tekst, zachowany dla kompatybilności wstecznej istniejących produktów. Nowy kod (Etap 4) czyta/zapisuje wyłącznie `categoryId`. */
   @ApiPropertyOptional({ nullable: true }) category!: string | null;
+  @ApiPropertyOptional({ nullable: true }) categoryId!: string | null;
+  @ApiProperty() active!: boolean;
+}
+
+/** Etap 4 (Produkty i konfiguracja formularza) — kategoria produktowa per producent, zastępuje płaską `Manufacturer.productCategories` z Etapu 3. */
+export class ProductCategoryEntity {
+  @ApiProperty() id!: string;
+  @ApiProperty() companyId!: string;
+  @ApiProperty() manufacturerId!: string;
+  @ApiProperty() name!: string;
   @ApiProperty() active!: boolean;
 }
 

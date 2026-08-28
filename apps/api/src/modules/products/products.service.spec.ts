@@ -1,4 +1,4 @@
-import { Brand, Product } from '@prisma/client';
+import { Brand, Product, ProductCategory } from '@prisma/client';
 import { NotFoundException } from '@nestjs/common';
 import { AuditRepository } from '../audit/audit.repository';
 import { ManufacturersService } from '../manufacturers/manufacturers.service';
@@ -16,6 +16,7 @@ function buildProduct(overrides: Partial<Product> = {}): Product {
     name: 'Rower X',
     sku: 'SKU-1',
     category: 'Rowery',
+    categoryId: null,
     active: true,
     createdAt: new Date('2026-01-01'),
     ...overrides,
@@ -33,6 +34,18 @@ function buildBrand(overrides: Partial<Brand> = {}): Brand {
   } as Brand;
 }
 
+function buildCategory(overrides: Partial<ProductCategory> = {}): ProductCategory {
+  return {
+    id: 'category-1',
+    companyId: 'company-1',
+    manufacturerId: 'manufacturer-1',
+    name: 'Rowery',
+    active: true,
+    createdAt: new Date('2026-01-01'),
+    ...overrides,
+  } as ProductCategory;
+}
+
 describe('ProductsService', () => {
   let productsRepository: jest.Mocked<
     Pick<
@@ -47,6 +60,10 @@ describe('ProductsService', () => {
       | 'findBrandById'
       | 'createBrand'
       | 'updateBrand'
+      | 'findAllCategoriesForCompany'
+      | 'findCategoryById'
+      | 'createCategory'
+      | 'updateCategory'
     >
   >;
   let auditRepository: jest.Mocked<Pick<AuditRepository, 'create'>>;
@@ -66,6 +83,10 @@ describe('ProductsService', () => {
       findBrandById: jest.fn(),
       createBrand: jest.fn(),
       updateBrand: jest.fn(),
+      findAllCategoriesForCompany: jest.fn(),
+      findCategoryById: jest.fn(),
+      createCategory: jest.fn(),
+      updateCategory: jest.fn(),
     };
     auditRepository = { create: jest.fn() };
     manufacturersService = { findById: jest.fn().mockResolvedValue({ id: 'manufacturer-1' }) };
@@ -93,13 +114,45 @@ describe('ProductsService', () => {
   });
 
   describe('listProducts / searchProducts', () => {
-    it('listProducts() deleguje do findAllForCompany()', async () => {
+    it('listProducts() bez filtrów deleguje do findAllForCompany() z pustymi filtrami', async () => {
       productsRepository.findAllForCompany.mockResolvedValue([buildProduct()]);
       await service.listProducts('company-1');
-      expect(productsRepository.findAllForCompany).toHaveBeenCalledWith('company-1');
+      expect(productsRepository.findAllForCompany).toHaveBeenCalledWith('company-1', {
+        manufacturerId: undefined,
+        brandId: undefined,
+        categoryId: undefined,
+        active: undefined,
+      });
     });
 
-    it('searchProducts() deleguje do search() z frazą', async () => {
+    it('listProducts() z filtrami Etapu 4 (manufacturerId/brandId/categoryId/active) przekazuje je do repozytorium', async () => {
+      productsRepository.findAllForCompany.mockResolvedValue([]);
+      await service.listProducts('company-1', {
+        manufacturerId: 'manufacturer-1',
+        brandId: 'brand-1',
+        categoryId: 'category-1',
+        active: true,
+      });
+      expect(productsRepository.findAllForCompany).toHaveBeenCalledWith('company-1', {
+        manufacturerId: 'manufacturer-1',
+        brandId: 'brand-1',
+        categoryId: 'category-1',
+        active: true,
+      });
+    });
+
+    it('listProducts() z `query` deleguje do search() z filtrami', async () => {
+      productsRepository.search.mockResolvedValue([buildProduct()]);
+      await service.listProducts('company-1', { query: 'rower', brandId: 'brand-1' });
+      expect(productsRepository.search).toHaveBeenCalledWith('company-1', 'rower', {
+        manufacturerId: undefined,
+        brandId: 'brand-1',
+        categoryId: undefined,
+        active: undefined,
+      });
+    });
+
+    it('searchProducts() (reużyte przez CasesService.resolveItemProduct) deleguje do search() BEZ filtrów — sygnatura nietknięta', async () => {
       productsRepository.search.mockResolvedValue([buildProduct()]);
       await service.searchProducts('company-1', 'rower');
       expect(productsRepository.search).toHaveBeenCalledWith('company-1', 'rower');
@@ -278,6 +331,93 @@ describe('ProductsService', () => {
       const published = eventBus.publish.mock.calls[0][0];
       expect(published.eventName).toBe(EVENT_NAMES.BRAND_UPDATED);
       expect(published.payload).toEqual({ changedFields: ['name'] });
+    });
+  });
+
+  describe('ProductCategory (Etap 4)', () => {
+    it('findCategoryById rzuca NotFoundException, gdy kategoria nie istnieje', async () => {
+      productsRepository.findCategoryById.mockResolvedValue(null);
+      await expect(service.findCategoryById('brak', 'company-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('createCategory weryfikuje istnienie manufacturerId PRZED zapisem', async () => {
+      manufacturersService.findById.mockRejectedValue(new NotFoundException());
+      await expect(
+        service.createCategory('company-1', { manufacturerId: 'brak', name: 'Rowery' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(productsRepository.createCategory).not.toHaveBeenCalled();
+    });
+
+    it('createCategory zapisuje AuditLog', async () => {
+      const category = buildCategory();
+      productsRepository.createCategory.mockResolvedValue(category);
+
+      const result = await service.createCategory(
+        'company-1',
+        { manufacturerId: 'manufacturer-1', name: 'Rowery' },
+        'user-1',
+      );
+
+      expect(result.id).toBe('category-1');
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PRODUCT_CATEGORY_CREATED',
+          entityType: 'ProductCategory',
+          entityId: 'category-1',
+        }),
+      );
+    });
+
+    it('updateCategory (rename) zapisuje AuditLog z diffem TYLKO zmienionych pól', async () => {
+      const before = buildCategory({ name: 'Rowery' });
+      const after = buildCategory({ name: 'Rowery górskie' });
+      productsRepository.findCategoryById.mockResolvedValue(before);
+      productsRepository.updateCategory.mockResolvedValue(after);
+
+      const result = await service.updateCategory(
+        'category-1',
+        'company-1',
+        { name: 'Rowery górskie' },
+        'user-1',
+      );
+
+      expect(result.name).toBe('Rowery górskie');
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'PRODUCT_CATEGORY_UPDATED',
+          previousValue: { name: 'Rowery' },
+          newValue: { name: 'Rowery górskie' },
+        }),
+      );
+    });
+
+    it('updateCategory (dezaktywacja) NIE usuwa kategorii — tylko `active:false`, wiersz zostaje', async () => {
+      const before = buildCategory({ active: true });
+      const after = buildCategory({ active: false });
+      productsRepository.findCategoryById.mockResolvedValue(before);
+      productsRepository.updateCategory.mockResolvedValue(after);
+
+      const result = await service.updateCategory(
+        'category-1',
+        'company-1',
+        { active: false },
+        'user-1',
+      );
+
+      expect(result.active).toBe(false);
+      expect(productsRepository.updateCategory).toHaveBeenCalledWith('category-1', {
+        active: false,
+      });
+    });
+
+    it('updateCategory rzuca NotFoundException, gdy kategoria docelowa nie istnieje', async () => {
+      productsRepository.findCategoryById.mockResolvedValue(null);
+      await expect(
+        service.updateCategory('brak', 'company-1', { name: 'X' }, 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(productsRepository.updateCategory).not.toHaveBeenCalled();
     });
   });
 });

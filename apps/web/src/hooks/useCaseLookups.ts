@@ -28,7 +28,7 @@ export function useCaseLookups() {
   });
   const products = useQuery({
     queryKey: ['products'],
-    queryFn: productsApi.list,
+    queryFn: () => productsApi.list(),
     enabled: hasPermission('products.view'),
   });
   const manufacturers = useQuery({

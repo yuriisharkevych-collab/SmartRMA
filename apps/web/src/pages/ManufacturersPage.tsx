@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { isApiError } from '@/api/client';
 import { contractorsApi, type Contractor } from '@/api/contractors.api';
 import {
@@ -55,10 +56,6 @@ interface FormState {
   requiresProofOfPurchase: boolean;
   minPhotos: number;
   requiresVideo: boolean;
-  // Etap 3 — kategorie produktowe formularza publicznego marki, wpisywane jako lista
-  // rozdzielona przecinkami (ten sam wzorzec co progi SLA niżej: string w formularzu,
-  // sparsowany dopiero przy zapisie).
-  productCategoriesText: string;
   // SLA (progi dniowe; pusty string = brak progu)
   responseDays: string;
   repairDays: string;
@@ -107,7 +104,6 @@ const EMPTY_FORM: FormState = {
   requiresProofOfPurchase: true,
   minPhotos: 0,
   requiresVideo: false,
-  productCategoriesText: '',
   responseDays: '',
   repairDays: '',
   reminderAfterDays: '',
@@ -142,7 +138,6 @@ function formFromRecord(manufacturer: Manufacturer, contractor: Contractor | und
     complaintEmail: manufacturer.complaintEmail ?? '',
     minPhotos: manufacturer.minPhotos,
     requiresVideo: manufacturer.requiresVideo,
-    productCategoriesText: (manufacturer.productCategories ?? []).join(', '),
     responseDays: manufacturer.sla?.responseDays?.toString() ?? '',
     repairDays: manufacturer.sla?.repairDays?.toString() ?? '',
     reminderAfterDays: manufacturer.sla?.reminderAfterDays?.toString() ?? '',
@@ -415,10 +410,6 @@ export function ManufacturersPage() {
         requiresFrameNumber: form.requiresFrameNumber,
         requiresProofOfPurchase: form.requiresProofOfPurchase,
         active: form.active,
-        productCategories: form.productCategoriesText
-          .split(',')
-          .map((c) => c.trim())
-          .filter(Boolean),
       };
 
       let manufacturerId: string;
@@ -933,19 +924,10 @@ export function ManufacturersPage() {
             />
           </div>
           <div className="field" style={{ gridColumn: '1 / -1' }}>
-            <label htmlFor="mf-product-categories">
-              Kategorie produktowe formularza publicznego marki (oddzielone przecinkami)
-            </label>
-            <input
-              id="mf-product-categories"
-              type="text"
-              value={form.productCategoriesText}
-              onChange={(e) => set('productCategoriesText', e.target.value)}
-              placeholder="np. Łóżeczka, Komody, Szafy, Inne"
-            />
             <span className="field-hint-static">
-              Krok "Kategoria produktu" formularza {'/reklamacja-marka/…'} tego producenta — pusta
-              lista = ten krok nie ma z czego wybierać.
+              Kategorie i produkty tego producenta konfiguruje się w sekcji{' '}
+              <Link to="/products">Produkty</Link> — krok "Kategoria"/"Produkt" formularza{' '}
+              {'/reklamacja-marka/…'} pobiera je stamtąd na żywo.
             </span>
           </div>
           <div className="field">

@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * Krok "Produkt" Publicznego Formularza — klient wybiera PRODUCENTA z krótkiej
@@ -19,7 +19,4 @@ export class PublicManufacturerEntity {
   @ApiProperty() requiresVideo!: boolean;
   @ApiProperty() maxPhotos!: number;
   @ApiProperty() maxAttachmentSizeMb!: number;
-
-  /** Etap 3 — kategorie produktowe formularza rozgałęzionego marki (`BrandComplaintFormPage.tsx`), per producent. Puste na formularzu firmowym generycznym (`/reklamacja/:orgSlug`) — ten krok tam nie istnieje. */
-  @ApiPropertyOptional({ type: [String] }) productCategories?: string[];
 }

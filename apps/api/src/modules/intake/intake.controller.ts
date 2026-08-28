@@ -1,4 +1,16 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
@@ -8,6 +20,12 @@ import { SubmitBrandComplaintDto } from './dto/submit-brand-complaint.dto';
 import { SubmitPublicComplaintDto } from './dto/submit-public-complaint.dto';
 import { PublicCompanyBrandingEntity } from './entities/public-company-branding.entity';
 import { PublicComplaintCreatedEntity } from './entities/public-complaint-created.entity';
+import {
+  PublicBrandEntity,
+  PublicProductCategoryEntity,
+  PublicProductEntity,
+  PublicRequirementsEntity,
+} from './entities/public-catalog.entity';
 import { PublicManufacturerEntity } from './entities/public-manufacturer.entity';
 import { PublicPartnerEntity } from './entities/public-partner.entity';
 import { IntakeService } from './intake.service';
@@ -43,6 +61,41 @@ export class IntakeController {
   @Get(':orgSlug/manufacturers')
   getManufacturers(@Param('orgSlug') orgSlug: string): Promise<PublicManufacturerEntity[]> {
     return this.intakeService.getManufacturers(orgSlug);
+  }
+
+  // --- Etap 4 (Produkty i konfiguracja formularza) — katalog TEGO producenta
+  // w formularzu firmowym (`/reklamacja/:orgSlug`, może obsługiwać wielu
+  // producentów naraz — stąd `manufacturerId` w ścieżce). Ten sam kształt
+  // odpowiedzi co formularz marki niżej (`brand/:brandSlug/...`), bo to
+  // DOKŁADNIE ten sam mechanizm — jeden katalog, dwa wejścia. ---
+
+  @Public()
+  @Get(':orgSlug/manufacturers/:manufacturerId/brands')
+  getManufacturerBrands(
+    @Param('orgSlug') orgSlug: string,
+    @Param('manufacturerId', ParseUUIDPipe) manufacturerId: string,
+  ): Promise<PublicBrandEntity[]> {
+    return this.intakeService.getManufacturerBrands(orgSlug, manufacturerId);
+  }
+
+  @Public()
+  @Get(':orgSlug/manufacturers/:manufacturerId/categories')
+  getManufacturerCategories(
+    @Param('orgSlug') orgSlug: string,
+    @Param('manufacturerId', ParseUUIDPipe) manufacturerId: string,
+  ): Promise<PublicProductCategoryEntity[]> {
+    return this.intakeService.getManufacturerCategories(orgSlug, manufacturerId);
+  }
+
+  @Public()
+  @Get(':orgSlug/manufacturers/:manufacturerId/products')
+  getManufacturerProducts(
+    @Param('orgSlug') orgSlug: string,
+    @Param('manufacturerId', ParseUUIDPipe) manufacturerId: string,
+    @Query('brandId') brandId?: string,
+    @Query('categoryId') categoryId?: string,
+  ): Promise<PublicProductEntity[]> {
+    return this.intakeService.getManufacturerProducts(orgSlug, manufacturerId, brandId, categoryId);
   }
 
   @Public()
@@ -83,6 +136,56 @@ export class IntakeController {
   @Get('brand/:brandSlug/partners')
   getBrandPartners(@Param('brandSlug') brandSlug: string): Promise<PublicPartnerEntity[]> {
     return this.intakeService.getBrandPartners(brandSlug);
+  }
+
+  // --- Etap 4 (Produkty i konfiguracja formularza) — Organizacja → Producent →
+  // Marka → Kategoria → Produkt. Zastępuje dawny wolny tekst `productName` +
+  // płaską listę `Manufacturer.productCategories` z Etapu 3. ---
+
+  @Public()
+  @Get('brand/:brandSlug/brands')
+  @ApiOperation({
+    summary: 'Krok "Marka"',
+    description: 'Puste/1-elementowe — frontend pomija ten krok (auto-wybór jedynej marki).',
+  })
+  getBrandBrands(@Param('brandSlug') brandSlug: string): Promise<PublicBrandEntity[]> {
+    return this.intakeService.getBrandBrands(brandSlug);
+  }
+
+  @Public()
+  @Get('brand/:brandSlug/categories')
+  @ApiOperation({ summary: 'Krok "Kategoria" — zastępuje dawną `productCategories` (Etap 3)' })
+  getBrandCategories(
+    @Param('brandSlug') brandSlug: string,
+  ): Promise<PublicProductCategoryEntity[]> {
+    return this.intakeService.getBrandCategories(brandSlug);
+  }
+
+  @Public()
+  @Get('brand/:brandSlug/products')
+  @ApiOperation({
+    summary: 'Krok "Produkt" — zawężony opcjonalnie po `brandId`/`categoryId`',
+  })
+  getBrandProducts(
+    @Param('brandSlug') brandSlug: string,
+    @Query('brandId') brandId?: string,
+    @Query('categoryId') categoryId?: string,
+  ): Promise<PublicProductEntity[]> {
+    return this.intakeService.getBrandProducts(brandSlug, brandId, categoryId);
+  }
+
+  @Public()
+  @Get('brand/:brandSlug/requirements')
+  @ApiOperation({
+    summary: 'Wymagania rozwiązane DLA WYBRANEJ marki',
+    description:
+      'Ten sam resolver co `CasesService`/Portal Klienta (`resolveRequirements`) — checklista formularza pokazuje dokładnie to, co faktycznie zostanie wyegzekwowane po wysłaniu.',
+  })
+  getBrandRequirements(
+    @Param('brandSlug') brandSlug: string,
+    @Query('brandId') brandId?: string,
+  ): Promise<PublicRequirementsEntity> {
+    return this.intakeService.getBrandRequirements(brandSlug, brandId);
   }
 
   @Public()

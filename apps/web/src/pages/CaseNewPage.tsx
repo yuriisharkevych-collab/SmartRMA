@@ -118,7 +118,10 @@ export function CaseNewPage() {
     enabled: hasPermission('brands.manage'),
     retry: false,
   });
-  const { data: products } = useQuery({ queryKey: ['products'], queryFn: productsApi.list });
+  const { data: products } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => productsApi.list(),
+  });
 
   const [manufacturerId, setManufacturerId] = useState('');
   const [brandId, setBrandId] = useState('');

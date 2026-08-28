@@ -99,16 +99,27 @@ export class SubmitBrandComplaintDto {
   @Type(() => BrandComplaintPartnerContactDto)
   partnerContact?: BrandComplaintPartnerContactDto;
 
-  /** Etap 3 — lista dozwolonych wartości jest DYNAMICZNA, per producent (`Manufacturer.productCategories`), więc nie da się jej wyrazić statycznym `@IsIn` w DTO. Walidacja w `IntakeService.submitBrandComplaint` (ten sam wzorzec co warunkowa wymagalność pól kilka linii niżej). */
-  @ApiProperty({
-    description:
-      'Jedna z kategorii skonfigurowanych dla tego producenta (`GET /intake/brand/:brandSlug/manufacturer`).',
+  /**
+   * Etap 4 (Produkty i konfiguracja formularza) — schemat Organizacja → Producent
+   * → Marka → Kategoria → Produkt. `brandId`/`categoryId` istnieją WYŁĄCZNIE jako
+   * kroki zawężające listę w `GET /intake/brand/:brandSlug/products` — nie są
+   * osobno zapisywane na sprawie (marka pochodzi z wybranego `Product.brandId`,
+   * dokładnie tak jak wcześniej dla produktów katalogowych pracownika, BR-076).
+   * `productId` musi wskazywać AKTYWNY produkt TEGO producenta — weryfikowane w
+   * `IntakeService.submitBrandComplaint` (IDOR: klient nie może podstawić
+   * `productId` cudzej firmy/innego producenta).
+   */
+  @ApiPropertyOptional({
+    description: 'Krok "Marka" — wymagany tylko gdy producent ma więcej niż jedną aktywną markę.',
   })
-  @IsString()
-  @MinLength(1)
-  category!: string;
-  /** Model — "tak jak na dokumencie zakupu", ten sam wzorzec co `productName` w formularzu firmowym. */
-  @ApiProperty() @IsString() @MinLength(1) @MaxLength(200) productName!: string;
+  @IsOptional()
+  @IsUUID()
+  brandId?: string;
+  @ApiProperty({
+    description: 'Pozycja z katalogu producenta (`GET /intake/brand/:brandSlug/products`).',
+  })
+  @IsUUID()
+  productId!: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(60) color?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) serialNumber?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(120) purchaseProofNumber?: string;

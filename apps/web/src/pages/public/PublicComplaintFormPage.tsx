@@ -123,6 +123,7 @@ export function PublicComplaintFormPage() {
   const [postalCode, setPostalCode] = useState('');
 
   const [manufacturerId, setManufacturerId] = useState<string | null>(null);
+  const [productId, setProductId] = useState<string | null>(null);
   const [productName, setProductName] = useState('');
 
   const [purchaseProofNumber, setPurchaseProofNumber] = useState('');
@@ -151,6 +152,21 @@ export function PublicComplaintFormPage() {
     () => manufacturersQuery.data?.find((m) => m.id === manufacturerId) ?? null,
     [manufacturersQuery.data, manufacturerId],
   );
+
+  // Etap 4 (Produkty i konfiguracja formularza) — gdy producent ma skonfigurowany
+  // katalog (`Product` aktywne dla TEJ organizacji), pokazujemy wybór z listy
+  // zamiast wolnego tekstu. Pusty katalog = dotychczasowe zachowanie (wolny tekst
+  // "tak jak na paragonie") — większość zewnętrznych producentów w formularzu
+  // firmowym go nie ma, więc to WYŁĄCZNIE rozszerzenie, nie zmiana istniejącego UX.
+  const productsQuery = useQuery({
+    queryKey: ['intake', 'products', orgSlug, manufacturerId],
+    queryFn: () => intakeApi.getManufacturerProducts(orgSlug!, manufacturerId!),
+    enabled: !!orgSlug && !!manufacturerId,
+    retry: false,
+  });
+  const catalogProducts = productsQuery.data ?? [];
+  const hasCatalog = catalogProducts.length > 0;
+  const selectedProduct = catalogProducts.find((p) => p.id === productId) ?? null;
 
   const activeSteps = ALL_STEPS;
   const currentStep = activeSteps[Math.min(stepIndex, activeSteps.length - 1)];
@@ -211,7 +227,11 @@ export function PublicComplaintFormPage() {
         return null;
       case 'product':
         if (!manufacturerId) return 'Wybierz producenta.';
-        if (!productName.trim()) return 'Wpisz nazwę lub model produktu.';
+        if (hasCatalog) {
+          if (!productId) return 'Wybierz produkt z listy.';
+        } else if (!productName.trim()) {
+          return 'Wpisz nazwę lub model produktu.';
+        }
         return null;
       case 'description':
         if (!description.trim()) return 'Opisz problem — to pole jest wymagane.';
@@ -258,7 +278,8 @@ export function PublicComplaintFormPage() {
           postalCode: postalCode.trim(),
         },
         manufacturerId,
-        productName: productName.trim(),
+        productId: hasCatalog ? (productId ?? undefined) : undefined,
+        productName: hasCatalog ? undefined : productName.trim(),
         serialNumber: serialNumber.trim() || undefined,
         frameNumber: frameNumber.trim() || undefined,
         purchaseProofNumber: purchaseProofNumber.trim() || undefined,
@@ -535,7 +556,11 @@ export function PublicComplaintFormPage() {
                 <select
                   id="manufacturer"
                   value={manufacturerId ?? ''}
-                  onChange={(e) => setManufacturerId(e.target.value || null)}
+                  onChange={(e) => {
+                    setManufacturerId(e.target.value || null);
+                    setProductId(null);
+                    setProductName('');
+                  }}
                   disabled={manufacturersQuery.isLoading}
                 >
                   <option value="">— wybierz —</option>
@@ -546,18 +571,39 @@ export function PublicComplaintFormPage() {
                   ))}
                 </select>
               </div>
-              <div className="field" style={{ marginTop: 14 }}>
-                <label htmlFor="productName">
-                  Nazwa produktu <span className="required-star">*</span>
-                </label>
-                <input
-                  id="productName"
-                  type="text"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  placeholder="np. Wózek Cybex Balios S Lux"
-                />
-              </div>
+              {manufacturerId && hasCatalog ? (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label htmlFor="product">
+                    Produkt <span className="required-star">*</span>
+                  </label>
+                  <select
+                    id="product"
+                    value={productId ?? ''}
+                    onChange={(e) => setProductId(e.target.value || null)}
+                    disabled={productsQuery.isLoading}
+                  >
+                    <option value="">— wybierz —</option>
+                    {catalogProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="field" style={{ marginTop: 14 }}>
+                  <label htmlFor="productName">
+                    Nazwa produktu <span className="required-star">*</span>
+                  </label>
+                  <input
+                    id="productName"
+                    type="text"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    placeholder="np. Wózek Cybex Balios S Lux"
+                  />
+                </div>
+              )}
 
               {manufacturer &&
                 (manufacturer.requiresSerialNumber || manufacturer.requiresFrameNumber) && (
@@ -765,7 +811,10 @@ export function PublicComplaintFormPage() {
                 />
                 <SummaryRow label="Adres" value={`${address}, ${postalCode} ${city}`} />
                 <SummaryRow label="Producent" value={manufacturer?.name ?? '—'} />
-                <SummaryRow label="Produkt" value={productName || '—'} />
+                <SummaryRow
+                  label="Produkt"
+                  value={(hasCatalog ? selectedProduct?.name : productName) || '—'}
+                />
                 <SummaryRow label="Opis usterki" value={description || '—'} />
                 {incompleteOrder && (
                   <SummaryRow

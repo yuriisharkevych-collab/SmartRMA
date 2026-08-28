@@ -60,6 +60,61 @@ export class IntakeRepository {
     return this.prisma.product.create({ data: { companyId, manufacturerId, name, category } });
   }
 
+  // --- Etap 4 (Produkty i konfiguracja formularza) — Organizacja → Producent →
+  // Marka → Kategoria → Produkt, ZASTĘPUJE wolnotekstowe `productName` na
+  // formularzu marki (formularz firmowy zachowuje wolny tekst jako fallback,
+  // gdy producent nie ma jeszcze skonfigurowanego katalogu — patrz `IntakeService`). ---
+
+  /** Krok "Marka" — WYŁĄCZNIE aktywne marki tego producenta. Pominięty w UI, gdy wynik ma ≤1 wiersz (auto-wybór). */
+  findPublicBrandsForManufacturer(manufacturerId: string): Promise<{ id: string; name: string }[]> {
+    return this.prisma.brand.findMany({
+      where: { manufacturerId, active: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Krok "Kategoria" — WYŁĄCZNIE aktywne kategorie tego producenta (zastępuje dawne `Manufacturer.productCategories` z Etapu 3). */
+  findPublicCategoriesForManufacturer(
+    manufacturerId: string,
+  ): Promise<{ id: string; name: string }[]> {
+    return this.prisma.productCategory.findMany({
+      where: { manufacturerId, active: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /**
+   * Krok "Produkt" — WYŁĄCZNIE aktywne produkty tego producenta, opcjonalnie
+   * zawężone do marki/kategorii. `brandId: null` na produkcie = nie przypisany
+   * do żadnej konkretnej marki (historyczne produkty sprzed Etapu 4, BR-076) —
+   * traktowany jako widoczny pod KAŻDĄ marką tego producenta (kompatybilność
+   * wsteczna, patrz `Product.brandId` w schemacie), nigdy odwrotnie: produkt
+   * przypisany do marki A NIGDY nie pojawia się przy wybranej marce B.
+   */
+  findPublicProducts(
+    manufacturerId: string,
+    brandId?: string,
+    categoryId?: string,
+  ): Promise<{ id: string; name: string; brandId: string | null; categoryId: string | null }[]> {
+    return this.prisma.product.findMany({
+      where: {
+        manufacturerId,
+        active: true,
+        ...(brandId ? { OR: [{ brandId }, { brandId: null }] } : {}),
+        ...(categoryId ? { categoryId } : {}),
+      },
+      select: { id: true, name: true, brandId: true, categoryId: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Rozwiązanie wybranego `productId` PRZED utworzeniem sprawy — `manufacturerId` w `where` jest granicą IDOR (klient nie może podstawić produktu innego producenta/innej firmy, patrz audyt bezpieczeństwa). */
+  findPublicProductById(id: string, manufacturerId: string): Promise<Product | null> {
+    return this.prisma.product.findFirst({ where: { id, manufacturerId, active: true } });
+  }
+
   /**
    * Formularz rozgałęziony marki — rozwiązuje `Manufacturer` po `publicFormSlug`
    * (nie po `Company.slug`, patrz komentarz przy tym polu w schemacie). Zwraca

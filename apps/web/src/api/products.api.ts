@@ -8,7 +8,18 @@ export interface Product {
   brandId: string | null;
   name: string;
   sku: string | null;
+  /** Etap 3 — wolny tekst, zachowany dla kompatybilności wstecznej istniejących produktów. Panel Etapu 4 czyta/zapisuje wyłącznie `categoryId`. */
   category: string | null;
+  categoryId: string | null;
+  active: boolean;
+}
+
+/** Etap 4 (Produkty i konfiguracja formularza) — kategoria produktowa per producent, zastępuje płaską listę tekstową z Etapu 3. */
+export interface ProductCategory {
+  id: string;
+  companyId: string;
+  manufacturerId: string;
+  name: string;
   active: boolean;
 }
 
@@ -44,8 +55,18 @@ export interface BrandOverridesPayload {
   caseAgeStaleDaysOverride?: number | null;
 }
 
+/** Etap 4 — filtry panelu "Produkty" (`GET /products`). Wszystkie opcjonalne — brak = pełna lista firmy. */
+export interface ProductFilters {
+  query?: string;
+  manufacturerId?: string;
+  brandId?: string;
+  categoryId?: string;
+  active?: boolean;
+}
+
 export const productsApi = {
-  list: () => apiClient.get<Product[]>('/products').then((res) => res.data),
+  list: (filters: ProductFilters = {}) =>
+    apiClient.get<Product[]>('/products', { params: filters }).then((res) => res.data),
   search: (query: string) =>
     apiClient.get<Product[]>('/products', { params: { query } }).then((res) => res.data),
   create: (payload: {
@@ -53,8 +74,20 @@ export const productsApi = {
     brandId?: string;
     name: string;
     sku?: string;
-    category?: string;
+    categoryId?: string;
   }) => apiClient.post<Product>('/products', payload).then((res) => res.data),
+  /** Edycja, w tym dezaktywacja przez `active:false` — `Product` NIE jest fizycznie usuwany (historyczne `CaseItem`/`OrderItem`). */
+  update: (
+    id: string,
+    payload: {
+      manufacturerId?: string;
+      brandId?: string;
+      name?: string;
+      sku?: string;
+      categoryId?: string;
+      active?: boolean;
+    },
+  ) => apiClient.patch<Product>(`/products/${id}`, payload).then((res) => res.data),
 };
 
 /** `GET/POST /brands` są bramkowane uprawnieniem `brands.manage` (RBAC.md nie zna `brands.view`) — patrz `ProductsController`. */
@@ -67,4 +100,16 @@ export const brandsApi = {
     id: string,
     payload: { name?: string; manufacturerId?: string; active?: boolean } & BrandOverridesPayload,
   ) => apiClient.patch<Brand>(`/brands/${id}`, payload).then((res) => res.data),
+};
+
+/** Etap 4 — kategorie produktowe per producent (`ProductsController`, gated `products.view`/`products.manage`, zero nowego uprawnienia RBAC). Dezaktywacja (`active:false`) NIGDY nie usuwa kategorii ani nie zmienia `Product.categoryId` istniejących produktów. */
+export const productCategoriesApi = {
+  list: (manufacturerId?: string) =>
+    apiClient
+      .get<ProductCategory[]>('/product-categories', { params: { manufacturerId } })
+      .then((res) => res.data),
+  create: (payload: { manufacturerId: string; name: string }) =>
+    apiClient.post<ProductCategory>('/product-categories', payload).then((res) => res.data),
+  update: (id: string, payload: { name?: string; active?: boolean }) =>
+    apiClient.patch<ProductCategory>(`/product-categories/${id}`, payload).then((res) => res.data),
 };

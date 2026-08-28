@@ -76,9 +76,6 @@ export class ManufacturerEntity {
   @ApiProperty() maxAttachmentSizeMb!: number;
   @ApiProperty() active!: boolean;
 
-  /** Etap 3 — kategorie produktowe formularza publicznego marki (`BrandComplaintFormPage.tsx`). Puste = formularz marki tego producenta jeszcze nieskonfigurowany. */
-  @ApiProperty({ type: [String] }) productCategories!: string[];
-
   @ApiPropertyOptional({ type: ManufacturerSlaEntity, nullable: true })
   sla!: ManufacturerSlaEntity | null;
 

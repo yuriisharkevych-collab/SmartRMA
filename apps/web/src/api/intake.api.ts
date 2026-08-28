@@ -20,9 +20,37 @@ export interface PublicManufacturer {
   requiresVideo: boolean;
   maxPhotos: number;
   maxAttachmentSizeMb: number;
-  /** Etap 3 — kategorie produktowe skonfigurowane PER PRODUCENT (`GET /intake/brand/:brandSlug/manufacturer`) — zastępuje dawną, wspólną dla wszystkich firm listę na sztywno w kodzie. `undefined` na formularzu firmowym generycznym (ten krok tam nie istnieje). */
-  productCategories?: string[];
 }
+
+/** Etap 4 (Produkty i konfiguracja formularza) — schemat Organizacja → Producent → Marka → Kategoria → Produkt. */
+export interface PublicBrand {
+  id: string;
+  name: string;
+}
+
+export interface PublicProductCategory {
+  id: string;
+  name: string;
+}
+
+export interface PublicProduct {
+  id: string;
+  name: string;
+  brandId: string | null;
+  categoryId: string | null;
+}
+
+/** Wymagania rozwiązane DLA WYBRANEJ marki (`resolveRequirements`, ten sam resolver co reszta systemu) — patrz `GET /intake/brand/:brandSlug/requirements`. */
+export type PublicRequirements = Pick<
+  PublicManufacturer,
+  | 'requiresSerialNumber'
+  | 'requiresFrameNumber'
+  | 'requiresProofOfPurchase'
+  | 'minPhotos'
+  | 'requiresVideo'
+  | 'maxPhotos'
+  | 'maxAttachmentSizeMb'
+>;
 
 export interface SubmitPublicComplaintPayload {
   customer: {
@@ -35,7 +63,11 @@ export interface SubmitPublicComplaintPayload {
     postalCode: string;
   };
   manufacturerId: string;
-  productName: string;
+  /** Etap 4 — wybór z katalogu, gdy producent go skonfigurował (patrz `intakeApi.getManufacturerProducts`). */
+  productId?: string;
+  brandId?: string;
+  /** Fallback wolnotekstowy — wyłącznie gdy katalog producenta jest pusty. Dokładnie jedno z `productId`/`productName` musi być podane. */
+  productName?: string;
   serialNumber?: string;
   frameNumber?: string;
   purchaseProofNumber?: string;
@@ -88,8 +120,9 @@ export interface SubmitBrandComplaintPayload {
   partnerRequestType?: BrandPartnerRequestType;
   contactPreference?: BrandContactPreference;
   partnerContact?: BrandComplaintPartnerContact;
-  category: string;
-  productName: string;
+  /** Etap 4 — krok "Marka" (pomijany w UI, gdy producent ma ≤1 aktywną markę) + wybór z katalogu (`GET /intake/brand/:brandSlug/products`). Marka sprawy wynika z `Product.brandId`, `brandId` tutaj jest tylko krokiem zawężającym listę. */
+  brandId?: string;
+  productId: string;
   color?: string;
   serialNumber?: string;
   purchaseProofNumber?: string;
@@ -109,6 +142,24 @@ export const intakeApi = {
     publicClient
       .get<PublicManufacturer[]>(`/intake/${orgSlug}/manufacturers`)
       .then((res) => res.data),
+  getManufacturerBrands: (orgSlug: string, manufacturerId: string) =>
+    publicClient
+      .get<PublicBrand[]>(`/intake/${orgSlug}/manufacturers/${manufacturerId}/brands`)
+      .then((res) => res.data),
+  getManufacturerCategories: (orgSlug: string, manufacturerId: string) =>
+    publicClient
+      .get<PublicProductCategory[]>(`/intake/${orgSlug}/manufacturers/${manufacturerId}/categories`)
+      .then((res) => res.data),
+  getManufacturerProducts: (
+    orgSlug: string,
+    manufacturerId: string,
+    filters: { brandId?: string; categoryId?: string } = {},
+  ) =>
+    publicClient
+      .get<PublicProduct[]>(`/intake/${orgSlug}/manufacturers/${manufacturerId}/products`, {
+        params: filters,
+      })
+      .then((res) => res.data),
   submitComplaint: (orgSlug: string, payload: SubmitPublicComplaintPayload) =>
     publicClient
       .post<PublicComplaintCreated>(`/intake/${orgSlug}/complaints`, payload)
@@ -122,6 +173,20 @@ export const intakeApi = {
   getBrandManufacturer: (brandSlug: string) =>
     publicClient
       .get<PublicManufacturer>(`/intake/brand/${brandSlug}/manufacturer`)
+      .then((res) => res.data),
+  getBrandBrands: (brandSlug: string) =>
+    publicClient.get<PublicBrand[]>(`/intake/brand/${brandSlug}/brands`).then((res) => res.data),
+  getBrandCategories: (brandSlug: string) =>
+    publicClient
+      .get<PublicProductCategory[]>(`/intake/brand/${brandSlug}/categories`)
+      .then((res) => res.data),
+  getBrandProducts: (brandSlug: string, filters: { brandId?: string; categoryId?: string } = {}) =>
+    publicClient
+      .get<PublicProduct[]>(`/intake/brand/${brandSlug}/products`, { params: filters })
+      .then((res) => res.data),
+  getBrandRequirements: (brandSlug: string, brandId?: string) =>
+    publicClient
+      .get<PublicRequirements>(`/intake/brand/${brandSlug}/requirements`, { params: { brandId } })
       .then((res) => res.data),
   getBrandPartners: (brandSlug: string) =>
     publicClient

@@ -49,6 +49,17 @@ export function ManufacturersIcon(props: IconProps) {
   );
 }
 
+/** Etap 4 (Produkty i konfiguracja formularza) — sekcja "Produkty" w panelu, brak odpowiednika w prototypie (nowy moduł). */
+export function ProductsIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M12 3 3 7.5v9L12 21l9-4.5v-9L12 3Z" />
+      <path d="M3 7.5 12 12l9-4.5" />
+      <path d="M12 12v9" />
+    </svg>
+  );
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>
