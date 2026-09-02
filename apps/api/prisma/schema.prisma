@@ -35,8 +35,19 @@
 // dokładnie jedną firmę), ale model jest już na to przygotowany.
 // ============================================================================
 
+// Etap 8 (test wdrożeniowy) — WYKRYTE dopiero przy faktycznym uruchomieniu
+// kontenera produkcyjnego: bez jawnego `binaryTargets` Prisma nie potrafiło
+// wykryć wersji OpenSSL wewnątrz `node:20-alpine` (obraz w ogóle jej nie ma
+// zainstalowanej) i domyślnie spakowało silnik dla `linux-musl` (OpenSSL 1.1.x)
+// — awaria dopiero przy starcie NestJS ("libssl.so.1.1: No such file or
+// directory"), mimo że `npm run build`/`prisma generate` kończyły się bez
+// błędu. `linux-musl-openssl-3.0.x` pasuje do OpenSSL 3.x, które Dockerfile
+// teraz jawnie instaluje w warstwie `runtime` (patrz `apps/api/Dockerfile`).
+// `native` zostaje dla `npx prisma` uruchamianego lokalnie (Windows/macOS/Linux
+// dewelopera, poza kontenerem).
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -1096,12 +1107,27 @@ model Partnership {
   acceptedAt      DateTime?
   deactivatedAt   DateTime?
 
+  // Etap 5 — zaproszenie partnera E-MAILEM, gdy `shopCompany` jeszcze NIE ISTNIEJE
+  // (Dystrybutor zaprasza nową firmę, nie odwrotnie jak w `invite()`/slug powyżej).
+  // `shopCompany` jest tworzona OD RAZU (pusta, bez użytkowników) w chwili
+  // zaproszenia, żeby ten sam `Partnership`/`PartnershipBrand` obowiązywał od
+  // razu — jedyne, co brakuje do aktywacji, to PIERWSZY User tej firmy, którego
+  // zakłada sam zaproszony przez `PartnershipsService.acceptPartnerInvite`
+  // (token jednorazowy, hash jak `Case.clientAccessCodeHash`). `null` na
+  // wszystkich trzech = partnerstwo zawarte starym trybem (slug) albo już
+  // zaakceptowane/token zużyty (czyszczony po użyciu, żeby nie dało się go
+  // odtworzyć z bazy).
+  inviteEmail          String?
+  inviteTokenHash      String?
+  inviteTokenExpiresAt DateTime?
+
   brands   PartnershipBrand[]
   handoffs CaseHandoff[]
 
   @@unique([shopCompanyId, distributorCompanyId])
   @@index([shopCompanyId])
   @@index([distributorCompanyId])
+  @@index([inviteTokenHash])
 }
 
 model PartnershipBrand {

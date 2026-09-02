@@ -1,0 +1,44 @@
+# Etap 7 — reverse proxy + HTTPS automatyczny (Let's Encrypt, odnawiany przez
+# Caddy samodzielnie, zero ręcznej konfiguracji certbota). Jedyny publiczny
+# wpis do stacku (docker-compose.prod.yml) — `api`/`web` nie wystawiają
+# żadnego portu na zewnątrz same z siebie.
+#
+# `{$DOMAIN}` — podstawiane ze zmiennej środowiskowej kontenera `caddy`
+# (`DOMAIN` w .env.prod). Wymaga, żeby DNS domeny wskazywał na IP tego VPS
+# ZANIM caddy wystartuje — inaczej walidacja Let's Encrypt (HTTP-01) nie przejdzie.
+{$DOMAIN} {
+	encode gzip
+
+	# Etap 8 (audyt bezpieczeństwa) — `helmet()` w main.ts nagłówki backendu
+	# ustawia WYŁĄCZNIE dla odpowiedzi `/api/*`; sam frontend (HTML/JS/CSS z
+	# `web`) przechodził przez Caddy bez ŻADNYCH nagłówków bezpieczeństwa.
+	# HSTS ma sens dopiero z prawdziwym, stałym TLS (Let's Encrypt) — nie
+	# szkodzi też przy `tls internal` używanym do testów lokalnych.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Backend NestJS — prefiks `/api` (patrz `app.setGlobalPrefix` w main.ts).
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	# `/health`/`/version` są CELOWO poza prefiksem `/api` (main.ts,
+	# `setGlobalPrefix(..., { exclude: ['health', 'version'] })`) — pod
+	# monitoring zewnętrzny (UptimeRobot i podobne).
+	handle /health {
+		reverse_proxy api:3000
+	}
+	handle /version {
+		reverse_proxy api:3000
+	}
+
+	# Wszystko inne — statyczny frontend (nginx w kontenerze `web`,
+	# fallback SPA już obsłużony przez `apps/web/nginx.conf`).
+	handle {
+		reverse_proxy web:80
+	}
+}

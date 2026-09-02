@@ -8,7 +8,8 @@ export type PartnershipWithRelations = Partnership & {
 };
 
 export class PartnershipMapper {
-  static toEntity(row: PartnershipWithRelations): PartnershipEntity {
+  /** `caseCount` przekazywany z zewnątrz — wymaga osobnego zapytania (`PartnershipsRepository.countCasesForPartnership`), którego mapper (czysta funkcja, bez dostępu do Prisma) nie może sam wykonać. */
+  static toEntity(row: PartnershipWithRelations, caseCount: number): PartnershipEntity {
     return {
       id: row.id,
       shopCompanyId: row.shopCompanyId,
@@ -21,10 +22,9 @@ export class PartnershipMapper {
       acceptedAt: row.acceptedAt,
       deactivatedAt: row.deactivatedAt,
       brands: row.brands.map((b) => ({ id: b.brand.id, name: b.brand.name })),
+      caseCount,
+      hasPendingInvite: row.status === 'Invited' && row.inviteTokenHash !== null,
+      inviteEmail: row.inviteEmail,
     };
-  }
-
-  static toEntityList(rows: PartnershipWithRelations[]): PartnershipEntity[] {
-    return rows.map(PartnershipMapper.toEntity);
   }
 }

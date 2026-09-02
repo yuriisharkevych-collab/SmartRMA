@@ -1,10 +1,16 @@
 import { Company, Shop } from '@prisma/client';
 import { AuditRepository } from '../audit/audit.repository';
+import { AuthService } from '../auth/auth.service';
+import { PasswordService } from '../auth/services/password.service';
+import { UsersRepository } from '../users/users.repository';
 import { IEventBus } from '../../events/event-bus.interface';
 import { EVENT_NAMES } from '../../events/event-names.const';
 import { IStorageService } from '../../storage/storage.interface';
 import { CompaniesRepository } from './companies.repository';
 import { CompaniesService } from './companies.service';
+
+/** Marker unikalny per test — potwierdza, że repozytorium dostaje DOKŁADNIE ten `tx`, którym `$transaction` wywołał callback (nie `this.prisma`), ten sam wzorzec co `cases.service.spec.ts`. */
+const TX_MARKER = { __tx: true } as const;
 
 function buildCompany(overrides: Partial<Company> = {}): Company {
   return {
@@ -48,9 +54,18 @@ describe('CompaniesService', () => {
       | 'findShopById'
       | 'createShop'
       | 'updateShop'
+      | 'slugExists'
+      | 'caseNumberPrefixExists'
+      | 'passwordAccountEmailExists'
+      | 'createOrganizationShell'
+      | 'createFirstAdmin'
     >
   >;
   let auditRepository: jest.Mocked<Pick<AuditRepository, 'create'>>;
+  let prisma: { $transaction: jest.Mock };
+  let passwordService: jest.Mocked<Pick<PasswordService, 'hash'>>;
+  let usersRepository: jest.Mocked<Pick<UsersRepository, 'findPasswordAccountByEmail'>>;
+  let authService: jest.Mocked<Pick<AuthService, 'login'>>;
   let eventBus: jest.Mocked<IEventBus>;
   let storageService: jest.Mocked<IStorageService>;
   let service: CompaniesService;
@@ -64,14 +79,27 @@ describe('CompaniesService', () => {
       findShopById: jest.fn(),
       createShop: jest.fn(),
       updateShop: jest.fn(),
+      slugExists: jest.fn(),
+      caseNumberPrefixExists: jest.fn(),
+      passwordAccountEmailExists: jest.fn(),
+      createOrganizationShell: jest.fn(),
+      createFirstAdmin: jest.fn(),
     };
     auditRepository = { create: jest.fn() };
+    prisma = { $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(TX_MARKER)) };
+    passwordService = { hash: jest.fn() };
+    usersRepository = { findPasswordAccountByEmail: jest.fn() };
+    authService = { login: jest.fn() };
     eventBus = { publish: jest.fn(), publishAll: jest.fn() };
     storageService = { save: jest.fn(), read: jest.fn(), copy: jest.fn() };
 
     service = new CompaniesService(
       companiesRepository as unknown as CompaniesRepository,
       auditRepository as unknown as AuditRepository,
+      prisma as never,
+      passwordService as unknown as PasswordService,
+      usersRepository as unknown as UsersRepository,
+      authService as unknown as AuthService,
       eventBus,
       storageService,
     );
@@ -274,6 +302,152 @@ describe('CompaniesService', () => {
 
       expect(storageService.read).toHaveBeenCalledWith('company-1/logo/uuid-logo.png');
       expect(result.buffer.toString()).toBe('dane-obrazu');
+    });
+  });
+
+  describe('signup (Etap 6 — onboarding samoobsługowy)', () => {
+    const dto = {
+      companyName: 'TextilePro',
+      orgKind: 'Producent' as const,
+      adminFirstName: 'Anna',
+      adminLastName: 'Nowak',
+      adminEmail: 'anna@textilepro.pl',
+      password: 'Bezpieczne-Haslo-123',
+    };
+
+    function stubHappyPath() {
+      companiesRepository.passwordAccountEmailExists.mockResolvedValue(false);
+      companiesRepository.slugExists.mockResolvedValue(false);
+      companiesRepository.caseNumberPrefixExists.mockResolvedValue(false);
+      passwordService.hash.mockResolvedValue('hash-abc');
+      companiesRepository.createOrganizationShell.mockResolvedValue({ id: 'company-1' } as Company);
+      companiesRepository.createFirstAdmin.mockResolvedValue({ id: 'user-1' } as never);
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue({ id: 'user-1' } as never);
+      authService.login.mockResolvedValue({
+        accessToken: 'a',
+        refreshToken: 'r',
+        expiresIn: 900,
+      } as never);
+    }
+
+    it('USER-001 — nie tworzy NICZEGO, gdy e-mail administratora jest już zajęty przez konto Password (globalnie, nie tylko w tej firmie)', async () => {
+      companiesRepository.passwordAccountEmailExists.mockResolvedValue(true);
+
+      await expect(service.signup(dto)).rejects.toThrow();
+
+      expect(passwordService.hash).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('hashuje hasło WYŁĄCZNIE przez PasswordService, nigdy nie przekazuje hasła jawnym tekstem do repozytorium', async () => {
+      stubHappyPath();
+      await service.signup(dto);
+
+      expect(passwordService.hash).toHaveBeenCalledWith(dto.password);
+      const adminCall = companiesRepository.createFirstAdmin.mock.calls[0][1] as {
+        passwordHash: string;
+      };
+      expect(adminCall.passwordHash).toBe('hash-abc');
+      expect(adminCall).not.toHaveProperty('password');
+    });
+
+    it('zakłada organizację i JEDNEGO Administratora w JEDNEJ transakcji ($transaction), przekazując `tx` do obu wywołań repozytorium', async () => {
+      stubHappyPath();
+      await service.signup(dto);
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(companiesRepository.createOrganizationShell).toHaveBeenCalledWith(
+        { name: 'TextilePro', slug: 'textilepro', orgKind: 'Producent', caseNumberPrefix: 'TEXT' },
+        TX_MARKER,
+      );
+      expect(companiesRepository.createFirstAdmin).toHaveBeenCalledWith(
+        'company-1',
+        {
+          firstName: 'Anna',
+          lastName: 'Nowak',
+          email: 'anna@textilepro.pl',
+          passwordHash: 'hash-abc',
+        },
+        TX_MARKER,
+      );
+    });
+
+    it('generuje slug z nazwy firmy i próbuje kolejnych wariantów (-2, -3, …) dopóki nie znajdzie wolnego', async () => {
+      stubHappyPath();
+      companiesRepository.slugExists
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      await service.signup(dto);
+
+      expect(companiesRepository.slugExists).toHaveBeenNthCalledWith(1, 'textilepro');
+      expect(companiesRepository.slugExists).toHaveBeenNthCalledWith(2, 'textilepro-2');
+      expect(companiesRepository.slugExists).toHaveBeenNthCalledWith(3, 'textilepro-3');
+      expect(companiesRepository.createOrganizationShell).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: 'textilepro-3' }),
+        TX_MARKER,
+      );
+    });
+
+    it('COMPANY-001 — poddaje się po wyczerpaniu limitu prób sluga, bez wywołania transakcji', async () => {
+      companiesRepository.passwordAccountEmailExists.mockResolvedValue(false);
+      companiesRepository.caseNumberPrefixExists.mockResolvedValue(false);
+      companiesRepository.slugExists.mockResolvedValue(true);
+
+      await expect(service.signup(dto)).rejects.toThrow();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('generuje prefiks numeracji z nazwy firmy i próbuje kolejnych wariantów przy kolizji (Etap 7 — dawny Problem 8b z raportu wdrożeniowego)', async () => {
+      stubHappyPath();
+      companiesRepository.caseNumberPrefixExists
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+
+      await service.signup(dto);
+
+      expect(companiesRepository.caseNumberPrefixExists).toHaveBeenNthCalledWith(1, 'TEXT');
+      expect(companiesRepository.caseNumberPrefixExists).toHaveBeenNthCalledWith(2, 'TEXT2');
+      expect(companiesRepository.caseNumberPrefixExists).toHaveBeenNthCalledWith(3, 'TEXT3');
+      expect(companiesRepository.createOrganizationShell).toHaveBeenCalledWith(
+        expect.objectContaining({ caseNumberPrefix: 'TEXT3' }),
+        TX_MARKER,
+      );
+    });
+
+    it('COMPANY-001 — poddaje się po wyczerpaniu limitu prób prefiksu numeracji, PRZED sprawdzeniem sluga/transakcją', async () => {
+      companiesRepository.passwordAccountEmailExists.mockResolvedValue(false);
+      companiesRepository.caseNumberPrefixExists.mockResolvedValue(true);
+
+      await expect(service.signup(dto)).rejects.toThrow();
+      expect(companiesRepository.slugExists).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('zapisuje AuditLog COMPANY_SIGNUP przypisany do NOWEJ firmy i NOWEGO administratora', async () => {
+      stubHappyPath();
+      await service.signup(dto);
+
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companyId: 'company-1',
+          userId: 'user-1',
+          action: 'COMPANY_SIGNUP',
+          entityType: 'Company',
+          entityId: 'company-1',
+        }),
+      );
+    });
+
+    it('loguje od razu jak `PartnershipsService.acceptPartnerInvite` — zwraca AuthTokens z `AuthService.login`, nie tworzy osobnej sesji', async () => {
+      stubHappyPath();
+      const result = await service.signup(dto);
+
+      expect(usersRepository.findPasswordAccountByEmail).toHaveBeenCalledWith(dto.adminEmail);
+      expect(authService.login).toHaveBeenCalledWith({ id: 'user-1' });
+      expect(result).toEqual({ accessToken: 'a', refreshToken: 'r', expiresIn: 900 });
     });
   });
 });

@@ -96,6 +96,11 @@ export class ManufacturersRepository {
     });
   }
 
+  /** `GET /manufacturers/:id/logo` (publiczny, Etap 6) — celowo BEZ `companyId`, dokładnie jak `CompaniesRepository.findById`: logo nie jest daną wrażliwą, a wołający nie ma sesji/firmy do przekazania. */
+  findByIdUnscoped(id: string): Promise<ManufacturerWithRelations | null> {
+    return this.prisma.manufacturer.findUnique({ where: { id }, include: WITH_RELATIONS });
+  }
+
   create(
     companyId: string,
     data: Omit<Prisma.ManufacturerUncheckedCreateInput, 'companyId'>,

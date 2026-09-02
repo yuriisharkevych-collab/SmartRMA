@@ -193,6 +193,8 @@ describe('Katalog produktów — Organizacja → Producent → Marka → Kategor
     partnerShop = await prisma.company.create({
       data: { name: `PartnerShop ${suffix}`, slug: `partner-shop-catalog-${suffix}` },
     });
+    // `PartnershipBrand` scope'owane do `premiumBrandId` — Etap 5 dodał egzekwowanie zakresu marek
+    // (`assertActivePartnerCoversBrand`, PARTNERSHIP-005), test niżej zgłasza dokładnie tę markę.
     await prisma.partnership.create({
       data: {
         shopCompanyId: partnerShop.id,
@@ -200,6 +202,7 @@ describe('Katalog produktów — Organizacja → Producent → Marka → Kategor
         status: 'Active',
         invitedByUserId: textile.userId,
         acceptedAt: new Date(),
+        brands: { create: [{ brandId: textile.premiumBrandId }] },
       },
     });
   }, 60_000);

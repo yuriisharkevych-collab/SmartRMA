@@ -188,8 +188,10 @@ bez zmiany statusu sprawy.
   2. **Ręczny** — Administrator może zarchiwizować sprawę wcześniej.
   Archiwizacja **nie usuwa danych** — to zmiana statusu wpływająca na
   widoczność w domyślnych widokach listy spraw, nie na retencję fizyczną
-  (patrz `docs/source/SECURITY_AND_GDPR.md` dla zasad retencji/usuwania
-  danych osobowych, które działają niezależnie od tego statusu).
+  (patrz `docs/architecture/SECURITY_AND_GDPR.md` dla zasad retencji/usuwania
+  danych osobowych — Etap 7: ten dokument wcześniej w ogóle nie istniał mimo
+  odwołania tutaj; dziś istnieje i wprost przyznaje, że automatyczna
+  retencja/anonimizacja jeszcze nie jest zaimplementowana).
 
 ---
 

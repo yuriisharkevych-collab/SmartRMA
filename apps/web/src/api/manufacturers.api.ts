@@ -41,6 +41,11 @@ export interface Manufacturer {
   complaintEmail: string | null;
   portalUrl: string | null;
   portalLogin: string | null;
+  /** Etap 6 — formularz rozgałęziony marki (`/reklamacja-marka/:slug`), np. Veres Meble. `null` = ten producent nie ma własnego formularza (używa wyłącznie `/reklamacja/:orgSlug` firmy). */
+  publicFormSlug: string | null;
+  publicFormDisplayName: string | null;
+  /** Ścieżka do `GET /manufacturers/:id/logo` (publiczny) — `null`, gdy nie wgrano jeszcze logo formularza marki. */
+  publicFormLogoUrl: string | null;
   complaintProcedure: string | null;
   requiredDocumentsNote: string | null;
   requiredPhotosNote: string | null;
@@ -66,6 +71,8 @@ export interface ManufacturerProfilePayload {
   requiresVideo?: boolean;
   portalUrl?: string;
   portalLogin?: string;
+  publicFormSlug?: string;
+  publicFormDisplayName?: string;
   complaintProcedure?: string;
   requiredDocumentsNote?: string;
   requiredPhotosNote?: string;
@@ -118,6 +125,17 @@ export const manufacturersApi = {
     apiClient.put<Manufacturer>(`/manufacturers/${id}/automation`, payload).then((res) => res.data),
   updateSla: (id: string, payload: SlaPayload) =>
     apiClient.put<Manufacturer>(`/manufacturers/${id}/sla`, payload).then((res) => res.data),
+  /** Etap 6 — logo formularza marki (odrębne od logo firmy, `companiesApi.uploadLogo`). */
+  uploadLogo: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient
+      .post<Manufacturer>(`/manufacturers/${id}/logo`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((res) => res.data);
+  },
+  logoAbsoluteUrl: (logoUrl: string) => `${apiClient.defaults.baseURL}${logoUrl}`,
   /** `manufacturers.delete` — TRWAŁE usunięcie, wyłącznie Administrator. Zablokowane, gdy producent ma przypisane produkty/marki. */
   delete: (id: string) => apiClient.delete<void>(`/manufacturers/${id}`).then(() => undefined),
 };

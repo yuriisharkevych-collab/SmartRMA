@@ -32,14 +32,21 @@ async function bootstrap(): Promise<void> {
   );
 
   // Swagger/OpenAPI — jednocześnie pierwszy realny szkic API.md (patrz raport gotowości, Zadanie 7, finding Critical).
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('SmartRMA AI — API')
-    .setDescription('Dokumentacja API. Źródło prawdy dla procesu/reguł: docs/architecture/*.md.')
-    .setVersion('0.1.0')
-    .addBearerAuth()
-    .build();
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup(`${globalPrefix}/docs`, app, swaggerDocument);
+  // Etap 7 (audyt gotowości produkcyjnej, punkt 12) — WYŁĄCZONE na produkcji:
+  // pełna dokumentacja wszystkich endpointów/DTO/schematów odpowiedzi była
+  // dostępna publicznie pod `/api/docs`, bez żadnego ograniczenia. Dev/test
+  // nadal je mają (lokalny podgląd, testy integracyjne swaggera jeśli kiedyś
+  // powstaną) — jedyna zmiana to brak w `NODE_ENV=production`.
+  if (config.get<string>('app.nodeEnv') !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('SmartRMA AI — API')
+      .setDescription('Dokumentacja API. Źródło prawdy dla procesu/reguł: docs/architecture/*.md.')
+      .setVersion('0.1.0')
+      .addBearerAuth()
+      .build();
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup(`${globalPrefix}/docs`, app, swaggerDocument);
+  }
 
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);

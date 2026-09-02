@@ -10,6 +10,7 @@ import { CasesListPage } from '@/pages/CasesListPage';
 import { DashboardRouter } from '@/pages/DashboardRouter';
 import { LoginPage } from '@/pages/LoginPage';
 import { ManufacturersPage } from '@/pages/ManufacturersPage';
+import { PartnersPage } from '@/pages/PartnersPage';
 import { ProductsPage } from '@/pages/ProductsPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -17,8 +18,10 @@ import { UsersPage } from '@/pages/UsersPage';
 import { ClientLoginPage } from '@/pages/portal/ClientLoginPage';
 import { ClientNewCasePage } from '@/pages/portal/ClientNewCasePage';
 import { ClientPortalPage } from '@/pages/portal/ClientPortalPage';
+import { AcceptPartnerInvitePage } from '@/pages/public/AcceptPartnerInvitePage';
 import { BrandComplaintFormPage } from '@/pages/public/BrandComplaintFormPage';
 import { PublicComplaintFormPage } from '@/pages/public/PublicComplaintFormPage';
+import { SignupPage } from '@/pages/public/SignupPage';
 
 /**
  * Trasy pod powłoką pracownika (`/`), pod Portalem Klienta (`/portal`, obsługa
@@ -31,6 +34,10 @@ export const router = createBrowserRouter([
     element: <AuthLayout />,
     children: [{ path: '/login', element: <LoginPage /> }],
   },
+  // Etap 6 — onboarding samoobsługowy nowej firmy Producent/Dystrybutor. Poza
+  // `AuthLayout`/`ProtectedRoute` z tego samego powodu co `/partner-invite/:token`:
+  // zakładający nie ma jeszcze żadnej sesji ani firmy.
+  { path: '/signup', element: <SignupPage /> },
   // Publiczny Formularz Reklamacyjny — świadomie POZA każdym layoutem (nie
   // `AppLayout`/`ProtectedRoute`: klient nie ma sesji; nie `PortalLayout`: to
   // ekran PRZED istnieniem jakiejkolwiek sprawy). `.wizard-page` z
@@ -44,6 +51,10 @@ export const router = createBrowserRouter([
   // samą Company (jeden NIP), tylko innym `Manufacturer.publicFormSlug` — patrz
   // `BrandComplaintFormPage.tsx` i komentarz przy tym polu w schemacie.
   { path: '/reklamacja-marka/:brandSlug', element: <BrandComplaintFormPage /> },
+  // Etap 5 — zaproszenie e-mailem nowego partnera (Dystrybutor → firma, która jeszcze
+  // nie istnieje w SmartRMA). Poza `AppLayout`/`ProtectedRoute`: zaproszony nie ma
+  // jeszcze sesji ani konta — dokładnie ten sam powód co dwie trasy `/reklamacja*` wyżej.
+  { path: '/partner-invite/:token', element: <AcceptPartnerInvitePage /> },
   {
     element: <ProtectedRoute />,
     children: [
@@ -56,6 +67,7 @@ export const router = createBrowserRouter([
           { path: '/cases/:id', element: <CaseDetailPage /> },
           { path: '/manufacturers', element: <ManufacturersPage /> },
           { path: '/products', element: <ProductsPage /> },
+          { path: '/partners', element: <PartnersPage /> },
           { path: '/users', element: <UsersPage /> },
           { path: '/settings', element: <SettingsPage /> },
           { path: '/reports', element: <ReportsPage /> },

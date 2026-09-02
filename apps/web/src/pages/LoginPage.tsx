@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { isApiError } from '@/api/client';
 import { EyeIcon, EyeOffIcon } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
@@ -97,6 +97,11 @@ export function LoginPage() {
             {submitting ? 'Logowanie…' : 'Zaloguj się'}
           </button>
         </form>
+
+        <p className="text-sm text-muted" style={{ textAlign: 'center', marginTop: 18 }}>
+          Reprezentujesz producenta lub dystrybutora?{' '}
+          <Link to="/signup">Załóż firmę w SmartRMA</Link>
+        </p>
       </div>
     </div>
   );

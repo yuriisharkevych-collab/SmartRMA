@@ -1,4 +1,6 @@
 import { apiClient } from './client';
+import { publicClient } from './publicClient';
+import type { AuthTokens } from '@/types/auth';
 
 /** Kształt odzwierciedla `CompanyEntity` z `apps/api`. */
 export interface Company {
@@ -38,7 +40,20 @@ export interface UpdateCompanyPayload {
   termsUrl?: string;
 }
 
+/** `POST /companies/signup` (Etap 6) — publiczny, bez sesji. */
+export interface CompanySignupPayload {
+  companyName: string;
+  orgKind: 'Producent' | 'Dystrybutor';
+  adminFirstName: string;
+  adminLastName: string;
+  adminEmail: string;
+  password: string;
+}
+
 export const companiesApi = {
+  /** Onboarding samoobsługowy nowej firmy Producent/Dystrybutor — zwraca AuthTokens, logowanie od razu (jak `partnershipsApi.acceptInvite`). */
+  signup: (payload: CompanySignupPayload) =>
+    publicClient.post<AuthTokens>('/companies/signup', payload).then((res) => res.data),
   me: () => apiClient.get<Company>('/companies/me').then((res) => res.data),
   update: (payload: UpdateCompanyPayload) =>
     apiClient.patch<Company>('/companies/me', payload).then((res) => res.data),

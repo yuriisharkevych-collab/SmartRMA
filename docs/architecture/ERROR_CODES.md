@@ -158,6 +158,16 @@ Producent/Dystrybutor + Partnerzy B2B (Faza 2):
 | PARTNERSHIP-004 | 422 | Wskazana marka nie należy do zapraszanej organizacji. | `brandId` w `POST /partnerships/invite` nie wskazuje `Brand` należącej do samoopisanego `Manufacturer` dystrybutora |
 | PARTNERSHIP-005 | 409 | Brak aktywnego partnerstwa obejmującego markę tej sprawy. | `CaseHandoffService.send` — brak `Active` `Partnership`+`PartnershipBrand` dla pary Sklep/Dystrybutor i marki pozycji |
 | PARTNERSHIP-006 | 409 | Ta sprawa została już przekazana partnerowi. | Naruszenie `@@unique` na `CaseHandoff.originCaseId` — druga próba przekazania tej samej sprawy |
+| PARTNERSHIP-007 | 401 | Link zaproszenia jest nieprawidłowy, wygasł albo został już wykorzystany. | `GET /partnerships/invite/:token`\|`POST /partnerships/invite/:token/accept` — brak dopasowania hash/`inviteTokenExpiresAt` w przeszłości/token już wyczyszczony po użyciu |
+| PARTNERSHIP-008 | 409 | Ta firma ma już oczekujące zaproszenie albo jest już Twoim partnerem. | `POST /partnerships/invite-partner` — `inviteEmail` albo para (Dystrybutor, nazwa firmy) już ma wiersz `Partnership` |
+
+---
+
+## COMPANY — onboarding samoobsługowy (Etap 6)
+
+| Kod | HTTP | Treść (PL) | Kiedy występuje |
+|---|---|---|---|
+| COMPANY-001 | 409 | Nie udało się wygenerować unikalnego adresu formularza dla tej nazwy firmy — spróbuj inną nazwę. | `POST /companies/signup` — 30 kolejnych kandydatów sluga (`nazwa`, `nazwa-2`, …) już zajętych |
 
 ---
 

@@ -139,6 +139,17 @@ const DEFAULT_NOTIFICATION_TEMPLATES: Array<{
     bodyTemplate: 'Sprawa {{caseNumber}} wymaga reakcji: {{reason}}.',
     variables: ['caseNumber', 'reason'],
   },
+  {
+    // Etap 5 — Dystrybutor/Producent zaprasza NOWEGO partnera e-mailem
+    // (`PartnershipsService.invitePartner`) — jedyny e-mail w tym module
+    // wysyłany do kogoś, kto jeszcze nie ma konta w SmartRMA.
+    code: 'partnership.invited.partner',
+    channel: NotificationChannel.Email,
+    subject: 'Zaproszenie do współpracy z {{distributorName}} w SmartRMA',
+    bodyTemplate:
+      'Dzień dobry,\n\n{{distributorName}} zaprasza firmę {{companyName}} do współpracy w SmartRMA jako partner B2B, w zakresie marek: {{brandNames}}.\n\nAby założyć konto i zaakceptować zaproszenie, przejdź pod adres:\n{{inviteUrl}}\n\nJeżeli nie spodziewał(a)eś się tej wiadomości, możesz ją zignorować.',
+    variables: ['distributorName', 'companyName', 'brandNames', 'inviteUrl'],
+  },
 ];
 
 const ALL_PERMISSION_CODES = Object.values(PERMISSIONS);

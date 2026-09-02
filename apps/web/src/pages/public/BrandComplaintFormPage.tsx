@@ -151,10 +151,16 @@ export function BrandComplaintFormPage() {
     retry: false,
   });
 
-  // Etap 4 — Organizacja → Producent → Marka → Kategoria → Produkt.
+  // Zadeklarowany tu (przed `brandsQuery` niżej, który go czyta), a nie razem z resztą stanu
+  // formularza poniżej — inaczej `brandsQuery` odwoływałby się do zmiennej przed jej inicjalizacją.
+  const [partnerCompanyId, setPartnerCompanyId] = useState<string | null>(null);
+
+  // Etap 4 — Organizacja → Producent → Marka → Kategoria → Produkt. Etap 5 — dla partnera B2B
+  // zawężone do marek objętych JEGO `PartnershipBrand` (`partnerCompanyId` w kluczu zapytania,
+  // żeby lista odświeżyła się po wyborze partnera w kroku wcześniejszym).
   const brandsQuery = useQuery({
-    queryKey: ['intake-brand', 'brands', brandSlug],
-    queryFn: () => intakeApi.getBrandBrands(brandSlug!),
+    queryKey: ['intake-brand', 'brands', brandSlug, partnerCompanyId],
+    queryFn: () => intakeApi.getBrandBrands(brandSlug!, partnerCompanyId),
     enabled: !!brandSlug,
     retry: false,
   });
@@ -182,7 +188,6 @@ export function BrandComplaintFormPage() {
   const [city, setCity] = useState('');
   const [postalCode, setPostalCode] = useState('');
 
-  const [partnerCompanyId, setPartnerCompanyId] = useState<string | null>(null);
   const [partnerRequestType, setPartnerRequestType] = useState<BrandPartnerRequestType | null>(
     null,
   );

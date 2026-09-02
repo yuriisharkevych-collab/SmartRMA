@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { isApiError } from '@/api/client';
 import { contractorsApi, type Contractor } from '@/api/contractors.api';
@@ -45,6 +45,9 @@ interface FormState {
   complaintEmail: string;
   portalUrl: string;
   portalLogin: string;
+  // Etap 6 — formularz rozgałęziony marki (np. Veres Meble), `/reklamacja-marka/:slug`
+  publicFormSlug: string;
+  publicFormDisplayName: string;
   complaintProcedure: string;
   requiredDocumentsNote: string;
   requiredPhotosNote: string;
@@ -93,6 +96,8 @@ const EMPTY_FORM: FormState = {
   complaintEmail: '',
   portalUrl: '',
   portalLogin: '',
+  publicFormSlug: '',
+  publicFormDisplayName: '',
   complaintProcedure: '',
   requiredDocumentsNote: '',
   requiredPhotosNote: '',
@@ -146,6 +151,8 @@ function formFromRecord(manufacturer: Manufacturer, contractor: Contractor | und
     caseAgeStaleDaysOverride: manufacturer.sla?.caseAgeStaleDaysOverride?.toString() ?? '',
     portalUrl: manufacturer.portalUrl ?? '',
     portalLogin: manufacturer.portalLogin ?? '',
+    publicFormSlug: manufacturer.publicFormSlug ?? '',
+    publicFormDisplayName: manufacturer.publicFormDisplayName ?? '',
     complaintProcedure: manufacturer.complaintProcedure ?? '',
     requiredDocumentsNote: manufacturer.requiredDocumentsNote ?? '',
     requiredPhotosNote: manufacturer.requiredPhotosNote ?? '',
@@ -314,6 +321,18 @@ export function ManufacturersPage() {
   const [newBrandName, setNewBrandName] = useState('');
   const [pendingBrands, setPendingBrands] = useState<string[]>([]);
 
+  // Etap 6 — logo formularza marki (odrębne od logo firmy w Ustawieniach).
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const logoMutation = useMutation({
+    mutationFn: (file: File) => manufacturersApi.uploadLogo(editing!.id, file),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['manufacturers'] });
+      showToast('Logo formularza marki zapisane.');
+    },
+    onError: () =>
+      showToast('Nie udało się wgrać logo (dozwolone: PNG/JPG/WEBP/SVG/GIF, do 2 MB).'),
+  });
+
   // Etap 3 — nadpisania wymagań/SLA JEDNEJ marki, osobny mały modal (9 pól nie
   // mieści się w `window.prompt`, jak `renameBrand`).
   const [overrideTarget, setOverrideTarget] = useState<Brand | null>(null);
@@ -400,6 +419,8 @@ export function ManufacturersPage() {
         requiresVideo: form.requiresVideo,
         portalUrl: form.portalUrl.trim() || undefined,
         portalLogin: form.portalLogin.trim() || undefined,
+        publicFormSlug: form.publicFormSlug.trim() || undefined,
+        publicFormDisplayName: form.publicFormDisplayName.trim() || undefined,
         complaintProcedure: form.complaintProcedure.trim() || undefined,
         requiredDocumentsNote: form.requiredDocumentsNote.trim() || undefined,
         requiredPhotosNote: form.requiredPhotosNote.trim() || undefined,
@@ -1237,6 +1258,99 @@ export function ManufacturersPage() {
           powyżej (puste pole = wyłączone), a nie osobnymi przełącznikami. Uwaga: automatyczne
           wykonywanie tych akcji nie jest jeszcze aktywne w systemie.
         </p>
+
+        <div className="modal-section-label">Formularz marki (opcjonalnie)</div>
+        <p className="field-hint-static" style={{ marginTop: 0, marginBottom: 14 }}>
+          Wypełnij, jeśli ten producent ma mieć WŁASNY publiczny formularz reklamacyjny pod adresem{' '}
+          <code>/reklamacja-marka/…</code> (np. Veres Meble) — obok ogólnego formularza firmy.
+        </p>
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor="mf-public-slug">Adres formularza (slug)</label>
+            <input
+              id="mf-public-slug"
+              type="text"
+              placeholder="np. veres-meble"
+              value={form.publicFormSlug}
+              onChange={(e) => set('publicFormSlug', e.target.value)}
+            />
+            <span className="hint">
+              Bez spacji/polskich znaków — trafi do adresu{' '}
+              <code>/reklamacja-marka/{form.publicFormSlug || '…'}</code>.
+            </span>
+          </div>
+          <div className="field">
+            <label htmlFor="mf-public-display-name">Nazwa wyświetlana na formularzu</label>
+            <input
+              id="mf-public-display-name"
+              type="text"
+              placeholder="np. Veres Meble"
+              value={form.publicFormDisplayName}
+              onChange={(e) => set('publicFormDisplayName', e.target.value)}
+            />
+            <span className="hint">Puste = użyje nazwy kontrahenta powyżej.</span>
+          </div>
+        </div>
+        {editing && (
+          <div className="flex items-center gap-16" style={{ marginBottom: 8 }}>
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                border: '1px dashed var(--border)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                background: 'var(--surface-alt, #f7f7f8)',
+              }}
+            >
+              {editing.publicFormLogoUrl ? (
+                <img
+                  src={manufacturersApi.logoAbsoluteUrl(editing.publicFormLogoUrl)}
+                  alt="Logo formularza marki"
+                  style={{ maxWidth: '100%', maxHeight: '100%' }}
+                />
+              ) : (
+                <span className="text-xs text-muted">Brak logo</span>
+              )}
+            </div>
+            <div>
+              <input
+                ref={logoFileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) logoMutation.mutate(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={logoMutation.isPending}
+                onClick={() => logoFileInputRef.current?.click()}
+              >
+                {logoMutation.isPending
+                  ? 'Wgrywanie…'
+                  : editing.publicFormLogoUrl
+                    ? 'Zmień logo'
+                    : 'Wgraj logo'}
+              </button>
+              <p className="text-xs text-muted" style={{ marginTop: 6 }}>
+                PNG, JPG, WEBP, SVG lub GIF, maks. 2 MB.
+              </p>
+            </div>
+          </div>
+        )}
+        {!editing && (
+          <p className="hint" style={{ marginTop: -8, marginBottom: 20 }}>
+            Logo formularza wgrasz po zapisaniu producenta.
+          </p>
+        )}
 
         {canManageBrands && (
           <>

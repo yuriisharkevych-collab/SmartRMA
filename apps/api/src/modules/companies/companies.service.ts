@@ -1,7 +1,15 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
+import { AppException } from '../../common/exceptions/app.exception';
+import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
+import { deriveCaseNumberPrefix, slugify } from '../../common/utils/organization-slug.util';
 import { AuditRepository } from '../audit/audit.repository';
+import { AuthService } from '../auth/auth.service';
+import { AuthTokensEntity } from '../auth/entities/auth-tokens.entity';
+import { PasswordService } from '../auth/services/password.service';
+import { UsersRepository } from '../users/users.repository';
+import { PrismaService } from '../../prisma/prisma.service';
 import { IStorageService, STORAGE_SERVICE } from '../../storage/storage.interface';
 import {
   CompanyUpdatedPayload,
@@ -13,6 +21,7 @@ import { DomainEvent } from '../../events/domain-event.base';
 import { EVENT_BUS, IEventBus } from '../../events/event-bus.interface';
 import { EVENT_NAMES } from '../../events/event-names.const';
 import { CompaniesRepository } from './companies.repository';
+import { CompanySignupDto } from './dto/company-signup.dto';
 import { CreateShopDto } from './dto/create-shop.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
@@ -21,6 +30,22 @@ import { ShopEntity } from './entities/shop.entity';
 import { CompanyMapper } from './mappers/company.mapper';
 
 const SHOP_AUDIT_FIELDS = ['name', 'address', 'city', 'postalCode', 'phone', 'email'] as const;
+
+// Etap 6 — signup jest akcją ręczną, rzadką (nie "gorącym" zasobem jak numeracja
+// spraw) — wystarczy PRZED-sprawdzenie kolizji sluga (ten sam wzorzec co
+// `ContractorsService`/NIP, patrz jej doc-comment: "nie łapać P2002 na ślepo"),
+// nie retry-po-P2002 jak `CasesService.createWithUniqueCaseNumber`. Limit
+// istnieje wyłącznie jako twarda górna granica przeciw patologicznemu
+// przypadkowi (setki firm o identycznej nazwie) — nie przeciw normalnemu ruchowi.
+const SIGNUP_SLUG_MAX_ATTEMPTS = 30;
+
+/** Etap 7 — analogiczny twardy limit dla kolizji `caseNumberPrefix` (patrz doc-comment `CompaniesRepository.caseNumberPrefixExists`). */
+const SIGNUP_PREFIX_MAX_ATTEMPTS = 30;
+
+/** Sufiks numeryczny doklejony do 4-znakowego prefiksu przy kolizji — `deriveCaseNumberPrefix` nie ma miejsca na sufiks w 4 znakach, więc kolejne próby są dłuższe (`TEXT`→`TEXT2`→`TEXT3`), co jest w porządku: `caseNumberPrefix` nie ma ograniczenia długości w bazie. */
+function suffixedPrefix(base: string, attempt: number): string {
+  return attempt === 0 ? base : `${base}${attempt + 1}`;
+}
 
 /** Tylko pola faktycznie przesłane w `patch` (obecne jako własne klucze DTO po ValidationPipe) i różne od `before`. */
 function diffChangedFields(before: object, patch: object): string[] {
@@ -35,24 +60,137 @@ function pick(obj: object, keys: readonly string[]): Prisma.InputJsonValue {
 }
 
 /**
- * BR-086 — MVP ma dokładnie jedną `Company`, tworzoną przez seed. `createCompany`/
- * `listCompanies`/`deactivateCompany`/`reactivateCompany` NIE istnieją tu celowo:
- * RBAC.md §2 zna wyłącznie `company.manage` (edycja), bez odpowiednika
- * create/view-many/deactivate/reactivate dla Company — patrz raport końcowy
- * Zadania 12. Shop natomiast ma pełne CRUD + deaktywację, zgodnie z `shops.manage`.
+ * BR-086 (historyczne — MVP jednej firmy) dawno nieaktualne: multi-tenant
+ * współistnieje od Etapów 1–5 (Partnerzy B2B, CaseHandoff). `listCompanies`/
+ * `deactivateCompany`/`reactivateCompany` nadal nie istnieją (RBAC.md §2 zna
+ * wyłącznie `company.manage` — edycja WŁASNEJ firmy, nie przegląd cudzych) —
+ * ale **tworzenie** firmy od Etapu 6 JEST możliwe, publicznie, przez `signup()`
+ * poniżej (`POST /companies/signup`) — jedyny wyjątek od "Company = seed".
  *
- * Brak kodów COMPANY-* / SHOP-* w ERROR_CODES.md — "nie znaleziono" rzuca gołym
- * `NotFoundException()`, dokładnie jak `DocumentsService.findById` (ten sam,
- * już zaakceptowany brak, patrz raport końcowy).
+ * Brak kodów COMPANY-* / SHOP-* w ERROR_CODES.md dla pozostałych metod —
+ * "nie znaleziono" rzuca gołym `NotFoundException()`, dokładnie jak
+ * `DocumentsService.findById` (ten sam, już zaakceptowany brak, patrz raport
+ * końcowy Zadania 12).
  */
 @Injectable()
 export class CompaniesService {
   constructor(
     private readonly companiesRepository: CompaniesRepository,
     private readonly auditRepository: AuditRepository,
+    private readonly prisma: PrismaService,
+    private readonly passwordService: PasswordService,
+    private readonly usersRepository: UsersRepository,
+    private readonly authService: AuthService,
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
     @Inject(STORAGE_SERVICE) private readonly storageService: IStorageService,
   ) {}
+
+  /**
+   * Etap 6 — onboarding samoobsługowy: NOWA firma typu Producent/Dystrybutor
+   * "od zera", bez ręcznego SQL/Prisma/skryptu developerskiego. Dokładnie ten
+   * sam wzorzec co `PartnershipsService.acceptPartnerInvite` (załóż firmę →
+   * załóż JEDNEGO Administratora → automatyczny login), świadomie NIE nowy,
+   * równoległy mechanizm — różnica jest wyłącznie w tym, KTO inicjuje
+   * (tu: sam zakładający, tam: zaproszenie od dystrybutora) i że tu NIE MA
+   * kroku e-mail/token (jeden krok zamiast dwóch, bo nie ma kogo informować
+   * z wyprzedzeniem).
+   *
+   * Bezpieczeństwo (wprost wymagane przez właściciela):
+   *  - DTO nie przyjmuje `companyId`/`orgId`/`roleId` — `id` firmy i admina są
+   *    generowane przez bazę, `ValidationPipe` (`forbidNonWhitelisted`) odrzuca
+   *    każde dodatkowe pole 422 zanim dotrze tutaj;
+   *  - hasło hashowane WYŁĄCZNIE przez `PasswordService` (bcrypt, jedyne
+   *    miejsce w Auth, które go zna);
+   *  - dokładnie JEDEN Administrator na wywołanie — rola systemowa
+   *    (`SYSTEM_ROLE_CODES.ADMINISTRATOR`, `companyId:null`), TA SAMA co
+   *    każdy inny bootstrap w tym repo, więc RBAC nowej firmy jest identyczne
+   *    z każdą inną (`ALL_PERMISSION_CODES` minus `cases.decision.*`, seed.ts);
+   *  - Company+CompanySettings+Shop+samoopisany profil+katalog statusów+User
+   *    w JEDNEJ `prisma.$transaction` — częściowy zapis (np. firma bez
+   *    Administratora) nie może przetrwać awarii w środku sekwencji;
+   *  - izolacja tenantów jest strukturalna: nowa firma nie ma ŻADNEJ relacji
+   *    do jakiejkolwiek istniejącej — wszystko poniżej to świeże `id`.
+   */
+  async signup(dto: CompanySignupDto): Promise<AuthTokensEntity> {
+    const emailTaken = await this.companiesRepository.passwordAccountEmailExists(dto.adminEmail);
+    if (emailTaken) {
+      throw new AppException(
+        ERROR_CODES.USER_001.code,
+        ERROR_CODES.USER_001.message,
+        ERROR_CODES.USER_001.status,
+      );
+    }
+
+    const passwordHash = await this.passwordService.hash(dto.password);
+    const baseSlug = slugify(dto.companyName);
+    const baseCaseNumberPrefix = deriveCaseNumberPrefix(dto.companyName);
+
+    let caseNumberPrefix: string | undefined;
+    for (let attempt = 0; attempt < SIGNUP_PREFIX_MAX_ATTEMPTS; attempt += 1) {
+      const candidate = suffixedPrefix(baseCaseNumberPrefix, attempt);
+      if (await this.companiesRepository.caseNumberPrefixExists(candidate)) continue;
+      caseNumberPrefix = candidate;
+      break;
+    }
+    if (!caseNumberPrefix) {
+      // Praktycznie nieosiągalne, ten sam twardy limit górny co przy slugu niżej.
+      throw new AppException(
+        ERROR_CODES.COMPANY_001.code,
+        ERROR_CODES.COMPANY_001.message,
+        ERROR_CODES.COMPANY_001.status,
+      );
+    }
+
+    let companyId: string | undefined;
+    let userId: string | undefined;
+    for (let attempt = 0; attempt < SIGNUP_SLUG_MAX_ATTEMPTS; attempt += 1) {
+      const slug = attempt === 0 ? baseSlug : `${baseSlug}-${attempt + 1}`;
+      if (await this.companiesRepository.slugExists(slug)) continue;
+
+      const result = await this.prisma.$transaction(async (tx) => {
+        const company = await this.companiesRepository.createOrganizationShell(
+          { name: dto.companyName, slug, orgKind: dto.orgKind, caseNumberPrefix },
+          tx,
+        );
+        const user = await this.companiesRepository.createFirstAdmin(
+          company.id,
+          {
+            firstName: dto.adminFirstName,
+            lastName: dto.adminLastName,
+            email: dto.adminEmail,
+            passwordHash,
+          },
+          tx,
+        );
+        return { company, user };
+      });
+      companyId = result.company.id;
+      userId = result.user.id;
+      break;
+    }
+
+    if (!companyId || !userId) {
+      // Praktycznie nieosiągalne (30 kolejnych zajętych slugów pod rząd) —
+      // twardy limit górny, nie oczekiwana ścieżka biznesowa.
+      throw new AppException(
+        ERROR_CODES.COMPANY_001.code,
+        ERROR_CODES.COMPANY_001.message,
+        ERROR_CODES.COMPANY_001.status,
+      );
+    }
+
+    await this.auditRepository.create({
+      companyId,
+      userId,
+      action: 'COMPANY_SIGNUP',
+      entityType: 'Company',
+      entityId: companyId,
+      newValue: { companyName: dto.companyName, orgKind: dto.orgKind } as Prisma.InputJsonValue,
+    });
+
+    const userWithRoles = await this.usersRepository.findPasswordAccountByEmail(dto.adminEmail);
+    return this.authService.login(userWithRoles!);
+  }
 
   async findById(id: string): Promise<CompanyEntity> {
     const company = await this.findCompanyOrThrow(id);

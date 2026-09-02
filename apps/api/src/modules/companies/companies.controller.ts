@@ -3,6 +3,8 @@ import {
   Controller,
   FileTypeValidator,
   Get,
+  HttpCode,
+  HttpStatus,
   MaxFileSizeValidator,
   Param,
   ParseFilePipe,
@@ -22,6 +24,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import * as path from 'node:path';
 import { Public } from '../../common/decorators/public.decorator';
@@ -29,7 +32,9 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { PERMISSIONS } from '../../rbac/constants/permissions.const';
 import { RequirePermissions } from '../../rbac/decorators/require-permissions.decorator';
+import { AuthTokensEntity } from '../auth/entities/auth-tokens.entity';
 import { CompaniesService } from './companies.service';
+import { CompanySignupDto } from './dto/company-signup.dto';
 import { CreateShopDto } from './dto/create-shop.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
@@ -49,14 +54,40 @@ const EXTENSION_TO_MIME: Record<string, string> = {
 
 /**
  * RBAC.md §2 zna wyłącznie `company.manage`/`shops.manage` — brak
- * create/list/deactivate/reactivate dla Company (BR-086: jedna firma,
- * tworzona przez seed). Shop ma pełne CRUD + dezaktywację pod `shops.manage`.
+ * list/deactivate/reactivate dla Company (jedyny wyjątek: `signup` niżej,
+ * Etap 6). Shop ma pełne CRUD + dezaktywację pod `shops.manage`.
  */
 @ApiTags('Companies')
 @ApiBearerAuth()
 @Controller()
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
+
+  // --- Etap 6 — onboarding samoobsługowy, publiczny, bez sesji ---
+
+  @Public()
+  @Post('companies/signup')
+  @HttpCode(HttpStatus.CREATED)
+  // Podstawowa ochrona przed mass-signup — nie CAPTCHA/antyfraud (świadomie
+  // poza zakresem Etapu 6), tylko twardy sufit per adres IP, ten sam wzorzec
+  // co `IntakeController.submitComplaint`/`submitBrandComplaint` (jedyne inne
+  // publiczne endpointy tworzące realne rekordy w bazie).
+  @Throttle({ default: { limit: 5, ttl: 60 * 60_000 } })
+  @ApiOperation({
+    summary:
+      'Onboarding nowej firmy Producent/Dystrybutor — bez sesji, bez SQL/skryptu developerskiego',
+    description:
+      'Zakłada Company+CompanySettings+Shop+samoopisany profil+katalog statusów+PIERWSZEGO Administratora w jednej transakcji i od razu loguje (zwraca AuthTokens) — ten sam wzorzec co `POST /partnerships/invite/:token/accept`.',
+  })
+  @ApiBody({ type: CompanySignupDto })
+  @ApiResponse({ status: 201, description: 'Firma założona, zalogowano nowego Administratora.' })
+  @ApiResponse({
+    status: 409,
+    description: 'USER-001 (e-mail zajęty) albo COMPANY-001 (slug wyczerpany).',
+  })
+  signup(@Body() dto: CompanySignupDto): Promise<AuthTokensEntity> {
+    return this.companiesService.signup(dto);
+  }
 
   @Get('companies/me')
   @ApiOperation({

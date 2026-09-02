@@ -60,6 +60,17 @@ export function ProductsIcon(props: IconProps) {
   );
 }
 
+/** Etap 5 (Partnerzy B2B) — sekcja "Partnerzy" w panelu, brak odpowiednika w prototypie (nowy moduł). Dwa połączone ogniwa — relacja Sklep ↔ Dystrybutor/Producent, nie pojedyncza firma (stąd nie reużyto `ManufacturersIcon`). */
+export function PartnersIcon(props: IconProps) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="2.5" y="7" width="8" height="8" rx="2" />
+      <rect x="13.5" y="9" width="8" height="8" rx="2" />
+      <path d="M10.5 11h3" />
+    </svg>
+  );
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <svg {...base} {...props}>

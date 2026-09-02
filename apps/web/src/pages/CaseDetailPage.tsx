@@ -37,7 +37,6 @@ import {
   DOCUMENT_CATEGORY_LABELS,
   HISTORY_ACTION_LABELS,
   NEXT_ACTION_BY_STATUS,
-  ORIGIN_TYPE_LABELS,
   PRIORITY_TONES,
   SOURCE_LABELS,
   documentIconKind,
@@ -46,7 +45,7 @@ import {
   formatFileSize,
   historyIcon,
 } from '@/lib/case-labels';
-import { COMPLAINT_TYPE_LABELS, formatDate } from '@/lib/case-filters';
+import { COMPLAINT_TYPE_LABELS, formatDate, isB2B } from '@/lib/case-filters';
 
 const DECISION_FULFILLMENT_LABELS: Record<DecisionFulfillmentMethod, string> = {
   Kurier: 'Kurier',
@@ -836,9 +835,16 @@ export function CaseDetailPage() {
                 <h3 style={{ marginBottom: 12 }}>Zgłoszenie</h3>
                 <div className="kv-list">
                   <Kv label="Źródło zgłoszenia" value={SOURCE_LABELS[c.source] ?? c.source} />
+                  {/* Etap 6 — poprawka UX zgłoszona przy zamknięciu Etapu 5: to pole dawniej
+                      pokazywało SUROWY `c.originType`, który dla spraw B2B z formularza marki
+                      (mechanizm `reportedByPartnerCompanyId`, patrz `isB2B` w `case-filters.ts`)
+                      zostaje na wartości domyślnej `DirectCustomer` — pracownik widział
+                      sprzeczność "Pochodzenie: Klient bezpośredni" tuż nad "Zgłoszenie od: Partner"
+                      niżej. Wartość liczy się teraz TYM SAMYM warunkiem co plakietka B2B/B2C i
+                      liczniki Dashboardu — zawsze spójna z resztą ekranu. */}
                   <Kv
                     label="Pochodzenie"
-                    value={ORIGIN_TYPE_LABELS[c.originType] ?? c.originType}
+                    value={isB2B(c) ? 'B2B (partner)' : 'Klient bezpośredni (B2C)'}
                   />
                   <Kv label="Opis zgłoszenia" value={c.description ?? '—'} />
                   {c.customerStatement && (

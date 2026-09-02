@@ -10,7 +10,9 @@ build/
 .env
 .env.local
 .env.*.local
+.env.prod
 !.env.example
+!.env.prod.example
 
 # Prisma
 apps/api/prisma/migrations/dev.db
@@ -42,3 +44,4 @@ apps/api/uploads/
 
 # Husky internal runtime dir (created by `husky` on `npm install`, never hand-edited)
 .husky/_/
+.claude/

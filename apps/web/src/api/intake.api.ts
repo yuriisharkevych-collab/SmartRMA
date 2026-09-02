@@ -174,8 +174,14 @@ export const intakeApi = {
     publicClient
       .get<PublicManufacturer>(`/intake/brand/${brandSlug}/manufacturer`)
       .then((res) => res.data),
-  getBrandBrands: (brandSlug: string) =>
-    publicClient.get<PublicBrand[]>(`/intake/brand/${brandSlug}/brands`).then((res) => res.data),
+  // `partnerCompanyId` (Etap 5) zawęża listę do marek objętych `PartnershipBrand` tego
+  // partnera — wyłącznie UX (skraca listę), granica bezpieczeństwa jest w `submitBrandComplaint`.
+  getBrandBrands: (brandSlug: string, partnerCompanyId?: string | null) =>
+    publicClient
+      .get<PublicBrand[]>(`/intake/brand/${brandSlug}/brands`, {
+        params: partnerCompanyId ? { partnerCompanyId } : undefined,
+      })
+      .then((res) => res.data),
   getBrandCategories: (brandSlug: string) =>
     publicClient
       .get<PublicProductCategory[]>(`/intake/brand/${brandSlug}/categories`)

@@ -325,6 +325,24 @@ export const ERROR_CODES = {
     status: HttpStatus.CONFLICT,
     message: 'Ta sprawa została już przekazana partnerowi.',
   },
+  PARTNERSHIP_007: {
+    code: 'PARTNERSHIP-007',
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'Link zaproszenia jest nieprawidłowy, wygasł albo został już wykorzystany.',
+  },
+  PARTNERSHIP_008: {
+    code: 'PARTNERSHIP-008',
+    status: HttpStatus.CONFLICT,
+    message: 'Ta firma ma już oczekujące zaproszenie albo jest już Twoim partnerem.',
+  },
+
+  // --- COMPANY (Etap 6 — onboarding samoobsługowy) ---
+  COMPANY_001: {
+    code: 'COMPANY-001',
+    status: HttpStatus.CONFLICT,
+    message:
+      'Nie udało się wygenerować unikalnego adresu formularza dla tej nazwy firmy — spróbuj inną nazwę.',
+  },
 
   // --- ORDER ---
   ORDER_002: {

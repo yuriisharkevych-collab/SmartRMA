@@ -33,7 +33,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DEFAULT_STATUS_CATALOG } from '../src/modules/case-statuses/case-statuses.service';
 import { SYSTEM_ROLE_CODES } from '../src/rbac/constants/roles.const';
-import { deriveCaseNumberPrefix, slugify } from './slugify';
+import { deriveCaseNumberPrefix, slugify } from '../src/common/utils/organization-slug.util';
 
 /**
  * Ten skrypt jest wywoływany bezpośrednio przez `ts-node`, NIE przez CLI

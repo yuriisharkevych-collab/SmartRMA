@@ -17,6 +17,7 @@ import { CompaniesService } from '../companies/companies.service';
 import { CustomersService } from '../customers/customers.service';
 import { ManufacturersService } from '../manufacturers/manufacturers.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PartnershipsService } from '../partnerships/partnerships.service';
 import { PortalService } from '../portal/portal.service';
 import { IStorageService, STORAGE_SERVICE } from '../../storage/storage.interface';
 import {
@@ -65,6 +66,7 @@ export class IntakeService {
     private readonly portalService: PortalService,
     private readonly caseConsentRepository: CaseConsentRepository,
     private readonly notificationsService: NotificationsService,
+    private readonly partnershipsService: PartnershipsService,
     private readonly config: ConfigService,
     @Inject(STORAGE_SERVICE) private readonly storageService: IStorageService,
   ) {}
@@ -364,9 +366,23 @@ export class IntakeService {
   // Marka → Kategoria → Produkt. `resolveBrand` już gwarantuje, że producent
   // istnieje i jest aktywny — te metody dziedziczą tę granicę bez powtarzania jej. ---
 
-  async getBrandBrands(brandSlug: string): Promise<PublicBrandEntity[]> {
+  /**
+   * Etap 5 — `partnerCompanyId` (opcjonalny) zawęża listę do marek, które ten
+   * KONKRETNY partner wolno mu obsługiwać (`PartnershipBrand`) — UX, żeby
+   * formularz od razu pokazywał tylko dozwolone marki zamiast odrzucać
+   * wybór dopiero przy wysyłce (rzeczywista granica bezpieczeństwa i tak
+   * jest w `submitBrandComplaint`/`assertActivePartnerCoversBrand`, to jest
+   * WYŁĄCZNIE podpowiedź UI).
+   */
+  async getBrandBrands(brandSlug: string, partnerCompanyId?: string): Promise<PublicBrandEntity[]> {
     const manufacturer = await this.resolveBrand(brandSlug);
-    return this.intakeRepository.findPublicBrandsForManufacturer(manufacturer.id);
+    const brands = await this.intakeRepository.findPublicBrandsForManufacturer(manufacturer.id);
+    if (!partnerCompanyId) return brands;
+    const allowed = await this.partnershipsService.findAllowedBrandIdsForPartner(
+      manufacturer.companyId,
+      partnerCompanyId,
+    );
+    return brands.filter((b) => allowed.includes(b.id));
   }
 
   async getBrandCategories(brandSlug: string): Promise<PublicProductCategoryEntity[]> {
@@ -490,6 +506,19 @@ export class IntakeService {
       const partners = await this.intakeRepository.findActivePartnerShops(companyId);
       if (!partners.some((p) => p.id === dto.partnerCompanyId)) throw new NotFoundException();
       partnerCompanyId = dto.partnerCompanyId;
+
+      // Etap 5 — PARTNERSHIP-005: partner musi mieć markę WYBRANEGO produktu
+      // w zakresie SWOJEGO `PartnershipBrand`, nie tylko aktywne partnerstwo w
+      // ogóle (dawna luka — `findActivePartnerShops` samo w sobie nie sprawdza
+      // marek). `product.brandId=null` (produkt bez marki, kompatybilność
+      // wsteczna Etapu 4) nie podlega temu ograniczeniu — nie ma czego sprawdzić.
+      if (product.brandId) {
+        await this.partnershipsService.assertActivePartnerCoversBrand(
+          companyId,
+          partnerCompanyId,
+          product.brandId,
+        );
+      }
 
       if (dto.partnerRequestType === BrandPartnerRequestType.OnBehalfOfCustomer) {
         if (!dto.customer || !dto.contactPreference) {

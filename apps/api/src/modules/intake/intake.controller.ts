@@ -146,10 +146,14 @@ export class IntakeController {
   @Get('brand/:brandSlug/brands')
   @ApiOperation({
     summary: 'Krok "Marka"',
-    description: 'Puste/1-elementowe — frontend pomija ten krok (auto-wybór jedynej marki).',
+    description:
+      'Puste/1-elementowe — frontend pomija ten krok (auto-wybór jedynej marki). `partnerCompanyId` (Etap 5, krok "Partner" formularza B2B) zawęża do marek objętych `PartnershipBrand` tego partnera — wyłącznie UX, granica bezpieczeństwa jest w `POST .../complaints`.',
   })
-  getBrandBrands(@Param('brandSlug') brandSlug: string): Promise<PublicBrandEntity[]> {
-    return this.intakeService.getBrandBrands(brandSlug);
+  getBrandBrands(
+    @Param('brandSlug') brandSlug: string,
+    @Query('partnerCompanyId') partnerCompanyId?: string,
+  ): Promise<PublicBrandEntity[]> {
+    return this.intakeService.getBrandBrands(brandSlug, partnerCompanyId);
   }
 
   @Public()

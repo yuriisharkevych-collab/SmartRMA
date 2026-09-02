@@ -4,6 +4,7 @@ import { CompaniesModule } from '../companies/companies.module';
 import { CustomersModule } from '../customers/customers.module';
 import { ManufacturersModule } from '../manufacturers/manufacturers.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PartnershipsModule } from '../partnerships/partnerships.module';
 import { PortalModule } from '../portal/portal.module';
 import { StorageModule } from '../../storage/storage.module';
 import { IntakeController } from './intake.controller';
@@ -24,6 +25,7 @@ import { IntakeService } from './intake.service';
     CustomersModule,
     ManufacturersModule,
     NotificationsModule,
+    PartnershipsModule,
     PortalModule,
     StorageModule,
   ],

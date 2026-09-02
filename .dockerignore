@@ -1,0 +1,47 @@
+# Etap 8 (audyt gotowości produkcyjnej — test wdrożeniowy) — WYKRYTE NA ŻYWO:
+# bez tego pliku `docker build` (kontekst `context: .` w docker-compose.prod.yml)
+# kopiuje CAŁY `apps/api`/`apps/web` "as-is" z dysku dewelopera do warstwy obrazu
+# `build` przez `COPY apps/api apps/api`/`COPY apps/web apps/web` — potwierdzone
+# eksperymentalnie: lokalny `apps/api/.env` (z prawdziwymi sekretami na
+# produkcyjnym hoście!) trafiał wprost do obrazu, a `node_modules` per-workspace
+# (73+ MB) był zbędnie przesyłany przy każdym buildzie. Warstwa `build` i tak
+# nie trafia do finalnego `runtime` (multi-stage), ale ISTNIEJE w cache/rejestrze
+# — to za mało, żeby uznać sekrety za bezpieczne.
+node_modules
+**/node_modules
+
+# Sekrety — NIGDY do obrazu, niezależnie od tego, co ktoś ma lokalnie w checkout.
+# UWAGA: wzorzec BEZ `**/` dopasowuje WYŁĄCZNIE plik w korzeniu kontekstu builda
+# (`.dockerignore` NIE jest rekurencyjny jak `.gitignore`) — pierwsza wersja tego
+# pliku miała dokładnie ten błąd i `apps/api/.env` DALEJ trafiał do obrazu mimo
+# wpisu `.env` tutaj; wykryte przez ponowny, ręczny test `docker run ... cat .env`
+# PO dodaniu tego pliku, nie tylko przez samo jego istnienie.
+**/.env
+**/.env.*
+!**/.env.*.example
+
+git
+.git
+.gitignore
+.gitattributes
+
+# Build outputs — odtwarzane WEWNĄTRZ obrazu przez Dockerfile, kopiowanie
+# lokalnych artefaktów tylko ryzykuje niespójność dev/prod
+dist
+apps/api/dist
+apps/web/dist
+*.tsbuildinfo
+
+# Dane uploadów/dev — nigdy nie powinny trafić do obrazu
+apps/api/uploads
+docker-data
+
+# Pozostałe, oczywiste balasty
+coverage
+*.log
+.vscode
+.claude
+prototype
+docs
+Start-SmartRMA.ps1
+dev-final-test.log

@@ -1,5 +1,22 @@
-/** Współdzielone przez `create-admin.ts`/`create-organization.ts` — Publiczny Formularz Reklamacyjny (`/reklamacja/:orgSlug`) potrzebuje sluga dla KAŻDEJ nowo tworzonej firmy. Zamiana polskich znaków jest celowo prosta (bootstrap script) — dla nazw z niestandardowymi znakami warto nadpisać wynik ręcznie przez zmienną środowiskową. */
-const PL_MAP: Record<string, string> = { ą: 'a', ć: 'c', ę: 'e', ł: 'l', ń: 'n', ó: 'o', ś: 's', ź: 'z', ż: 'z' };
+/**
+ * Przeniesione z `scripts/slugify.ts` (Etap 5) — `PartnershipsService.invitePartner`
+ * potrzebuje TEJ SAMEJ logiki co skrypty bootstrapujące (`create-admin.ts`/
+ * `create-organization.ts`), żeby nowo zakładana firma partnera (Dystrybutor
+ * zaprasza e-mailem) miała slug/prefiks numeracji wyliczony DOKŁADNIE tak samo
+ * jak firma zakładana ręcznie przez administratora SmartRMA — jedno źródło
+ * prawdy zamiast dwóch kopii tej samej funkcji w dwóch miejscach.
+ */
+const PL_MAP: Record<string, string> = {
+  ą: 'a',
+  ć: 'c',
+  ę: 'e',
+  ł: 'l',
+  ń: 'n',
+  ó: 'o',
+  ś: 's',
+  ź: 'z',
+  ż: 'z',
+};
 
 export function slugify(value: string): string {
   return value
@@ -16,11 +33,8 @@ export function slugify(value: string): string {
  * jest unikalny GLOBALNIE (Portal Klienta loguje się numerem sprawy bez
  * podawania firmy) i licznik czysto per-firmowy deterministycznie zapętla
  * się w retry, gdy dwie firmy dzielą prefiks (patrz doc-comment przy tej
- * metodzie w `cases.repository.ts`). Każda firma bez WŁASNEGO prefiksu
- * dostawała ten sam hardcoded "RMA" (`company-settings.service.ts`), więc jej
- * numeracja w praktyce dzieliła sekwencję z każdą inną firmą korzystającą z
- * tego samego domyślnego — stąd ta funkcja, wołana raz przy zakładaniu firmy.
- * Pierwsze do 4 znaków alfanumerycznych nazwy, wielkimi literami.
+ * metodzie w `cases.repository.ts`). Pierwsze do 4 znaków alfanumerycznych
+ * nazwy, wielkimi literami.
  */
 export function deriveCaseNumberPrefix(name: string): string {
   const normalized = name

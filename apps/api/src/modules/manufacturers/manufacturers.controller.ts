@@ -2,15 +2,25 @@ import {
   Body,
   Controller,
   Delete,
+  FileTypeValidator,
   Get,
   HttpCode,
+  MaxFileSizeValidator,
   Param,
+  ParseFilePipe,
   ParseUUIDPipe,
   Patch,
   Post,
   Put,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
+import * as path from 'node:path';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { PERMISSIONS } from '../../rbac/constants/permissions.const';
@@ -22,6 +32,16 @@ import { UpdateManufacturerLogisticsDto } from './dto/update-manufacturer-logist
 import { UpdateManufacturerSlaDto } from './dto/update-manufacturer-sla.dto';
 import { ManufacturerEntity } from './entities/manufacturer.entity';
 import { ManufacturersService } from './manufacturers.service';
+
+const LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+const EXTENSION_TO_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.gif': 'image/gif',
+};
 
 @ApiTags('Manufacturers')
 @ApiBearerAuth()
@@ -61,6 +81,39 @@ export class ManufacturersController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ManufacturerEntity> {
     return this.manufacturersService.update(id, user.companyId, dto);
+  }
+
+  /** Etap 6 — logo formularza rozgałęzionego marki (odrębne od logo firmy, `POST /companies/me/logo`). */
+  @Post(':id/logo')
+  @RequirePermissions(PERMISSIONS.MANUFACTURERS_MANAGE)
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  uploadLogo(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: LOGO_MAX_SIZE_BYTES, message: 'FILE-001' }),
+          new FileTypeValidator({ fileType: /^image\/(png|jpe?g|webp|svg\+xml|gif)$/ }),
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ManufacturerEntity> {
+    return this.manufacturersService.uploadLogo(id, user.companyId, file, user.userId);
+  }
+
+  /** Publiczny — formularz marki (`BrandComplaintFormPage.tsx`) i podgląd w panelu go czytają bez sesji, ten sam wzorzec co `GET /companies/:id/logo`. */
+  @Get(':id/logo')
+  @Public()
+  async getLogo(@Param('id', ParseUUIDPipe) id: string, @Res() res: Response): Promise<void> {
+    const { buffer, storagePath } = await this.manufacturersService.getLogoBuffer(id);
+    const extension = path.extname(storagePath).toLowerCase();
+    res.setHeader('Content-Type', EXTENSION_TO_MIME[extension] ?? 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.send(buffer);
   }
 
   @Put(':id/sla')

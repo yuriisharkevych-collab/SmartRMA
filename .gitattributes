@@ -1,0 +1,5 @@
+# Etap 7 — skrypty powłoki muszą zachować LF niezależnie od platformy, na
+# której są edytowane/commitowane (Windows domyślnie normalizuje na CRLF),
+# bo docelowo uruchamiają się na VPS z Linuksem — CRLF w shebangu (`#!/usr/bin/env bash\r`)
+# psuje interpreter ("bad interpreter" / cichy błąd składni).
+*.sh text eol=lf

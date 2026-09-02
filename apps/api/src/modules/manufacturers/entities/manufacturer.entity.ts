@@ -53,6 +53,25 @@ export class ManufacturerEntity {
   @ApiPropertyOptional({ nullable: true }) portalUrl!: string | null;
   @ApiPropertyOptional({ nullable: true }) portalLogin!: string | null;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Etap 6 — adres formularza rozgałęzionego marki (`/reklamacja-marka/:slug`), np. Veres Meble. `null` = ten producent nie ma własnego formularza.',
+  })
+  publicFormSlug!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Nazwa marki pokazywana na formularzu marki — `null` dziedziczy nazwę kontrahenta.',
+  })
+  publicFormDisplayName!: string | null;
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Ścieżka względna do `GET /manufacturers/:id/logo` (publiczny) — `null`, gdy ten producent nie ma jeszcze wgranego logo formularza marki.',
+  })
+  publicFormLogoUrl!: string | null;
+
   @ApiPropertyOptional({ nullable: true }) complaintProcedure!: string | null;
   @ApiPropertyOptional({ nullable: true }) requiredDocumentsNote!: string | null;
   @ApiPropertyOptional({ nullable: true }) requiredPhotosNote!: string | null;

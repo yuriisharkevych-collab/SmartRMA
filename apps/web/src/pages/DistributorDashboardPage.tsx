@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { casesApi, type CaseSummary } from '@/api/cases.api';
 import { LoadingIndicator } from '@/components/common/LoadingIndicator';
+import { OnboardingChecklist } from '@/components/dashboard/OnboardingChecklist';
 import { PermissionGate } from '@/components/common/PermissionGate';
 import { ClockIcon, PlusIcon } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
@@ -138,6 +139,8 @@ export function DistributorDashboardPage() {
           </Link>
         </PermissionGate>
       </div>
+
+      <OnboardingChecklist />
 
       <div className="tabs mb-16" role="tablist" aria-label="Źródło spraw">
         {(

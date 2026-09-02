@@ -1,0 +1,130 @@
+# Etap 7 — stack produkcyjny na prawdziwym VPS. ŚWIADOMIE osobny plik od
+# `docker-compose.yml` (dev), nie profil/overlay tego samego pliku — dev i
+# produkcja różnią się zbyt wieloma rzeczami naraz (porty niewystawione na
+# zewnątrz, hasło Redis, reverse proxy z TLS, brak Mailpit), a scalanie
+# dwóch nakładających się plików `docker compose -f a -f b` łatwiej pomylić
+# niż dwa oddzielne, w pełni czytelne pliki.
+#
+# Użycie:
+#   cp .env.prod.example .env.prod       # NIE .env.example (to jest plik deweloperski, bez DOMAIN/REDIS_PASSWORD)
+#   node scripts/generate-prod-secrets.js --write .env.prod
+#   # uzupełnij ręcznie: DOMAIN, CORS_ORIGIN, VITE_API_BASE_URL, POSTGRES_USER, POSTGRES_DB
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+#
+# Różnice względem docker-compose.yml (dev):
+#  - `db`/`redis` bindowane do 127.0.0.1 — NIEOSIĄGALNE z internetu, tylko
+#    z innych kontenerów tej samej sieci Compose i z samego hosta (audyt
+#    Etapu 7, punkty 2/3 — dev `docker-compose.yml` wystawiał oba porty
+#    publicznie, co na prawdziwym VPS bez dodatkowego firewalla oznaczało
+#    bazę danych osiągalną z całego internetu).
+#  - `redis` z hasłem (`--requirepass`) — dev Redis nie miał żadnego.
+#  - `api`/`web` NIE wystawiają portów na zewnątrz wcale — jedynym publicznym
+#    wejściem jest `caddy` (80/443, automatyczne HTTPS przez Let's Encrypt).
+#  - `web` to build produkcyjny (`vite build` + nginx), nie `vite dev`
+#    (audyt Etapu 7, punkt 1/5).
+#  - Wolumen dla `uploads/` — bez niego załączniki klientów znikały przy
+#    każdym redeployu kontenera API (audyt Etapu 7, punkt 10).
+#  - Brak Mailpit — na produkcji e-mail idzie przez prawdziwy SMTP/Resend
+#    skonfigurowany per organizacja w Ustawieniach, nie przez lokalny przechwytywacz.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER wymagany}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD wymagany}"
+      POSTGRES_DB: "${POSTGRES_DB:?POSTGRES_DB wymagany}"
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-smartrma}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD wymagany}"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_GLOBAL_PREFIX: api
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      CORS_ORIGIN: "${CORS_ORIGIN:?CORS_ORIGIN wymagany - pelny adres https frontendu}"
+      JWT_ACCESS_SECRET: "${JWT_ACCESS_SECRET:?wygeneruj z openssl rand -hex 32}"
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_SECRET: "${JWT_REFRESH_SECRET:?wygeneruj z openssl rand -hex 32}"
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      JWT_PORTAL_SECRET: "${JWT_PORTAL_SECRET:?wygeneruj z openssl rand -hex 32}"
+      JWT_PORTAL_EXPIRES_IN: ${JWT_PORTAL_EXPIRES_IN:-30m}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      ENCRYPTION_KEY: "${ENCRYPTION_KEY:?wygeneruj z openssl rand -hex 32}"
+      UPLOADS_DIR: /data/uploads
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - uploads_data:/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        # Musi wskazywać publiczny adres API (przez `caddy`, ścieżka `/api`) —
+        # wypiekane W BUILDZIE (Vite), zmiana wymaga przebudowania obrazu.
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:?ustaw np. https placeholder-domena.pl/api}"
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: "${DOMAIN:?ustaw domene - Caddy sam pobierze certyfikat Let's Encrypt}"
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:

@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
 import { PrismaService } from '../../prisma/prisma.service';
+import { IStorageService, STORAGE_SERVICE } from '../../storage/storage.interface';
 import { AuditRepository } from '../audit/audit.repository';
 import { CreateManufacturerDto } from './dto/create-manufacturer.dto';
 import { UpdateManufacturerDto } from './dto/update-manufacturer.dto';
@@ -26,6 +27,7 @@ export class ManufacturersService {
     private readonly prisma: PrismaService,
     private readonly manufacturersRepository: ManufacturersRepository,
     private readonly auditRepository: AuditRepository,
+    @Inject(STORAGE_SERVICE) private readonly storageService: IStorageService,
   ) {}
 
   async findAllForCompany(companyId: string): Promise<ManufacturerEntity[]> {
@@ -197,5 +199,48 @@ export class ManufacturersService {
       );
       await this.manufacturersRepository.hardDelete(id, tx);
     });
+  }
+
+  /**
+   * Etap 6 (audyt: "Logo, jeżeli obecna architektura na to pozwala") — brakujący
+   * punkt zapisu dla `Manufacturer.publicFormLogoPath`; odczyt (`GET .../logo`
+   * niżej, i publiczny `IntakeService.getBrandLogoBuffer`) już istniał. Ten sam
+   * wzorzec co `CompaniesService.uploadLogo` (dysk przez `IStorageService`,
+   * `{companyId}/{dyskryminator}/...`), z dyskryminatorem obejmującym `id`
+   * producenta — jedna firma może mieć WIELU producentów, w przeciwieństwie do
+   * logo firmy (jedno na `companyId`).
+   */
+  async uploadLogo(
+    id: string,
+    companyId: string,
+    file: Express.Multer.File,
+    actorUserId: string,
+  ): Promise<ManufacturerEntity> {
+    await this.findById(id, companyId);
+    const stored = await this.storageService.save(companyId, `manufacturer-${id}-logo`, file);
+    const updated = await this.manufacturersRepository.update(id, {
+      publicFormLogoPath: stored.storagePath,
+    });
+
+    await this.auditRepository.create({
+      companyId,
+      userId: actorUserId,
+      action: 'MANUFACTURER_LOGO_UPDATED',
+      entityType: 'Manufacturer',
+      entityId: id,
+      newValue: { fileName: stored.fileName, fileSize: stored.fileSize } as Prisma.InputJsonValue,
+    });
+
+    return ManufacturerMapper.toEntity(updated);
+  }
+
+  /** `GET /manufacturers/:id/logo` — publiczny, tak jak `CompaniesService.getLogoBuffer` (logo nie jest daną wrażliwą; formularz marki go czyta bez sesji). */
+  async getLogoBuffer(id: string): Promise<{ buffer: Buffer; storagePath: string }> {
+    const manufacturer = await this.manufacturersRepository.findByIdUnscoped(id);
+    if (!manufacturer?.publicFormLogoPath) throw new NotFoundException();
+    return {
+      buffer: await this.storageService.read(manufacturer.publicFormLogoPath),
+      storagePath: manufacturer.publicFormLogoPath,
+    };
   }
 }
