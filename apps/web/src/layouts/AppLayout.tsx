@@ -6,12 +6,14 @@ import {
   ChevronDownIcon,
   DashboardIcon,
   ManufacturersIcon,
+  MenuIcon,
   PartnersIcon,
   ProductsIcon,
   ReportsIcon,
   SearchIcon,
   SettingsIcon,
   UsersIcon,
+  XIcon,
 } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -68,6 +70,14 @@ export function AppLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  // Audyt responsywności (K1) — poniżej 760px `.sidebar` jest off-canvas
+  // (patrz `design-system.css`), sterowany wyłącznie tą flagą; na desktopie
+  // klasa `open`/`sidebar-backdrop` nigdy nie wchodzi w grę, bo przycisk
+  // otwierający jest tam ukryty (`.mobile-nav-toggle`).
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  function closeMobileNav() {
+    setMobileNavOpen(false);
+  }
 
   function handleSearchSubmit(event: FormEvent) {
     event.preventDefault();
@@ -90,7 +100,18 @@ export function AppLayout() {
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      {mobileNavOpen && (
+        <div className="sidebar-backdrop" onClick={closeMobileNav} aria-hidden="true" />
+      )}
+      <aside id="app-sidebar" className={`sidebar ${mobileNavOpen ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="icon-btn sidebar-close"
+          onClick={closeMobileNav}
+          aria-label="Zamknij menu"
+        >
+          <XIcon />
+        </button>
         <div className="sidebar-brand">
           <div className="sidebar-brand-mark">R</div>
           <div className="sidebar-brand-text">
@@ -104,6 +125,7 @@ export function AppLayout() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+              onClick={closeMobileNav}
             >
               <item.icon />
               <span>{item.label}</span>
@@ -114,6 +136,16 @@ export function AppLayout() {
 
       <div className="main">
         <header className="topbar">
+          <button
+            type="button"
+            className="icon-btn mobile-nav-toggle"
+            onClick={() => setMobileNavOpen((v) => !v)}
+            aria-label={mobileNavOpen ? 'Zamknij menu' : 'Otwórz menu'}
+            aria-expanded={mobileNavOpen}
+            aria-controls="app-sidebar"
+          >
+            <MenuIcon />
+          </button>
           <form className="topbar-search" onSubmit={handleSearchSubmit}>
             <SearchIcon />
             <input

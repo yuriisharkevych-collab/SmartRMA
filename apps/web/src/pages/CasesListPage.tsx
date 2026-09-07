@@ -162,7 +162,7 @@ export function CasesListPage() {
         </div>
 
         <div className="table-toolbar" style={{ borderTop: 'none', paddingTop: 0 }}>
-          <div className="flex gap-10 items-center" style={{ flexWrap: 'wrap' }}>
+          <div className="toolbar-filters">
             <select
               className="toolbar-select"
               value={ownerId}

@@ -384,7 +384,7 @@ export function UsersPage() {
         </div>
 
         <div className="table-toolbar" style={{ borderTop: 'none', paddingTop: 0 }}>
-          <div className="flex gap-10 items-center" style={{ flexWrap: 'wrap' }}>
+          <div className="toolbar-filters">
             <select
               className="toolbar-select"
               value={roleFilter}
@@ -436,8 +436,8 @@ export function UsersPage() {
                   <th>Rola</th>
                   <th>Oddział</th>
                   <th>Status</th>
-                  <th>Sprawy jako właściciel</th>
-                  <th>Ostatnie logowanie</th>
+                  <th className="col-hide-mobile">Sprawy jako właściciel</th>
+                  <th className="col-hide-mobile">Ostatnie logowanie</th>
                   <th />
                 </tr>
               </thead>
@@ -492,8 +492,10 @@ export function UsersPage() {
                         <span className="badge badge-gray">Nieaktywny</span>
                       )}
                     </td>
-                    <td className="cell-secondary">{caseCountByOwner.get(u.id) ?? 0}</td>
-                    <td className="cell-secondary">
+                    <td className="cell-secondary col-hide-mobile">
+                      {caseCountByOwner.get(u.id) ?? 0}
+                    </td>
+                    <td className="cell-secondary col-hide-mobile">
                       {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'Nigdy'}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>

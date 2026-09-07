@@ -310,7 +310,7 @@ function ProductsTab({
       </div>
 
       <div className="table-toolbar" style={{ borderTop: 'none', paddingTop: 0 }}>
-        <div className="flex gap-10 items-center" style={{ flexWrap: 'wrap' }}>
+        <div className="toolbar-filters">
           <select
             className="toolbar-select"
             value={manufacturerFilter}
@@ -391,8 +391,8 @@ function ProductsTab({
                 <th>Nazwa</th>
                 <th>Producent</th>
                 <th>Marka</th>
-                <th>Kategoria</th>
-                <th>SKU</th>
+                <th className="col-hide-mobile">Kategoria</th>
+                <th className="col-hide-mobile">SKU</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -404,12 +404,12 @@ function ProductsTab({
                   <td className="cell-secondary">
                     {p.brandId ? (brandById.get(p.brandId)?.name ?? '—') : '—'}
                   </td>
-                  <td className="cell-secondary">
+                  <td className="cell-secondary col-hide-mobile">
                     {p.categoryId
                       ? (categoryById.get(p.categoryId)?.name ?? '—')
                       : (p.category ?? '—')}
                   </td>
-                  <td className="cell-secondary">{p.sku ?? '—'}</td>
+                  <td className="cell-secondary col-hide-mobile">{p.sku ?? '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="flex gap-6 items-center">
                       {p.active ? (

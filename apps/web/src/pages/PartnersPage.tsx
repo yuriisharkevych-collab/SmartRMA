@@ -199,9 +199,9 @@ export function PartnersPage() {
                   <th>Firma</th>
                   <th>Rola</th>
                   <th>Status</th>
-                  <th>Obsługiwane marki</th>
+                  <th className="col-hide-mobile">Obsługiwane marki</th>
                   <th>Reklamacje</th>
-                  <th>Utworzono</th>
+                  <th className="col-hide-mobile">Utworzono</th>
                   {canManage && <th></th>}
                 </tr>
               </thead>
@@ -238,9 +238,9 @@ export function PartnersPage() {
                           </span>
                         )}
                       </td>
-                      <td className="cell-secondary">{brandLabel}</td>
+                      <td className="cell-secondary col-hide-mobile">{brandLabel}</td>
                       <td className="cell-secondary">{p.caseCount}</td>
-                      <td className="cell-secondary">{formatDate(p.invitedAt)}</td>
+                      <td className="cell-secondary col-hide-mobile">{formatDate(p.invitedAt)}</td>
                       {canManage && (
                         <td>
                           <div className="flex gap-8">

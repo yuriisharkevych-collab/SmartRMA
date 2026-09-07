@@ -188,7 +188,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="detail-grid" style={{ gridTemplateColumns: '1.6fr 1fr' }}>
+      <div className="detail-grid dashboard-attention-grid">
         <div className="card">
           <div className="card-header">
             <h3>Sprawy wymagające Twojej uwagi</h3>

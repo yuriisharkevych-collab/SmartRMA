@@ -110,9 +110,28 @@ button, input, select, textarea {
   min-height: 100vh;
 }
 
+/* Ciemny sidebar (zmiana czysto wizualna) — lokalne zmienne na `.sidebar`,
+   nie w `:root`, żeby nie dotykać kolorystyki reszty aplikacji (topbar,
+   dashboard, tabele — wszystko poza sidebarem zostaje jasne, bez zmian).
+   `--sidebar-bg` reużywa DOKŁADNIE `--text` (#10151F) — to już najciemniejszy,
+   granatowo-czarny odcień w palecie SmartRMA (główny kolor tekstu w całej
+   reszcie aplikacji), więc sidebar wygląda jak naturalne rozszerzenie
+   istniejącej marki, nie osobny szablon. `--sidebar-active-bg`/`-active-text`
+   reużywają `--primary`/`--text-on-primary` 1:1 — te same tokeny, których
+   aplikacja już używa dla zielonych przycisków `.btn-primary`. Jedyne dwie
+   NOWE wartości to `--sidebar-text`/`--sidebar-icon` — w dotychczasowej
+   (wyłącznie jasnej) palecie nie było żadnego odcienia zaprojektowanego pod
+   tekst/ikony NA ciemnym tle. */
 .sidebar {
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  --sidebar-bg: var(--text);
+  --sidebar-text: #E5E7EB;
+  --sidebar-icon: #C9D3DB;
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
+  --sidebar-active-bg: var(--primary);
+  --sidebar-active-text: var(--text-on-primary);
+
+  background: var(--sidebar-bg);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
   padding: 20px 14px;
   display: flex;
   flex-direction: column;
@@ -149,10 +168,43 @@ button, input, select, textarea {
   font-weight: 700;
   font-size: 15px;
   letter-spacing: -0.01em;
+  /* Bez tego dziedziczyłby domyślny (ciemny) kolor tekstu aplikacji i
+     zlewałby się z ciemnym tłem sidebara. */
+  color: var(--sidebar-text);
 }
 
 .sidebar-brand-text span {
-  color: var(--primary);
+  /* `var(--primary)` na `--sidebar-bg` daje tylko 2.99:1 (poniżej WCAG AA
+     4.5:1 dla zwykłego tekstu — "RMA" ma 15px, za mało na obniżony próg
+     "dużego tekstu"). `#14A093` to nie nowy kolor — to już drugi kolor
+     gradientu plakietki "R" tuż obok (`.sidebar-brand-mark`), więc to
+     reużycie istniejącej w tym samym komponencie wartości, nie wymysł.
+     Na `--sidebar-bg` daje 5.64:1 — czytelne. */
+  color: #14A093;
+}
+
+/* Audyt responsywności (K1) — widoczny tylko w off-canvas trybie mobilnym
+   (patrz @media poniżej); na desktopie `.sidebar` jest zawsze widoczny,
+   więc przycisk zamknięcia nie ma tam zastosowania. Selektor `.sidebar
+   .sidebar-close` (nie samo `.sidebar-close`) celowo — musi mieć wyższą
+   specyficzność niż `.icon-btn { display: flex }` (ten przycisk łączy obie
+   klasy), inaczej kolejność reguł w pliku decydowałaby o tym, kto wygrywa. */
+.sidebar .sidebar-close {
+  display: none;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  /* `.icon-btn` (klasa współdzielona z jasnym `.mobile-nav-toggle` w
+     topbarze) ma jasne tło/obramowanie — nadpisane tu, żeby X pasował do
+     ciemnego sidebara zamiast wyglądać jak jasny kwadrat na czarnym tle. */
+  color: var(--sidebar-icon);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.sidebar .sidebar-close:hover {
+  background: var(--sidebar-hover-bg);
+  color: var(--sidebar-text);
 }
 
 .nav-section-label {
@@ -160,7 +212,7 @@ button, input, select, textarea {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
+  color: var(--sidebar-icon);
   padding: 14px 10px 6px;
 }
 
@@ -170,23 +222,27 @@ button, input, select, textarea {
   gap: 10px;
   padding: 9px 10px;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  color: var(--sidebar-text);
   font-weight: 500;
   font-size: 13.5px;
   transition: background 0.12s ease, color 0.12s ease;
 }
 
 .nav-item:hover {
-  background: var(--surface-sunken);
-  color: var(--text);
+  background: var(--sidebar-hover-bg);
 }
 
 .nav-item.active {
-  background: var(--primary-soft);
-  color: var(--primary-hover);
+  background: var(--sidebar-active-bg);
+  color: var(--sidebar-active-text);
 }
 
-.nav-item svg { flex-shrink: 0; }
+/* Ikony (`stroke="currentColor"`) dziedziczyłyby domyślnie ten sam kolor co
+   tekst — tu celowo osobny, lekko przygaszony odcień w stanie normalnym
+   ("jasne, ale lekko przygaszone ikony"), i jasny/biały dopiero gdy pozycja
+   jest aktywna — wyraźne wyróżnienie, zgodnie z poleceniem. */
+.nav-item svg { flex-shrink: 0; color: var(--sidebar-icon); }
+.nav-item.active svg { color: var(--sidebar-active-text); }
 
 .sidebar-footer {
   margin-top: auto;
@@ -1181,6 +1237,10 @@ button, input, select, textarea {
 
 .icon-btn:hover { background: var(--surface-sunken); }
 
+/* Audyt responsywności (K1) — ukryty na desktopie (tam `.sidebar` jest
+   zawsze widoczny), pokazywany wyłącznie w @media poniżej. */
+.mobile-nav-toggle { display: none; }
+
 .user-chip {
   display: flex;
   align-items: center;
@@ -1265,6 +1325,11 @@ button, input, select, textarea {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.12s ease, border-color 0.12s ease, transform 0.05s ease;
+  /* Audyt responsywności (W2) — 43px (9px*2 padding + treść) było tuż
+     poniżej rekomendowanego minimum dotykowego 44px (WCAG 2.5.5 / Apple
+     HIG). `min-height` (nie `height`) — nie ścieśnia przycisków z dłuższym,
+     zawijającym się tekstem, tylko podnosi podłogę wysokości. */
+  min-height: 44px;
 }
 
 .btn:active { transform: translateY(1px); }
@@ -1294,7 +1359,14 @@ button, input, select, textarea {
 }
 .btn-danger:hover { background: #F8D7D7; }
 
-.btn-sm { padding: 6px 11px; font-size: 12.5px; }
+/* Audyt responsywności (W2) — bez jawnego `min-height` ten wariant
+   odziedziczyłby `min-height: 44px` z `.btn` (sama zmiana `padding`/
+   `font-size` tego nie resetuje) i napęczniałby wszędzie, gdzie jest
+   używany do gęstych akcji drugorzędnych (np. przyciski na szczegółach
+   sprawy, eksporty raportów) — dokładnie to, przed czym ostrzega audyt
+   ("nie powinno niepotrzebnie powiększać elementów"). 33px to zmierzona,
+   dotychczasowa wysokość tego wariantu — zostaje bez zmian. */
+.btn-sm { padding: 6px 11px; font-size: 12.5px; min-height: 33px; }
 
 .btn:disabled {
   opacity: 0.5;
@@ -1420,11 +1492,51 @@ button, input, select, textarea {
 
 .table-wrap {
   overflow-x: auto;
+  /* Audyt responsywności (W1-A) — kotwiczy poniższy `::after` (cień
+     przewijania) do WŁASNEGO viewportu tego kontenera, a nie jakiegoś
+     dalszego przodka. Sam w sobie nie zmienia layoutu (nie ma innych
+     pozycjonowanych elementów wewnątrz, które mogłyby na tym ucierpieć). */
+  position: relative;
+}
+
+/* Audyt responsywności (W1-A) — cień sygnalizujący, że tabela przewija się
+   w bok. `.table-wrap` nie może mieć własnego widocznego tła w tym celu
+   (komórki `<td>`/`<th>` są nieprzezroczyste i w 100% zakrywają obszar pod
+   sobą), więc to osobna, ABSOLUTNIE pozycjonowana nakładka: `position:
+   absolute` nie uczestniczy w przewijanej zawartości (nie dokłada
+   `scrollWidth`) i - kluczowe - jej `right:0` liczy się od NIERUCHOMEGO
+   pudełka `.table-wrap` (position:relative wyżej), nie od przewijanej
+   zawartości, więc zostaje wizualnie przyklejona do prawej krawędzi
+   widocznego obszaru przez cały czas przewijania, dokładnie tak jak
+   `position: sticky` niżej dla pierwszej kolumny. `pointer-events: none` -
+   dekoracja, nie może przechwytywać kliknięć w wiersze pod spodem.
+   Uproszczenie świadome: bez JS ten cień nie zanika dokładnie w momencie
+   dotarcia do prawego krańca tabeli (wymagałoby to śledzenia pozycji
+   scrolla) - przy realnych szerokościach tabel w tej aplikacji (patrz
+   audyt W1: 21-49% widoczności na 320-430px) to nie jest praktycznym
+   problemem, a rozwiązanie pozostaje w 100% czystym CSS. */
+.table-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(to right, rgba(16, 21, 31, 0), rgba(16, 21, 31, 0.10));
 }
 
 table.data-table {
   width: 100%;
-  border-collapse: collapse;
+  /* `separate` + `border-spacing: 0` zamiast `collapse` — `position: sticky`
+     na komórkach w połączeniu z `border-collapse: collapse` bywa źródłem
+     niespójnego renderowania obramowania (zależnie od silnika przeglądarki).
+     Wizualnie bez zmiany: każda komórka ma tu WYŁĄCZNIE `border-bottom`
+     (zero `border-top`/lewych/prawych), więc `collapse` i tak nigdy nie miał
+     tu nic do scalania — `separate` nie podwaja żadnej krawędzi. */
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 13px;
 }
 
@@ -1438,12 +1550,14 @@ table.data-table {
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  background: var(--surface);
 }
 
 .data-table tbody td {
   padding: 14px 20px;
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
+  background: var(--surface);
 }
 
 .data-table tbody tr {
@@ -1455,8 +1569,47 @@ table.data-table {
   background: var(--surface-sunken);
 }
 
+/* `tr:hover` samo nie wystarcza dla pierwszej kolumny — ma WŁASNE, jawne
+   tło (`background: var(--surface)` wyżej, wymagane przez sticky), które
+   inaczej przykryłoby tło najechanego wiersza zamiast się z nim zlewać. */
+.data-table tbody tr:hover td:first-child {
+  background: var(--surface-sunken);
+}
+
 .data-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+/* Audyt responsywności (W1-A) — pierwsza kolumna (zawsze główny identyfikator
+   wiersza: Nr sprawy / Nazwa / Firma / Imię i nazwisko - niezależnie od tego,
+   ile i jakich kolumn ma dany wariant tabeli, patrz audyt W1) zostaje
+   widoczna podczas przewijania w bok. `z-index` wyższy niż zwykłe komórki
+   (które go nie mają, więc `auto`/0) - bez tego przewijane komórki
+   wizualnie "wchodziłyby" na sticky kolumnę zamiast znikać pod nią. */
+.data-table th:first-child,
+.data-table td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+}
+
+/* Audyt responsywności (W1-B) — jawna, semantyczna klasa na WYBRANYCH
+   `<th>`/`<td>` (ProductsPage: Kategoria/SKU; ManufacturersPage: Sposób
+   zgłoszenia/Wymagania; PartnersPage: Obsługiwane marki/Utworzono;
+   UsersPage: Sprawy jako właściciel/Ostatnie logowanie) — CELOWO nie
+   `nth-child()`: ta klasa jest przypięta do KONKRETNEJ kolumny w JSX, więc
+   zostaje poprawna niezależnie od tego, ile innych kolumn dana tabela ma
+   albo w jakiej są kolejności (np. warunkowa kolumna akcji `{canDelete &&
+   <th/>}` na końcu wiersza nigdy nie wchodzi w grę - nie ma tej klasy).
+   CasesListPage i ReportsPage celowo NIE używają tej klasy (kolumny tam
+   niestabilne pozycyjnie / generyczny komponent Table - patrz audyt W1) -
+   te dwie tabele zostają w pełni dostępne wyłącznie przez poziomy scroll.
+   Breakpoint 760px - ten sam, którego już używa K1 dla nawigacji mobilnej,
+   żeby "mobile" oznaczało jedną, spójną granicę w całej aplikacji. */
+@media (max-width: 760px) {
+  .data-table .col-hide-mobile {
+    display: none;
+  }
 }
 
 .cell-primary {
@@ -1523,6 +1676,22 @@ table.data-table {
   outline: none;
   width: 100%;
   color: var(--text);
+}
+
+/* Audyt mobilny (C1) — kontener na selecty-filtry w drugim wierszu paska
+   narzędzi (Właściciel/Producent/Źródło na Reklamacjach, Producent/Marka/
+   Kategoria na Produktach, Rola na Użytkownikach). Zastępuje dotychczasowy
+   inline `className="flex gap-10 items-center" style={{flexWrap:'wrap'}}`
+   1:1 na desktopie — zero zmiany wyglądu tam. CELOWO nie obejmuje formularza
+   dodawania kategorii (ProductsPage, osobny wiersz z inputem tekstowym i
+   przyciskiem — to nie jest filtr) ani pary dat niestandardowego zakresu na
+   ReportsPage (semantycznie inny, zawsze dokładnie 2 elementy obok siebie
+   z separatorem "–", nie lista filtrów). */
+.toolbar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1599,6 +1768,11 @@ table.data-table {
   background: var(--surface);
   outline: none;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  /* Audyt responsywności (W2) — 41px (9px*2 padding + tekst) było poniżej
+     rekomendowanego minimum dotykowego 44px. `.field textarea` ma i tak
+     własne `min-height: 78px` zdefiniowane niżej (nowsze w źródle, ta sama
+     specyficzność, więc wygrywa) — to tam dotyczy wyłącznie pól input/select. */
+  min-height: 44px;
 }
 
 .field textarea { resize: vertical; min-height: 78px; font-family: var(--font-body); }
@@ -1620,8 +1794,12 @@ table.data-table {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  /* Audyt responsywności (W2) — 30x30px, poniżej rekomendowanego minimum
+     40x40px dla ikon-przycisków. Ikona (`EyeIcon`/`EyeOffIcon`, 17x17px w
+     JSX) zostaje tego samego rozmiaru i wyśrodkowana — rośnie wyłącznie
+     niewidoczny obszar dotykowy wokół niej, nie wygląd. */
+  width: 40px;
+  height: 40px;
   border: none;
   background: transparent;
   color: var(--text-muted);
@@ -1788,6 +1966,15 @@ table.data-table {
   gap: 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
+  /* Audyt responsywności (K2) — bez tego rząd zakładek (np. 5 na szczegółach
+     sprawy) przepełniał się poza kontener z `overflow-x: visible` (wartość
+     domyślna), co ciągnęło za sobą CAŁĄ stronę w poziomy scroll. `overflow-x:
+     auto` tutaj = przewijanie WYŁĄCZNIE wewnątrz paska zakładek (wzorzec
+     identyczny jak już działający `.table-wrap`); przy szerokościach, gdzie
+     zakładki się mieszczą (desktop, dashboard z 3 zakładkami), nie ma
+     żadnego efektu wizualnego. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tab {
@@ -1798,6 +1985,10 @@ table.data-table {
   color: var(--text-muted);
   border-bottom: 2px solid transparent;
   cursor: pointer;
+  /* Bez tego przeglądarka próbowałaby najpierw ŚCISKAĆ zakładki, żeby
+     zmieściły się w rzędzie (domyślne `flex-shrink: 1`), zamiast pozwolić
+     `.tabs` je przewinąć w niezmienionym rozmiarze. */
+  flex-shrink: 0;
 }
 
 .tab.active {
@@ -1817,6 +2008,21 @@ table.data-table {
   grid-template-columns: 1fr 320px;
   gap: 20px;
   align-items: start;
+}
+
+/* Audyt responsywności (K4) — dawniej inline `style={{ gridTemplateColumns:
+   '1.6fr 1fr' }}` w DashboardPage.tsx, bezpośrednio na `.detail-grid`. Inline
+   style ma wyższą specyficzność niż reguła w arkuszu, więc wygrywał NAWET
+   pod media query poniżej (`.detail-grid{grid-template-columns:1fr}` przy
+   ≤1080px) — na telefonie "Zadania na dziś" dostawały ok. 96px szerokości.
+   Ta klasa jest tylko modyfikatorem stosunku kolumn na desktopie: obie
+   reguły mają identyczną specyficzność (0,1,0), więc o tym, która wygrywa,
+   decyduje WYŁĄCZNIE kolejność w pliku — ta klasa musi więc zostać
+   zdefiniowana PRZED @media (max-width:1080px) niżej, żeby tamta reguła
+   (nowsza w źródle, aktywna tylko pod breakpointem) mogła ją tam nadpisać
+   z powrotem do jednej kolumny, dokładnie jak dla zwykłego `.detail-grid`. */
+.dashboard-attention-grid {
+  grid-template-columns: 1.6fr 1fr;
 }
 
 .detail-header {
@@ -1841,8 +2047,20 @@ table.data-table {
   letter-spacing: -0.01em;
 }
 
+/* Poprawka desktopowa (wykryta przy W1-A) — sprawy z dużą liczbą dostępnych
+   akcji (np. 8 przycisków: Drukuj/Wiadomości/Poproś o uzupełnienie/Zmień
+   właściciela/Ustaw decyzję/Zmień status/Anuluj/Usuń) potrzebowały więcej
+   miejsca niż miał dostępne `.detail-header` przy 1280px (1354px vs
+   1280px) - ostatni przycisk się ucinał. `flex-wrap: wrap` pozwala
+   nadmiarowym przyciskom przejść do kolejnego wiersza zamiast wychodzić
+   poza kontener - kolejność, teksty i `gap` zostają dokładnie takie same,
+   różni się tylko liczba wierszy, gdy przycisków jest dużo. Mobilny
+   override niżej (K2, `@media max-width:640px`) jawnie wraca do
+   `flex-wrap: nowrap` - tam kolumnowy układ nigdy nie powinien się złamać
+   na dwie kolumny. */
 .detail-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -2180,10 +2398,41 @@ table.data-table {
 
 @media (max-width: 760px) {
   .app-shell { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
   .topbar-search { display: none; }
   .content { padding: 20px; }
   .stat-grid { grid-template-columns: 1fr; }
+
+  /* Audyt responsywności (K1) — `.sidebar` przestaje być `display:none`
+     (co czyniło 6 z 8 sekcji aplikacji nieosiągalnymi na telefonie) i staje
+     się nakładką off-canvas: zawsze `position:fixed` (więc nigdy nie
+     poszerza dokumentu ani nie powoduje poziomego scrolla strony, niezależnie
+     od stanu), przesuniętą poza ekran przez `transform`, dosuwaną klasą
+     `.open` dodawaną w `AppLayout.tsx`. */
+  .mobile-nav-toggle { display: flex; }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    z-index: 95;
+    box-shadow: var(--shadow-lg);
+    overflow-y: auto;
+  }
+
+  .sidebar.open { transform: translateX(0); }
+
+  .sidebar .sidebar-close { display: flex; }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 21, 31, 0.45);
+    z-index: 90;
+  }
 }
 
 /* --- Telefon w orientacji poziomej: ograniczona wysokość, nie szerokość -
@@ -2233,9 +2482,6 @@ table.data-table {
 
   .public-header { padding: 12px 14px; }
   .public-main { padding-left: 14px; padding-right: 14px; }
-
-  .detail-actions { width: 100%; }
-  .detail-actions .btn { flex: 1; }
 }
 
 /* ---------------------------------------------------------------------------
@@ -2297,6 +2543,100 @@ table.data-table {
 /* Na wąskich ekranach pasek zawija się, żeby przyciski nie wypadały poza kadr. */
 @media (max-width: 640px) {
   .sticky-form-footer { flex-wrap: wrap; }
+
+  /* Audyt responsywności (K2) — poprzednia próba (`@media max-width:400px`,
+     `.detail-actions{width:100%} .detail-actions .btn{flex:1}`) nie
+     działała: (a) nie obowiązywała wcale przy 430px, (b) nawet poniżej
+     400px `flex:1` samo w sobie nie zmusza przycisków do zmieszczenia się —
+     flex-item bez `min-width:0` nie kurczy się poniżej szerokości własnej
+     treści, więc "Poproś o uzupełnienie" i tak przepełniało rząd. Układ
+     pionowy usuwa problem u źródła zamiast dopasowywać szerokości w rzędzie
+     — każdy przycisk dostaje pełną szerokość kontenera, tekst się nie
+     zawija w nieprzewidziany sposób, strona się nie rozszerza. Ta sama
+     klasa obsługuje też `.detail-actions.report-controls` na `ReportsPage`
+     (2 przyciski eksportu) — identyczny, poprawny efekt. */
+  .detail-actions {
+    flex-direction: column;
+    /* Jawnie z powrotem `nowrap` — bez tego odziedziczyłby `flex-wrap: wrap`
+       z reguły bazowej (poprawka desktopowa, patrz wyżej); w układzie
+       kolumnowym K2 nigdy nie powinien złamać się na dwie kolumny. */
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  .detail-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Audyt mobilny (C1) — 16 zakładek-filtrów na liście Reklamacji potrafiło
+     zająć niemal cały ekran, zanim widać było jakąkolwiek sprawę. Pozostałe
+     strony (Użytkownicy: 3, Raporty: 6, Produkty: 2) mieszczą się bez
+     problemu w tej wysokości - `max-height` tam nigdy się nie włącza (box
+     jest i tak niższy), więc to bezpieczne dla wszystkich użyć `.filter-tabs`.
+     Przewijanie WEWNĄTRZ paska (nie strony) - identyczny, już zatwierdzony
+     wzorzec co `.table-wrap` z W1-A: żaden filtr nie znika, wszystkie
+     zostają dostępne, tylko nie wszystkie na raz bez przewinięcia. */
+  .filter-tabs {
+    max-height: 92px;
+    overflow-y: auto;
+  }
+
+  /* Audyt mobilny (C1) — selecty-filtry w dwóch kolumnach zamiast
+     nieprzewidywalnego zawijania każdego z osobna do własnej, zmiennej
+     szerokości. Nieparzysta (ostatnia) pozycja zostaje w jednej kolumnie
+     po lewej - to naturalne zachowanie grida, nie błąd. `width: 100%` -
+     bez tego `.toolbar-filters` (zwykły flex-item w `.table-toolbar`, bez
+     `flex-grow`) kurczyłby się do szerokości własnej treści zamiast
+     wypełniać dostępny pasek - `:only-child` niżej dostawałby wtedy "pełną
+     szerokość" liczoną od zbyt wąskiego kontenera, nie realnie całą
+     dostępną przestrzeń. */
+  .toolbar-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .toolbar-filters .toolbar-select {
+    width: 100%;
+  }
+
+  /* Jedyny select w wierszu (np. samo "Rola" na Użytkownikach, gdy nie ma
+     jeszcze przycisku "Wyczyść filtry" obok) zajmuje całą szerokość zamiast
+     połowy z pustym miejscem — "pełna szerokość tylko tam, gdzie potrzeba". */
+  .toolbar-filters .toolbar-select:only-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Audyt mobilny (C1/W2) — `.toolbar-select` nie był objęty W2 (inna klasa
+     niż `.field select`); na mobile podnosimy go do tego samego standardu
+     dotykowego 44px co reszta pól formularzy. Desktop celowo bez zmian
+     (~30px jak dotychczas) - reguła żyje wyłącznie w tej @media. */
+  .toolbar-select {
+    min-height: 44px;
+  }
+
+  /* Audyt mobilny (C2) — `.search-input` miał sztywne `min-width: 240px`,
+     węższe niż najdłuższy placeholder ("Nr sprawy, klient, produkt, numer
+     seryjny…") i NIE rosnące, gdy zostawało samo w zawiniętym wierszu
+     `.table-toolbar` (zwykły flex-item bez `flex-grow`). Efekt: tekst
+     placeholdera ucinał się w połowie znaku. `width:100%` + `min-width:0`
+     (żeby flex mógł skurczyć się poniżej starego minimum na naprawdę wąskich
+     ekranach) rozwiązuje to bez dotykania samego tekstu placeholdera. */
+  .search-input {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+  }
+
+  .search-input input {
+    /* Bezpiecznik, gdyby nawet pełna szerokość paska wciąż była krótsza niż
+       najdłuższy placeholder — kończy się eleganckim "…", nie twardym
+       obcięciem w połowie znaku. Nie zmienia SAMEGO tekstu placeholdera. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ---------------------------------------------------------------------------

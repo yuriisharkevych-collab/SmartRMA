@@ -630,8 +630,8 @@ export function ManufacturersPage() {
                   <th>Nazwa</th>
                   <th>Kraj</th>
                   <th>Marki</th>
-                  <th>Sposób zgłoszenia</th>
-                  <th>Wymagania</th>
+                  <th className="col-hide-mobile">Sposób zgłoszenia</th>
+                  <th className="col-hide-mobile">Wymagania</th>
                   <th>Status</th>
                   {canDelete && <th></th>}
                 </tr>
@@ -661,8 +661,10 @@ export function ManufacturersPage() {
                       <td className="cell-primary">{contractor?.name ?? '—'}</td>
                       <td className="cell-secondary">{contractor?.country ?? '—'}</td>
                       <td className="cell-secondary">{canManageBrands ? brandLabel : '—'}</td>
-                      <td>{SUBMISSION_METHOD_LABELS[m.submissionMethod]}</td>
-                      <td className="cell-secondary">
+                      <td className="col-hide-mobile">
+                        {SUBMISSION_METHOD_LABELS[m.submissionMethod]}
+                      </td>
+                      <td className="cell-secondary col-hide-mobile">
                         {requirements.length > 0 ? requirements.join(', ') : '—'}
                       </td>
                       <td>
