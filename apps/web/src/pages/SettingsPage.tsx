@@ -609,10 +609,20 @@ function TemplatesTab({ canManage }: { canManage: boolean }) {
             className="card card-pad"
             style={{ marginBottom: 12, background: 'var(--surface-alt, #f9f9fa)' }}
           >
+            {/* Audyt mobilny (Ustawienia → Szablony wiadomości) — `code` bywa
+                jednym, długim, niełamliwym ciągiem bez spacji (np.
+                "case.sent_to_manufacturer.customer"); jako flex-item bez
+                `min-width:0` ten lewy `<div>` nie kurczył się poniżej
+                szerokości tego ciągu, więc przy ~320px wypychał przycisk
+                „Edytuj” poza kartę (i całą stronę w poziomy scroll).
+                `minWidth:0` pozwala flexowi realnie skurczyć kolumnę,
+                `overflowWrap:'anywhere'` pozwala samemu ciągowi złamać się
+                w środku, gdy zabraknie miejsca — na desktopie, gdzie miejsca
+                jest pod dostatkiem, oba nie mają żadnego efektu wizualnego. */}
             <div className="flex items-center justify-between">
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <strong className="text-sm">{TEMPLATE_LABELS[code] ?? code}</strong>
-                <div className="text-xs text-muted">
+                <div className="text-xs text-muted" style={{ overflowWrap: 'anywhere' }}>
                   {code} · {template.channel}
                   {isOverride ? ' · dostosowany' : ' · domyślny'}
                 </div>
@@ -621,6 +631,7 @@ function TemplatesTab({ canManage }: { canManage: boolean }) {
                 <button
                   type="button"
                   className="btn btn-secondary btn-sm"
+                  style={{ flexShrink: 0 }}
                   onClick={() => {
                     setEditingCode(code);
                     setDraft({
@@ -1444,14 +1455,20 @@ function EmailTab({ canManage }: { canManage: boolean }) {
         Wysyła testową wiadomość przy użyciu ZAPISANEJ konfiguracji — zapisz ustawienia powyżej
         przed testem.
       </p>
-      <div className="flex items-center gap-8">
+      {/* Audyt mobilny (Ustawienia → E-mail) — input (maxWidth:280) + przycisk
+          w jednym, nie zawijanym rzędzie flex nie mieściły się razem poniżej
+          ~420px ("Wyślij wiadomość testową" wychodziło poza kartę i ciągnęło
+          całą stronę w poziomy scroll). `flexWrap: 'wrap'` pozwala
+          przyciskowi zejść pod pole na wąskich ekranach — na desktopie oba
+          mieszczą się w jednym rzędzie bez zmian. */}
+      <div className="flex items-center gap-8" style={{ flexWrap: 'wrap' }}>
         <input
           type="email"
           placeholder="adres@example.com"
           disabled={!canManage}
           value={testEmail}
           onChange={(e) => setTestEmail(e.target.value)}
-          style={{ maxWidth: 280 }}
+          style={{ maxWidth: 280, flex: '1 1 200px' }}
         />
         <button
           type="button"

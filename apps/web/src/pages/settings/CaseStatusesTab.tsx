@@ -104,39 +104,49 @@ export function CaseStatusesTab({ canManage }: { canManage: boolean }) {
         Kolejność poniżej ustawia wyłącznie sortowanie listy w modalu zmiany statusu.
       </p>
 
-      <table className="table">
-        <thead>
-          <tr>
-            <th style={{ width: 70 }}>Kolejność</th>
-            <th>Nazwa</th>
-            <th>Opis</th>
-            <th style={{ width: 90 }}>Końcowy</th>
-            <th style={{ width: 90 }}>Aktywny</th>
-            <th style={{ width: 160 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((status, index) => (
-            <CaseStatusRow
-              key={status.id}
-              status={status}
-              canManage={canManage}
-              isEditing={editingId === status.id}
-              isFirst={index === 0}
-              isLast={index === sorted.length - 1}
-              onEdit={() => setEditingId(status.id)}
-              onCancelEdit={() => setEditingId(null)}
-              onSave={(payload) => updateMutation.mutate({ id: status.id, payload })}
-              onToggleActive={() =>
-                toggleActiveMutation.mutate({ id: status.id, active: !status.active })
-              }
-              onMoveUp={() => move(index, -1)}
-              onMoveDown={() => move(index, 1)}
-              saving={updateMutation.isPending}
-            />
-          ))}
-        </tbody>
-      </table>
+      {/* Audyt mobilny (Ustawienia → Statusy reklamacji) — jedyna tabela w tym
+          module bez `.table-wrap`: 6 kolumn (w tym 160px na akcje) realnie
+          nie mieści się poniżej ~580px, co ciągnęło CAŁĄ stronę w poziomy
+          scroll (dokładnie efekt, przed którym chroni już W1-A na innych
+          tabelach). `.table` (bez `.data-table`) nie ma żadnej własnej
+          stylistyki w design-system.css, więc ten wrapper wyłącznie
+          kontener izuje przewijanie do samej tabeli — zero zmiany wyglądu
+          na desktopie. */}
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr>
+              <th style={{ width: 70 }}>Kolejność</th>
+              <th>Nazwa</th>
+              <th>Opis</th>
+              <th style={{ width: 90 }}>Końcowy</th>
+              <th style={{ width: 90 }}>Aktywny</th>
+              <th style={{ width: 160 }} />
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((status, index) => (
+              <CaseStatusRow
+                key={status.id}
+                status={status}
+                canManage={canManage}
+                isEditing={editingId === status.id}
+                isFirst={index === 0}
+                isLast={index === sorted.length - 1}
+                onEdit={() => setEditingId(status.id)}
+                onCancelEdit={() => setEditingId(null)}
+                onSave={(payload) => updateMutation.mutate({ id: status.id, payload })}
+                onToggleActive={() =>
+                  toggleActiveMutation.mutate({ id: status.id, active: !status.active })
+                }
+                onMoveUp={() => move(index, -1)}
+                onMoveDown={() => move(index, 1)}
+                saving={updateMutation.isPending}
+              />
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {canManage && !creating && (
         <button

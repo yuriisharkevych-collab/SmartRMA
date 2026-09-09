@@ -1288,6 +1288,19 @@ button, input, select, textarea {
   gap: 16px;
 }
 
+/* Audyt mobilny (KOSMETYCZNE #9.4) — na 320px tytuł+podtytuł obok przycisku
+   akcji (np. „+ Nowa reklamacja”, „Dodaj producenta”, „Dodaj użytkownika”)
+   nieznacznie nie mieściły się w jednym rzędzie (do 30px nadwyżki) nawet
+   PO naturalnym skurczeniu tekstu tytułu/podtytułu przez domyślny
+   `flex-shrink`. Zamierzenie: `max-width:320px`, NIE ogólne `flex-wrap` na
+   bazowej regule — od 375px wzwyż para mieści się w jednym rzędzie już przez
+   samo skurczenie tekstu (bez zawijania), a nieuwarunkowany `flex-wrap`
+   zmieniałby ten (poprawny, obecny) układ też na 375-430px, czego audyt
+   wyraźnie zabraniał. Efekt tej reguły widoczny wyłącznie ≤320px. */
+@media (max-width: 320px) {
+  .page-header { flex-wrap: wrap; }
+}
+
 .page-header h1 {
   font-size: 22px;
 }
@@ -2391,6 +2404,21 @@ table.data-table {
 @media (max-width: 1080px) {
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .detail-grid { grid-template-columns: 1fr; }
+  /* Audyt mobilny (BLOCKER #9.1) — `1fr` to skrót `minmax(auto, 1fr)`: bez
+     jawnego `min-width:0` na bezpośrednich dzieciach grida, ich automatyczne
+     minimum liczy się z intrinsic min-content ZAWARTOŚCI. `.tabs` ma
+     `overflow-x:auto` (K2), ale to nie ONO jest dzieckiem grida — jest
+     zagnieżdżone w zwykłym `<div>` (kolumna główna: zakładki + karty) obok
+     drugiego `<div>` (panel boczny) — i to WŁAŚNIE te dwa zwykłe divy są
+     bezpośrednimi dziećmi `.detail-grid`. Redukcja automatycznego minimum
+     przez `overflow:auto` dotyczy elementu, który SAM jest dzieckiem grida —
+     tu nim nie jest `.tabs`, więc nie działa i ~455px (suma nie-kurczących
+     się `.tab{flex-shrink:0}`, też K2) wypychało całą kolumnę, a z nią całą
+     stronę, w poziomy scroll. `min-width:0` pozwala kolumnie realnie
+     skurczyć się do szerokości viewportu — `.tabs` scrolluje się WEWNĄTRZ
+     siebie, dokładnie jak K2 zakładało, zamiast rozszerzać dokument.
+     `.tab{flex-shrink:0}` i `.tabs{overflow-x:auto}` zostają nietknięte. */
+  .detail-grid > div { min-width: 0; }
   .form-grid { grid-template-columns: 1fr; }
   .field.span-2 { grid-column: span 1; }
   .radio-card-group { grid-template-columns: 1fr; }
@@ -2717,6 +2745,30 @@ table.data-table {
 
 @media (max-width: 720px) {
   .chart-bar-row { grid-template-columns: minmax(70px, 40%) 1fr auto; }
+
+  /* Audyt mobilny (KOSMETYCZNE #9.5) — `minmax(320px, 1fr)` (baza, wyżej) nie
+     uwzględnia paddingu `.content` (20px z każdej strony): na ekranie 320px
+     dostępne miejsce to tylko 280px, węższe niż wymuszone minimum karty —
+     karty raportów wystawały 20px poza viewport. `auto-fit` i tak już
+     renderuje jedną kolumnę na każdej szerokości ≤720px (dwie karty po
+     320px+ się nie mieszczą) — ten override tylko czyni to jawnym i
+     niezależnym od paddingu; identyczny efekt wizualny na 375-430px co
+     wcześniej, naprawa realnie tylko na 320px. UWAGA KOLEJNOŚCI: ta reguła
+     MUSI być zdefiniowana PO bazowej `.report-grid` (wyżej w tym samym
+     pliku) — obie mają identyczną specyficzność (0,1,0), więc o zwycięzcy
+     decyduje wyłącznie kolejność w źródle, nie sama obecność `@media`. */
+  .report-grid { grid-template-columns: 1fr; }
+
+  /* To samo zjawisko co BLOCKER #9.1 (`.detail-grid`), znalezione przy
+     weryfikacji poprawki wyżej: karty „Pracownicy”/„Sklepy” (i podobne)
+     zawierają `<Table>` → `.table-wrap` (już poprawnie `overflow-x:auto`,
+     W1-A) — ale to NIE `.table-wrap` jest bezpośrednim dzieckiem
+     `.report-grid`, tylko opakowująca go karta (`.card.card-pad`, bez
+     `min-width:0`). Automatyczne minimum tej karty liczy się więc z
+     intrinsic szerokości tabeli (6 kolumn bez zawijania), a nie z realnie
+     dostępnego miejsca — dokładnie ten sam mechanizm, ta sama, minimalna
+     poprawka. */
+  .report-grid > .card { min-width: 0; }
 }
 
 /* Wydruk raportu (Ctrl+P → „Zapisz jako PDF") — chowamy nawigację i sterowanie,
