@@ -377,6 +377,11 @@ export const ERROR_CODES = {
     status: HttpStatus.UNPROCESSABLE_ENTITY,
     message: 'Nieprawidłowy adres — musi zaczynać się od http:// lub https://.',
   },
+  VALIDATION_006: {
+    code: 'VALIDATION-006',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Nieprawidłowy NIP — wpisz 10 cyfr (spacje i myślniki dozwolone).',
+  },
 
   // --- NOTIFICATION ---
   NOTIFICATION_001: {

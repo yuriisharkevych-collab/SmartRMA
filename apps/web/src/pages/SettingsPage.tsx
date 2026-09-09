@@ -253,10 +253,18 @@ function CompanyTab({ canManage }: { canManage: boolean }) {
           <input
             id="co-nip"
             type="text"
+            placeholder="np. 123-456-32-18"
             disabled={!canManage}
             value={form.nip ?? ''}
             onChange={(e) => set('nip', e.target.value)}
           />
+          {/* Sama walidacja (format + suma kontrolna) i normalizacja żyją WYŁĄCZNIE
+              po stronie backendu (`IsPolishNip`, `UpdateCompanyDto`) — ten hint tylko
+              podpowiada dozwolony zapis z góry; błąd (np. zła suma kontrolna) i tak
+              trafia do użytkownika przez istniejący toast w `onError` niżej
+              (`err.response?.data.error.message` — już czyta prawdziwą treść
+              VALIDATION-006 z backendu), więc nie duplikujemy logiki walidacji w JS. */}
+          <span className="hint">10 cyfr — myślniki i spacje są dozwolone.</span>
         </div>
         <div className="field">
           <label htmlFor="co-regon">REGON</label>

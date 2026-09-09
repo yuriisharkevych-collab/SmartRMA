@@ -1,10 +1,29 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsEmail, IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsPolishNip, normalizeNip } from '../../../common/validators/nip.validator';
 
-/** `company.manage`. Tworzenie `Company` to operacja seeda/onboardingu, nie endpoint (MVP: jedna firma, BUSINESS_RULES.md BR-086). */
+/**
+ * `company.manage`. Tworzenie `Company` idzie dziś dwiema ścieżkami spoza tego
+ * DTO — `POST /companies/signup` (Etap 6, samoobsługowe zakładanie
+ * Producent/Dystrybutor) i skrypty bootstrapujące (`create-admin.ts`/
+ * `create-organization.ts`) — ten endpoint (`PATCH /companies/me`) tylko
+ * EDYTUJE już istniejącą firmę.
+ */
 export class UpdateCompanyDto {
   @ApiPropertyOptional() @IsOptional() @IsString() name?: string;
-  @ApiPropertyOptional() @IsOptional() @IsString() nip?: string;
+  /**
+   * Separatory (spacje/myślniki) dozwolone przy wpisywaniu — `@Transform`
+   * normalizuje do samych 10 cyfr PRZED walidacją (`isValidPolishNip` w
+   * `IsPolishNip` sprawdza już znormalizowaną wartość) i PRZED zapisem do
+   * `Company.nip` (String?, format bazy bez zmian — zapisujemy zawsze czyste
+   * 10 cyfr, nigdy oryginalny, niesformatowany wpis użytkownika).
+   */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? normalizeNip(value) : value))
+  @IsPolishNip({ message: 'VALIDATION-006' })
+  nip?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() regon?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() address?: string;
   @ApiPropertyOptional() @IsOptional() @IsEmail({}, { message: 'VALIDATION-002' }) email?: string;

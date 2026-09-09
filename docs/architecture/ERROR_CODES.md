@@ -189,6 +189,7 @@ Producent/Dystrybutor + Partnerzy B2B (Faza 2):
 | VALIDATION-003 | 422 | Nieprawidłowy numer telefonu. | Walidacja formatu `phone` |
 | VALIDATION-004 | 422 | Wymagane zaznaczenie wszystkich zgód. | Formularz zgłoszenia — brak jednej z wymaganych zgód (BR z `docs/source/BUSINESS_RULES.md`, sekcja zgód) |
 | VALIDATION-005 | 422 | Nieprawidłowy adres — musi zaczynać się od http:// lub https://. | Walidacja formatu URL (`website`/`privacyPolicyUrl`/`termsUrl` w `UpdateCompanyDto`) |
+| VALIDATION-006 | 422 | Nieprawidłowy NIP — wpisz 10 cyfr (spacje i myślniki dozwolone). | Walidacja formatu/sumy kontrolnej NIP (`nip` w `UpdateCompanyDto`, `IsPolishNip`) |
 
 ---
 

@@ -153,6 +153,35 @@ describe('Companies (e2e)', () => {
         .send({ active: false });
       expect(res.status).toBe(422);
     });
+
+    // Walidacja NIP (`IsPolishNip`) — patrz `nip.validator.spec.ts` dla testów
+    // samej funkcji w izolacji; te trzy testy potwierdzają, że jest realnie
+    // podłączona do `PATCH /companies/me` (nie tylko istnieje jako plik).
+    it('przyjmuje prawidłowy NIP z myślnikami i zapisuje go znormalizowanym do 10 cyfr', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/companies/me')
+        .set(authHeader(adminAccessToken))
+        .send({ nip: '526-000-12-46' });
+      expect(res.status).toBe(200);
+      expect(res.body.nip).toBe('5260001246');
+    });
+
+    it('VALIDATION-006 — odrzuca NIP z nieprawidłową sumą kontrolną', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/companies/me')
+        .set(authHeader(adminAccessToken))
+        .send({ nip: '5260001247' });
+      expect(res.status).toBe(422);
+      expect(res.body.error.code).toBe('VALIDATION-006');
+    });
+
+    it('puste pole NIP nadal jest dozwolone (pole opcjonalne)', async () => {
+      const res = await request(app.getHttpServer())
+        .patch('/api/companies/me')
+        .set(authHeader(adminAccessToken))
+        .send({ name: 'Zaktualizowana Nazwa Bez NIP' });
+      expect(res.status).toBe(200);
+    });
   });
 
   describe('POST /api/shops i GET /api/shops', () => {
