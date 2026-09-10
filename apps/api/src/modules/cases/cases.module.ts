@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { AuditModule } from '../audit/audit.module';
+import { CaseHandoffRepository } from '../case-handoff/case-handoff.repository';
 import { CaseStatusesModule } from '../case-statuses/case-statuses.module';
 import { CompaniesModule } from '../companies/companies.module';
 import { CompanySettingsModule } from '../company-settings/company-settings.module';
@@ -70,6 +71,17 @@ import { NotesRepository } from './notes.repository';
     MessagesRepository,
     CaseConsentRepository,
     CaseAttentionScannerService,
+    // `hardDelete` (usuwanie spraw testowych) musi wyczyścić powiązany
+    // `CaseHandoff` PRZED samą sprawą — patrz doc-comment
+    // `CaseHandoffRepository.deleteAllForCase`. Reużywamy tej samej klasy co
+    // `CaseHandoffModule`, ale NIE importujemy stamtąd całego modułu: on sam
+    // importuje `CasesModule` (jednokierunkowo, patrz jego doc-comment), więc
+    // odwrotny import zamknąłby cykl modułów. `CaseHandoffRepository`
+    // zależy WYŁĄCZNIE od `PrismaService` (bezstanowe opakowanie zapytań) —
+    // podanie jej tu jako osobnego providera daje drugą, w pełni
+    // równoważną instancję, bez `forwardRef` i bez dotykania
+    // `CaseHandoffModule`.
+    CaseHandoffRepository,
   ],
   // `CaseConsentRepository` — współdzielone przez Portal Klienta i Publiczny Formularz
   // Reklamacyjny (oba tworzą/czytają zgody RODO powiązane ze sprawą), stąd żyje przy

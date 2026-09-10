@@ -20,6 +20,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
+import { CaseHandoffRepository } from '../case-handoff/case-handoff.repository';
 import {
   generatePortalAccessCode,
   generatePortalSecureToken,
@@ -156,6 +157,8 @@ export class CasesService {
     @Inject(forwardRef(() => NotificationsService))
     private readonly notificationsService: NotificationsService,
     private readonly config: ConfigService,
+    /** Tylko usunięcie łącznika `CaseHandoff` dla `hardDelete` — patrz doc-comment tamtej metody i `CaseHandoffRepository.deleteAllForCase`. */
+    private readonly caseHandoffRepository: CaseHandoffRepository,
   ) {}
 
   async findAllForCompany(companyId: string): Promise<CaseEntity[]> {
@@ -291,13 +294,25 @@ export class CasesService {
    * `ReplacementProduct`+`CaseItem` (`CaseItemsRepository`), `Document`
    * (musi być PRZED `Message` — `Document.messageId` → `Message`, odwrócone
    * względem poprzedniej wersji 1:1, patrz komentarz w schemacie), `Message`,
-   * `Notification.relatedCaseId`, `CaseHistory`, `Note`,
-   * `Logistics`, `CaseConsent`, na końcu `Case`. Wpis w `AuditLog` PRZED
-   * skasowaniem — `entityId` w tej tabeli to zwykły string (nie FK), więc
-   * ślad audytu przeżywa skasowanie sprawy, którego dotyczy (jedyny dowód,
-   * że sprawa w ogóle istniała). Świadomie NIE usuwa plików `Document` z
-   * dysku (`IStorageService` nie ma metody `delete` — nigdzie w aplikacji
-   * nie istniała, poza zakresem tej zmiany).
+   * `Notification.relatedCaseId`, `CaseHistory`, `Note`, `Logistics`,
+   * `CaseConsent`, `CaseHandoff` (patrz niżej), na końcu `Case`. Wpis w
+   * `AuditLog` PRZED skasowaniem — `entityId` w tej tabeli to zwykły string
+   * (nie FK), więc ślad audytu przeżywa skasowanie sprawy, którego dotyczy
+   * (jedyny dowód, że sprawa w ogóle istniała). Świadomie NIE usuwa plików
+   * `Document` z dysku (`IStorageService` nie ma metody `delete` — nigdzie w
+   * aplikacji nie istniała, poza zakresem tej zmiany).
+   *
+   * `CaseHandoff` — audyt bezpieczeństwa wykazał, że kasowana sprawa może być
+   * stroną przekazania Producent/Dystrybutor + Partnerzy B2B (Faza 5), jako
+   * `originCaseId` LUB `targetCaseId` (albo oba naraz — łańcuch wieloetapowy
+   * Sklep→Dystrybutor→Producent, patrz doc-comment modelu w schemacie); bez
+   * jawnego usunięcia tego łącznika Postgres odrzuca skasowanie `Case`
+   * naruszeniem klucza obcego (brak `onDelete: Cascade` w schemacie —
+   * celowo, patrz `CaseHandoffRepository.deleteAllForCase`). WYŁĄCZNIE
+   * rekord-łącznik znika — sprawa po drugiej stronie (potencjalnie w INNYM
+   * tenancie, np. Dystrybutora) i WSZYSTKIE jej własne dane (dokumenty,
+   * wiadomości, historia, klient) zostają całkowicie nietknięte; ta metoda
+   * nigdy nie dotyka `companyId` innego niż to, które woła `hardDelete`.
    */
   async hardDelete(id: string, companyId: string, actorUserId: string): Promise<void> {
     const caseRecord = await this.casesRepository.findById(id, companyId);
@@ -312,6 +327,7 @@ export class CasesService {
       await this.casesRepository.deleteLogisticsForCase(id, tx);
       await this.caseConsentRepository.deleteAllForCase(id, tx);
       await this.caseItemsRepository.deleteAllForCase(id, tx);
+      await this.caseHandoffRepository.deleteAllForCase(id, tx);
 
       await this.auditRepository.create(
         {

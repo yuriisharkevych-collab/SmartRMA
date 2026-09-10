@@ -15,6 +15,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditRepository } from '../audit/audit.repository';
+import { CaseHandoffRepository } from '../case-handoff/case-handoff.repository';
 import { CaseStatusesService } from '../case-statuses/case-statuses.service';
 import { CompaniesService } from '../companies/companies.service';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
@@ -366,6 +367,7 @@ describe('CasesService', () => {
     Pick<NotificationsService, 'createNotificationFromTemplate' | 'deleteAllForCase'>
   >;
   let config: jest.Mocked<Pick<ConfigService, 'get'>>;
+  let caseHandoffRepository: jest.Mocked<Pick<CaseHandoffRepository, 'deleteAllForCase'>>;
   let service: CasesService;
 
   beforeEach(() => {
@@ -477,6 +479,7 @@ describe('CasesService', () => {
       deleteAllForCase: jest.fn(),
     };
     config = { get: jest.fn().mockReturnValue(['http://localhost:5173']) };
+    caseHandoffRepository = { deleteAllForCase: jest.fn() };
 
     service = new CasesService(
       prisma as unknown as PrismaService,
@@ -501,6 +504,7 @@ describe('CasesService', () => {
       eventBus,
       notificationsService as unknown as NotificationsService,
       config as unknown as ConfigService,
+      caseHandoffRepository as unknown as CaseHandoffRepository,
     );
   });
 
@@ -1239,6 +1243,61 @@ describe('CasesService', () => {
       const auditCallOrder = auditRepository.create.mock.invocationCallOrder[0];
       const hardDeleteCallOrder = casesRepository.hardDelete.mock.invocationCallOrder[0];
       expect(auditCallOrder).toBeLessThan(hardDeleteCallOrder);
+    });
+
+    // Scenariusz A (audyt CaseHandoff) — sprawa BEZ żadnego przekazania: `deleteAllForCase`
+    // jest wołane bezwarunkowo (to `deleteMany`, więc brak dopasowanego wiersza to
+    // bezpieczny no-op — patrz doc-comment `CaseHandoffRepository.deleteAllForCase`),
+    // zachowanie identyczne jak przed tą zmianą dla pozostałych tabel.
+    it('scenariusz A — sprawa bez przekazania: usuwa jak dotychczas, `CaseHandoff.deleteAllForCase` woła bez efektu (no-op)', async () => {
+      casesRepository.findById.mockResolvedValue(
+        buildCase({ caseNumber: 'RMA/2026/00001', status: 'Nowa', customerId: 'customer-1' }),
+      );
+
+      await service.hardDelete('case-1', 'company-1', 'user-1');
+
+      expect(caseHandoffRepository.deleteAllForCase).toHaveBeenCalledWith('case-1', TX_MARKER);
+      expect(casesRepository.hardDelete).toHaveBeenCalledWith('case-1', TX_MARKER);
+    });
+
+    // Scenariusze B/C (audyt CaseHandoff) — na poziomie serwisu (repozytoria zamockowane)
+    // liczy się WYŁĄCZNIE to, że `hardDelete` woła `caseHandoffRepository.deleteAllForCase`
+    // PRZED `casesRepository.hardDelete`, niezależnie od tego, czy usuwana sprawa jest
+    // `originCaseId` czy `targetCaseId` przekazania — samą logikę "usuwa TYLKO łącznik,
+    // nigdy drugiej sprawy" gwarantuje kształt zapytania w `CaseHandoffRepository`
+    // (`OR: [{originCaseId},{targetCaseId}]`, `deleteMany` na `CaseHandoff`, nigdy na
+    // `Case`) — patrz `case-handoff.repository.spec.ts` i test e2e (scenariusz D) dla
+    // dowodu na prawdziwej bazie, że druga sprawa i jej dane przeżywają.
+    it('scenariusz B/C — CaseHandoff.deleteAllForCase wołane PRZED usunięciem samej sprawy (niezależnie od kierunku przekazania)', async () => {
+      casesRepository.findById.mockResolvedValue(
+        buildCase({ caseNumber: 'RMA/2026/00001', status: 'Nowa', customerId: 'customer-1' }),
+      );
+
+      await service.hardDelete('case-1', 'company-1', 'user-1');
+
+      const handoffCallOrder = caseHandoffRepository.deleteAllForCase.mock.invocationCallOrder[0];
+      const hardDeleteCallOrder = casesRepository.hardDelete.mock.invocationCallOrder[0];
+      expect(handoffCallOrder).toBeLessThan(hardDeleteCallOrder);
+    });
+
+    // Scenariusz E (rollback) — ten sam wzorzec atrapy `$transaction`, co reszta tego
+    // pliku (`(callback) => callback(TX_MARKER)`): błąd w KTÓRYMKOLWIEK kroku wewnątrz
+    // callbacku odrzuca cały `hardDelete` i przerywa dalsze wywołania w tej samej
+    // sekwencji — `casesRepository.hardDelete` (usunięcie wiersza `Case`) nigdy nie jest
+    // osiągane, jeśli usunięcie `CaseHandoff` (krok wcześniejszy) się nie powiedzie.
+    // Prawdziwy rollback na poziomie Postgresa (atomiczność `$transaction`) jest
+    // własnością samej Prismy, nie logiki tego serwisu — nie ma potrzeby go tu
+    // symulować głębiej, zgodnie z poleceniem "nie komplikuj".
+    it('scenariusz E — błąd przy usuwaniu CaseHandoff przerywa hardDelete PRZED usunięciem sprawy (bez częściowego skasowania)', async () => {
+      casesRepository.findById.mockResolvedValue(
+        buildCase({ caseNumber: 'RMA/2026/00001', status: 'Nowa', customerId: 'customer-1' }),
+      );
+      caseHandoffRepository.deleteAllForCase.mockRejectedValueOnce(new Error('DB boom'));
+
+      await expect(service.hardDelete('case-1', 'company-1', 'user-1')).rejects.toThrow('DB boom');
+
+      expect(casesRepository.hardDelete).not.toHaveBeenCalled();
+      expect(auditRepository.create).not.toHaveBeenCalled();
     });
   });
 
