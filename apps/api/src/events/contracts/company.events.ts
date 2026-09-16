@@ -19,3 +19,18 @@ export interface ShopUpdatedPayload {
 }
 
 export type ShopDeactivatedPayload = Record<string, never>;
+
+/**
+ * Fundament „Fresh Install" — WYJĄTEK od zasady „identyfikatory, nie
+ * wartości" (patrz doc-comment na górze pliku / `event-names.const.ts`):
+ * niesie plaintext token weryfikacji e-maila, bo `InMemoryEventBus` jest
+ * czysto wewnątrzprocesowy (nigdy nie trafia do bazy/loga/kolejki
+ * zewnętrznej) — ten sam, już zaakceptowany wyjątek co jednorazowy kod
+ * dostępu Portalu Klienta w `CasesService.enablePortal`.
+ */
+export interface CompanySignupCompletedPayload {
+  email: string;
+  firstName: string;
+  companyName: string;
+  verificationToken: string;
+}

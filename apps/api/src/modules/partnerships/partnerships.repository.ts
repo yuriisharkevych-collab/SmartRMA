@@ -175,6 +175,11 @@ export class PartnershipsRepository {
         email,
         passwordHash,
         active: true,
+        // Fundament „Fresh Install" — akceptacja zaproszenia partnera już dowodzi
+        // dostępu do tej skrzynki (link zaproszenia przyszedł na `email`), więc
+        // osobna weryfikacja e-maila (jak przy `POST /companies/signup`) byłaby
+        // zbędnym powtórzeniem tego samego dowodu.
+        emailVerifiedAt: new Date(),
         roles: { create: [{ roleId: role.id }] },
       },
     });

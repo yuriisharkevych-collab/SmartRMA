@@ -59,6 +59,11 @@ export const EVENT_NAMES = {
   // --- Agregat Order (Zadanie 15 — brak odpowiednika w EVENTS.md §5, patrz TODO poniżej) ---
   ORDER_CREATED: 'order.created',
   ORDER_UPDATED: 'order.updated',
+
+  // --- Fundament „Fresh Install" — brak odpowiednika w EVENTS.md §5 (ten sam,
+  // już zaakceptowany wzorzec braku co Company/Shop/Customer/Product/Order
+  // wyżej), patrz TODO poniżej. ---
+  COMPANY_SIGNUP_COMPLETED: 'company.signup_completed',
 } as const;
 
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];
@@ -100,6 +105,20 @@ export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];
  * `case.updated` to zwykły, już wielokrotnie widziany brak katalogowania
  * (analogicznie do company.updated/customer.updated/product.updated/
  * order.updated) — dopisać do EVENTS.md §5.1 przy najbliższej rewizji.
+ *
+ * TODO: analogiczny brak dla `company.signup_completed` (Fundament „Fresh
+ * Install") — dodatkowo ROZWIĄZUJE cykl modułów: `CompaniesModule` publikuje
+ * (właściciel agregatu Company), `AccountRecoveryModule` subskrybuje (wysyła
+ * e-mail weryfikacyjny) — bez tego zdarzenia `CompaniesModule` musiałby
+ * IMPORTOWAĆ `AccountRecoveryModule`, który importuje `MailModule`, który z
+ * kolei importuje (istniejące) `CompaniesModule` — cykl modułów, na którym
+ * NestJS faktycznie się zawiesza (zaobserwowane: `NestFactory.create()` wisi
+ * bez końca, żaden log błędu) przy TYLU jednoczesnych `forwardRef` w tym
+ * samym module (`CompaniesModule` miał już dwa: AuthModule/UsersModule).
+ * Payload niesie PLAINTEXT token weryfikacyjny — bezpieczne WYŁĄCZNIE dlatego,
+ * że `InMemoryEventBus` jest czysto wewnątrzprocesowy (EventEmitter2, nigdy
+ * nie serializowany/persystowany) — ten sam wyjątek od EVENTS.md §2.1 co
+ * jednorazowy kod dostępu Portalu w `CasesService.enablePortal`.
  *
  * `case.note_added`/`case.message_added` są INNE: EVENTS.md §10.2 wprost
  * stwierdza (decyzja zamknięta w Zadaniu 6), że `NoteAdded`/`MessageSent`

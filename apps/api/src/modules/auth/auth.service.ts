@@ -134,6 +134,22 @@ export class AuthService {
         ERROR_CODES.AUTH_001.status,
       );
     }
+
+    // Fundament „Fresh Install" — PO potwierdzeniu hasła (nie przed), żeby AUTH-007
+    // nie zdradzał komuś bez hasła, że dany e-mail istnieje, a tylko czeka na
+    // potwierdzenie. `emailVerifiedAt=null` obejmuje WYŁĄCZNIE konta z self-service
+    // `POST /companies/signup` (`CompaniesRepository.createFirstAdmin`) — każde inne
+    // źródło konta (`UsersRepository.create`, `PartnershipsRepository.createAdminUser`,
+    // skrypty bootstrapujące) ustawia tę kolumnę od razu, patrz komentarze tam.
+    if (!user.emailVerifiedAt) {
+      await this.recordLoginAttempt(user.id, context, false);
+      throw new AppException(
+        ERROR_CODES.AUTH_007.code,
+        ERROR_CODES.AUTH_007.message,
+        ERROR_CODES.AUTH_007.status,
+      );
+    }
+
     return user;
   }
 

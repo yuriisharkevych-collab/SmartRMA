@@ -12,8 +12,14 @@ import { NotificationEntity } from './entities/notification.entity';
 import { NotificationMapper } from './mappers/notification.mapper';
 import { NotificationsRepository } from './notifications.repository';
 
-/** NOTIFICATIONS.md §2.3 — podstawianie proste, bez logiki warunkowej/pętli; placeholder bez dopasowanej zmiennej zostaje w tekście (ułatwia debugowanie brakującej zmiennej zamiast cichego pustego pola). */
-function renderTemplate(template: string, variables: Record<string, string>): string {
+/**
+ * NOTIFICATIONS.md §2.3 — podstawianie proste, bez logiki warunkowej/pętli; placeholder bez
+ * dopasowanej zmiennej zostaje w tekście (ułatwia debugowanie brakującej zmiennej zamiast
+ * cichego pustego pola). Eksportowana (nie tylko lokalna) — `AccountRecoveryService`
+ * (Fundament „Fresh Install") reużywa ją do renderowania szablonów `account.*`, które
+ * omijają `createNotificationFromTemplate`/`Notification` (patrz jej doc-comment).
+ */
+export function renderTemplate(template: string, variables: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => variables[key] ?? match);
 }
 

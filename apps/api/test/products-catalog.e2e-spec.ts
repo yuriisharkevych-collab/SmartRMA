@@ -138,6 +138,7 @@ describe('Katalog produktów — Organizacja → Producent → Marka → Kategor
         email,
         passwordHash: await passwordService.hash(password),
         active: true,
+        emailVerifiedAt: new Date(),
         roles: { create: [{ roleId: role.id }] },
       },
     });

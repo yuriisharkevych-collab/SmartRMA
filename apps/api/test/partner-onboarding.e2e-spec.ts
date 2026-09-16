@@ -127,6 +127,7 @@ describe('Partner B2B onboarding (e2e) — Etap 5', () => {
         email,
         passwordHash: await passwordService.hash(password),
         active: true,
+        emailVerifiedAt: new Date(),
         roles: { create: [{ roleId: role.id }] },
       },
     });

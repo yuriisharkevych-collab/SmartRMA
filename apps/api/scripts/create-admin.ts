@@ -125,6 +125,7 @@ async function main(): Promise<void> {
       lastName: 'SmartRMA',
       email: ADMIN_EMAIL,
       passwordHash,
+      emailVerifiedAt: new Date(),
       roles: { create: [{ roleId: role.id }] },
     },
   });

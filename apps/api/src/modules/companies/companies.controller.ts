@@ -32,7 +32,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../../common/interfaces/authenticated-request.interface';
 import { PERMISSIONS } from '../../rbac/constants/permissions.const';
 import { RequirePermissions } from '../../rbac/decorators/require-permissions.decorator';
-import { AuthTokensEntity } from '../auth/entities/auth-tokens.entity';
 import { CompaniesService } from './companies.service';
 import { CompanySignupDto } from './dto/company-signup.dto';
 import { CreateShopDto } from './dto/create-shop.dto';
@@ -40,6 +39,7 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
 import { CompanyEntity } from './entities/company.entity';
 import { ShopEntity } from './entities/shop.entity';
+import { SignupResultEntity } from './entities/signup-result.entity';
 
 const LOGO_MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB — logo, nie zdjęcie uszkodzenia; nie ma powodu pozwalać na więcej.
 
@@ -69,23 +69,28 @@ export class CompaniesController {
   @Post('companies/signup')
   @HttpCode(HttpStatus.CREATED)
   // Podstawowa ochrona przed mass-signup — nie CAPTCHA/antyfraud (świadomie
-  // poza zakresem Etapu 6), tylko twardy sufit per adres IP, ten sam wzorzec
-  // co `IntakeController.submitComplaint`/`submitBrandComplaint` (jedyne inne
+  // poza zakresem), tylko twardy sufit per adres IP, ten sam wzorzec co
+  // `IntakeController.submitComplaint`/`submitBrandComplaint` (jedyne inne
   // publiczne endpointy tworzące realne rekordy w bazie).
   @Throttle({ default: { limit: 5, ttl: 60 * 60_000 } })
   @ApiOperation({
     summary:
-      'Onboarding nowej firmy Producent/Dystrybutor — bez sesji, bez SQL/skryptu developerskiego',
+      'Onboarding nowej firmy (Sklep/Producent/Dystrybutor) — bez SQL/skryptu developerskiego',
     description:
-      'Zakłada Company+CompanySettings+Shop+samoopisany profil+katalog statusów+PIERWSZEGO Administratora w jednej transakcji i od razu loguje (zwraca AuthTokens) — ten sam wzorzec co `POST /partnerships/invite/:token/accept`.',
+      'Zakłada Company+CompanySettings+Shop+(samoopisany profil dla Producent/Dystrybutor)+katalog statusów+PIERWSZEGO Administratora w jednej transakcji i wysyła e-mail weryfikacyjny — NIE loguje automatycznie (AUTH-007 blokuje logowanie do potwierdzenia adresu, patrz `POST /auth/verify-email`).',
   })
   @ApiBody({ type: CompanySignupDto })
-  @ApiResponse({ status: 201, description: 'Firma założona, zalogowano nowego Administratora.' })
+  @ApiResponse({
+    status: 201,
+    description: 'Firma założona, wysłano e-mail weryfikacyjny.',
+    type: SignupResultEntity,
+  })
   @ApiResponse({
     status: 409,
     description: 'USER-001 (e-mail zajęty) albo COMPANY-001 (slug wyczerpany).',
   })
-  signup(@Body() dto: CompanySignupDto): Promise<AuthTokensEntity> {
+  @ApiResponse({ status: 422, description: 'VALIDATION-006 — NIP wymagany i musi być prawidłowy.' })
+  signup(@Body() dto: CompanySignupDto): Promise<SignupResultEntity> {
     return this.companiesService.signup(dto);
   }
 

@@ -96,6 +96,23 @@ export class NotificationsRepository {
     });
   }
 
+  /**
+   * Fundament „Fresh Install" — szablony CYKLU ŻYCIA KONTA
+   * (`account.emailVerification` itd.), wołane z `AccountRecoveryService`/
+   * `CompaniesService.signup`, gdzie WYŁĄCZNIE globalny wariant ma sens:
+   * nie ma jeszcze `companyId` (nowa firma) albo w ogóle go nie będzie
+   * (`PlatformAdmin`). Druga połowa `resolveTemplate` wyżej, wydzielona —
+   * bez fałszywego `companyId` przekazywanego tam "na siłę".
+   */
+  findGlobalTemplate(
+    code: string,
+    channel: NotificationChannel,
+  ): Promise<NotificationTemplate | null> {
+    return this.prisma.notificationTemplate.findFirst({
+      where: { companyId: null, code, channel, active: true },
+    });
+  }
+
   createTemplate(
     companyId: string | null,
     data: {

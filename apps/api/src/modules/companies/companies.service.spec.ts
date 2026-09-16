@@ -1,8 +1,6 @@
 import { Company, Shop } from '@prisma/client';
 import { AuditRepository } from '../audit/audit.repository';
-import { AuthService } from '../auth/auth.service';
 import { PasswordService } from '../auth/services/password.service';
-import { UsersRepository } from '../users/users.repository';
 import { IEventBus } from '../../events/event-bus.interface';
 import { EVENT_NAMES } from '../../events/event-names.const';
 import { IStorageService } from '../../storage/storage.interface';
@@ -64,8 +62,6 @@ describe('CompaniesService', () => {
   let auditRepository: jest.Mocked<Pick<AuditRepository, 'create'>>;
   let prisma: { $transaction: jest.Mock };
   let passwordService: jest.Mocked<Pick<PasswordService, 'hash'>>;
-  let usersRepository: jest.Mocked<Pick<UsersRepository, 'findPasswordAccountByEmail'>>;
-  let authService: jest.Mocked<Pick<AuthService, 'login'>>;
   let eventBus: jest.Mocked<IEventBus>;
   let storageService: jest.Mocked<IStorageService>;
   let service: CompaniesService;
@@ -88,8 +84,6 @@ describe('CompaniesService', () => {
     auditRepository = { create: jest.fn() };
     prisma = { $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(TX_MARKER)) };
     passwordService = { hash: jest.fn() };
-    usersRepository = { findPasswordAccountByEmail: jest.fn() };
-    authService = { login: jest.fn() };
     eventBus = { publish: jest.fn(), publishAll: jest.fn() };
     storageService = { save: jest.fn(), read: jest.fn(), copy: jest.fn() };
 
@@ -98,8 +92,6 @@ describe('CompaniesService', () => {
       auditRepository as unknown as AuditRepository,
       prisma as never,
       passwordService as unknown as PasswordService,
-      usersRepository as unknown as UsersRepository,
-      authService as unknown as AuthService,
       eventBus,
       storageService,
     );
@@ -305,10 +297,11 @@ describe('CompaniesService', () => {
     });
   });
 
-  describe('signup (Etap 6 — onboarding samoobsługowy)', () => {
+  describe('signup — onboarding samoobsługowy (Fundament „Fresh Install")', () => {
     const dto = {
       companyName: 'TextilePro',
-      orgKind: 'Producent' as const,
+      orgType: 'Producent' as const,
+      nip: '1234567890',
       adminFirstName: 'Anna',
       adminLastName: 'Nowak',
       adminEmail: 'anna@textilepro.pl',
@@ -322,12 +315,7 @@ describe('CompaniesService', () => {
       passwordService.hash.mockResolvedValue('hash-abc');
       companiesRepository.createOrganizationShell.mockResolvedValue({ id: 'company-1' } as Company);
       companiesRepository.createFirstAdmin.mockResolvedValue({ id: 'user-1' } as never);
-      usersRepository.findPasswordAccountByEmail.mockResolvedValue({ id: 'user-1' } as never);
-      authService.login.mockResolvedValue({
-        accessToken: 'a',
-        refreshToken: 'r',
-        expiresIn: 900,
-      } as never);
+      eventBus.publish.mockResolvedValue(undefined);
     }
 
     it('USER-001 — nie tworzy NICZEGO, gdy e-mail administratora jest już zajęty przez konto Password (globalnie, nie tylko w tej firmie)', async () => {
@@ -351,23 +339,49 @@ describe('CompaniesService', () => {
       expect(adminCall).not.toHaveProperty('password');
     });
 
-    it('zakłada organizację i JEDNEGO Administratora w JEDNEJ transakcji ($transaction), przekazując `tx` do obu wywołań repozytorium', async () => {
+    it('zakłada organizację (type=ManufacturerDistributor, orgKind=Producent, nip) i JEDNEGO Administratora Z TOKENEM WERYFIKACJI w JEDNEJ transakcji ($transaction), przekazując `tx` do obu wywołań repozytorium', async () => {
       stubHappyPath();
       await service.signup(dto);
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1);
       expect(companiesRepository.createOrganizationShell).toHaveBeenCalledWith(
-        { name: 'TextilePro', slug: 'textilepro', orgKind: 'Producent', caseNumberPrefix: 'TEXT' },
+        {
+          name: 'TextilePro',
+          slug: 'textilepro',
+          type: 'ManufacturerDistributor',
+          orgKind: 'Producent',
+          nip: '1234567890',
+          caseNumberPrefix: 'TEXT',
+        },
         TX_MARKER,
       );
-      expect(companiesRepository.createFirstAdmin).toHaveBeenCalledWith(
-        'company-1',
-        {
-          firstName: 'Anna',
-          lastName: 'Nowak',
-          email: 'anna@textilepro.pl',
-          passwordHash: 'hash-abc',
-        },
+      const adminCall = companiesRepository.createFirstAdmin.mock.calls[0][1] as {
+        firstName: string;
+        lastName: string;
+        email: string;
+        passwordHash: string;
+        emailVerificationTokenHash: string;
+        emailVerificationTokenExpiresAt: Date;
+      };
+      expect(companiesRepository.createFirstAdmin.mock.calls[0][0]).toBe('company-1');
+      expect(companiesRepository.createFirstAdmin.mock.calls[0][2]).toBe(TX_MARKER);
+      expect(adminCall).toMatchObject({
+        firstName: 'Anna',
+        lastName: 'Nowak',
+        email: 'anna@textilepro.pl',
+        passwordHash: 'hash-abc',
+      });
+      // Token nigdy nie jest zapisywany jawnym tekstem — tylko jego SHA-256 hash.
+      expect(adminCall.emailVerificationTokenHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(adminCall.emailVerificationTokenExpiresAt.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('zakłada Sklep (orgType=Shop) BEZ samoopisanego profilu producenta — type=Shop, orgKind=null', async () => {
+      stubHappyPath();
+      await service.signup({ ...dto, orgType: 'Shop' });
+
+      expect(companiesRepository.createOrganizationShell).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'Shop', orgKind: null }),
         TX_MARKER,
       );
     });
@@ -441,13 +455,26 @@ describe('CompaniesService', () => {
       );
     });
 
-    it('loguje od razu jak `PartnershipsService.acceptPartnerInvite` — zwraca AuthTokens z `AuthService.login`, nie tworzy osobnej sesji', async () => {
+    it('NIE loguje automatycznie (breaking change) — publikuje COMPANY_SIGNUP_COMPLETED (Fundament „Fresh Install" wysyła e-mail przez subskrybenta, nie wprost) i zwraca komunikat + e-mail, bez tokenów', async () => {
       stubHappyPath();
       const result = await service.signup(dto);
 
-      expect(usersRepository.findPasswordAccountByEmail).toHaveBeenCalledWith(dto.adminEmail);
-      expect(authService.login).toHaveBeenCalledWith({ id: 'user-1' });
-      expect(result).toEqual({ accessToken: 'a', refreshToken: 'r', expiresIn: 900 });
+      expect(eventBus.publish).toHaveBeenCalledTimes(1);
+      const published = eventBus.publish.mock.calls[0][0];
+      expect(published.eventName).toBe(EVENT_NAMES.COMPANY_SIGNUP_COMPLETED);
+      expect(published.companyId).toBe('company-1');
+      expect(published.actorUserId).toBe('user-1');
+      expect(published.payload).toEqual({
+        email: 'anna@textilepro.pl',
+        firstName: 'Anna',
+        companyName: 'TextilePro',
+        verificationToken: expect.any(String),
+      });
+      expect(result).toEqual({
+        message: expect.any(String),
+        email: 'anna@textilepro.pl',
+      });
+      expect(result).not.toHaveProperty('accessToken');
     });
   });
 });

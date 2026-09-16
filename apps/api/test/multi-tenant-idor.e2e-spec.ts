@@ -129,6 +129,7 @@ describe('Multi-tenant IDOR (e2e) — Faza 7', () => {
         email,
         passwordHash: await passwordService.hash(password),
         active: true,
+        emailVerifiedAt: new Date(),
         roles: { create: [{ roleId: role.id }] },
       },
     });

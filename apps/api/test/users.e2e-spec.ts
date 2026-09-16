@@ -84,6 +84,7 @@ describe('Users (e2e)', () => {
         email: adminEmail,
         passwordHash: await passwordService.hash(password),
         active: true,
+        emailVerifiedAt: new Date(),
         roles: { create: [{ roleId: adminRole.id }] },
       },
     });
@@ -96,6 +97,7 @@ describe('Users (e2e)', () => {
         email: noPermEmail,
         passwordHash: await passwordService.hash(password),
         active: true,
+        emailVerifiedAt: new Date(),
         roles: { create: [{ roleId: noPermRole.id }] },
       },
     });

@@ -69,6 +69,18 @@ pola formularza lub niesie dodatkowy kontekst.
 | AUTH-004 | 400 | Hasło nie spełnia wymagań bezpieczeństwa. | Reset hasła / zmiana hasła — zbyt słabe hasło |
 | AUTH-005 | 429 | Konto tymczasowo zablokowane z powodu zbyt wielu nieudanych prób logowania. | `maxLoginAttempts` nieudanych prób w oknie `lockoutDurationMinutes` (Ustawienia › Bezpieczeństwo, `CompanySettings`) |
 | AUTH-006 | 429 | Zbyt wiele nieudanych prób logowania PIN-em — spróbuj ponownie później. | `maxPinAttempts` nieudanych prób PIN-u pod danym e-mailem w oknie `pinLockoutDurationMinutes` (`CompanySettings`) — licznik liczony per (współdzielony) e-mail w Redis, ODRĘBNY od `AUTH-005` (który liczy per konto przez `LoginEvent`), bo przy logowaniu PIN-em wiele kont może dzielić ten sam e-mail (`User.loginMethod=Pin`). |
+| AUTH-007 | 403 | Potwierdź adres e-mail, aby się zalogować — sprawdź skrzynkę pocztową. | Fundament „Fresh Install" — hasło poprawne, ale `User.emailVerifiedAt IS NULL`. Rzucane DOPIERO po weryfikacji hasła, nigdy przy błędnym haśle (nie zdradza stanu konta atakującemu zgadującemu hasło). |
+| AUTH-008 | 401 | Link potwierdzający jest nieprawidłowy, wygasł albo został już wykorzystany. | `POST /auth/verify-email` — token nietrafiony/wygasły/zużyty; jeden generyczny komunikat dla wszystkich trzech przyczyn (wzorzec `PARTNERSHIP-007`). |
+| AUTH-009 | 401 | Link resetu hasła jest nieprawidłowy, wygasł albo został już wykorzystany. | `POST /auth/reset-password` — analogicznie do `AUTH-008`, dla `User.passwordResetTokenHash`. |
+
+---
+
+## PLATFORM — administrator platformy (poza tenantami)
+
+| Kod | HTTP | Treść (PL) | Kiedy występuje |
+|---|---|---|---|
+| PLATFORM-001 | 401 | Nieprawidłowy adres e-mail lub hasło. | `POST /platform-auth/login` — błędne dane `PlatformAdmin` (model całkowicie rozłączny z `User`/`Company`, patrz `schema.prisma`). |
+| PLATFORM-002 | 403 | Konto administratora platformy jest nieaktywne. | `PlatformAdmin.active=false`. |
 
 ---
 

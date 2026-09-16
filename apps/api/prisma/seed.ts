@@ -150,6 +150,47 @@ const DEFAULT_NOTIFICATION_TEMPLATES: Array<{
       'Dzień dobry,\n\n{{distributorName}} zaprasza firmę {{companyName}} do współpracy w SmartRMA jako partner B2B, w zakresie marek: {{brandNames}}.\n\nAby założyć konto i zaakceptować zaproszenie, przejdź pod adres:\n{{inviteUrl}}\n\nJeżeli nie spodziewał(a)eś się tej wiadomości, możesz ją zignorować.',
     variables: ['distributorName', 'companyName', 'brandNames', 'inviteUrl'],
   },
+  {
+    // Fundament „Fresh Install" — jedyny e-mail wysyłany PRZED aktywacją konta
+    // (`AccountRecoveryService.sendVerificationEmail`, wołane z
+    // `CompaniesService.signup`). Rozwiązywany przez `NotificationsRepository.
+    // findGlobalTemplate` (companyId:null wprost — nowa firma jeszcze nie ma
+    // własnej konfiguracji poczty, patrz `MailService.sendPlatformEmail`),
+    // nie przez `resolveTemplate`/`NotificationDispatcherService` — nie
+    // trafia do tabeli `Notification` (Platform Admin i signup mogą nie mieć
+    // sensownego `companyId` do zapisania jako właściciel wiersza).
+    code: 'account.emailVerification',
+    channel: NotificationChannel.Email,
+    subject: 'Potwierdź adres e-mail — SmartRMA',
+    bodyTemplate:
+      'Dzień dobry {{firstName}},\n\ndziękujemy za założenie konta w SmartRMA dla firmy {{companyName}}.\n\nAby aktywować konto, potwierdź adres e-mail:\n{{verificationUrl}}\n\nLink jest ważny {{expiresInHours}} godzin. Jeśli nie zakładałeś/aś tego konta, zignoruj tę wiadomość.',
+    variables: ['firstName', 'companyName', 'verificationUrl', 'expiresInHours'],
+  },
+  {
+    // Ponowna wysyłka linku weryfikacyjnego (`POST /auth/verify-email/resend`) —
+    // treść celowo identyczna jak `account.emailVerification` (nowy token,
+    // ten sam cel), osobny kod tylko żeby firma mogła kiedyś nadpisać obie
+    // wiadomości niezależnie (Ustawienia › Szablony wiadomości, gdy ten
+    // ekran zostanie kiedyś rozszerzony o szablony globalne).
+    code: 'account.emailVerificationResend',
+    channel: NotificationChannel.Email,
+    subject: 'Potwierdź adres e-mail — SmartRMA',
+    bodyTemplate:
+      'Dzień dobry {{firstName}},\n\notrzymaliśmy prośbę o ponowną wysyłkę linku potwierdzającego adres e-mail dla konta w firmie {{companyName}}.\n\n{{verificationUrl}}\n\nLink jest ważny {{expiresInHours}} godzin. Jeśli nie prosiłeś/aś o tę wiadomość, zignoruj ją — twoje konto pozostaje bezpieczne.',
+    variables: ['firstName', 'companyName', 'verificationUrl', 'expiresInHours'],
+  },
+  {
+    // `POST /auth/reset-password` (żądanie) — `AccountRecoveryService.forgotPassword`.
+    // Odpowiedź API jest ZAWSZE neutralna niezależnie od tego, czy e-mail
+    // istnieje (przeciw enumeracji kont) — ten e-mail jest jedynym miejscem,
+    // gdzie faktyczna próba resetu jest widoczna, i tylko dla właściciela skrzynki.
+    code: 'account.passwordReset',
+    channel: NotificationChannel.Email,
+    subject: 'Reset hasła — SmartRMA',
+    bodyTemplate:
+      'Dzień dobry {{firstName}},\n\notrzymaliśmy prośbę o zresetowanie hasła do konta SmartRMA ({{companyName}}).\n\nAby ustawić nowe hasło, przejdź pod adres:\n{{resetUrl}}\n\nLink jest ważny {{expiresInMinutes}} minut i można go użyć tylko raz. Jeśli nie prosiłeś/aś o reset hasła, zignoruj tę wiadomość — twoje obecne hasło pozostaje bez zmian.',
+    variables: ['firstName', 'companyName', 'resetUrl', 'expiresInMinutes'],
+  },
 ];
 
 const ALL_PERMISSION_CODES = Object.values(PERMISSIONS);

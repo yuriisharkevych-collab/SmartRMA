@@ -148,7 +148,9 @@ describe('CompaniesRepository', () => {
         {
           name: 'TextilePro',
           slug: 'textilepro',
+          type: 'ManufacturerDistributor' as never,
           orgKind: 'Producent' as never,
+          nip: '1234567890',
           caseNumberPrefix: 'TEXT',
         },
         tx as never,
@@ -160,6 +162,7 @@ describe('CompaniesRepository', () => {
           slug: 'textilepro',
           type: 'ManufacturerDistributor',
           orgKind: 'Producent',
+          nip: '1234567890',
         },
       });
       expect(tx.companySettings.create).toHaveBeenCalledWith({
@@ -189,6 +192,45 @@ describe('CompaniesRepository', () => {
       expect(result).toEqual({ id: 'company-1', name: 'TextilePro' });
     });
 
+    it('createOrganizationShell() dla type=Shop NIE zakłada samoopisanego Contractor/Manufacturer/Brand — Sklep prowadzi katalog o KIMŚ INNYM, nie o sobie', async () => {
+      const tx = {
+        company: {
+          create: jest.fn().mockResolvedValue({ id: 'company-2', name: 'Sklep Testowy' }),
+        },
+        companySettings: { create: jest.fn().mockResolvedValue({}) },
+        shop: { create: jest.fn().mockResolvedValue({}) },
+        contractor: { create: jest.fn() },
+        manufacturer: { create: jest.fn() },
+        brand: { create: jest.fn() },
+        caseStatusDefinition: { createMany: jest.fn().mockResolvedValue({}) },
+      };
+
+      await repository.createOrganizationShell(
+        {
+          name: 'Sklep Testowy',
+          slug: 'sklep-testowy',
+          type: 'Shop' as never,
+          orgKind: null,
+          nip: '1234567890',
+          caseNumberPrefix: 'SKLE',
+        },
+        tx as never,
+      );
+
+      expect(tx.company.create).toHaveBeenCalledWith({
+        data: {
+          name: 'Sklep Testowy',
+          slug: 'sklep-testowy',
+          type: 'Shop',
+          orgKind: null,
+          nip: '1234567890',
+        },
+      });
+      expect(tx.contractor.create).not.toHaveBeenCalled();
+      expect(tx.manufacturer.create).not.toHaveBeenCalled();
+      expect(tx.brand.create).not.toHaveBeenCalled();
+    });
+
     it('createFirstAdmin() rzuca, gdy rola systemowa Administrator nie istnieje (środowisko nie zaseedowane) — nie tworzy User-a w tym stanie', async () => {
       const tx = {
         role: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -202,6 +244,8 @@ describe('CompaniesRepository', () => {
             lastName: 'Nowak',
             email: 'anna@textilepro.pl',
             passwordHash: 'hash',
+            emailVerificationTokenHash: 'a'.repeat(64),
+            emailVerificationTokenExpiresAt: new Date('2026-01-02'),
           },
           tx as never,
         ),
@@ -209,11 +253,12 @@ describe('CompaniesRepository', () => {
       expect(tx.user.create).not.toHaveBeenCalled();
     });
 
-    it('createFirstAdmin() tworzy DOKŁADNIE JEDNEGO usera z rolą systemową Administrator, aktywnego od razu', async () => {
+    it('createFirstAdmin() tworzy DOKŁADNIE JEDNEGO usera z rolą systemową Administrator, aktywnego od razu, BEZ emailVerifiedAt (czeka na potwierdzenie)', async () => {
       const tx = {
         role: { findFirst: jest.fn().mockResolvedValue({ id: 'role-admin' }) },
         user: { create: jest.fn().mockResolvedValue({ id: 'user-1' }) },
       };
+      const expiresAt = new Date('2026-01-02');
       await repository.createFirstAdmin(
         'company-1',
         {
@@ -221,6 +266,8 @@ describe('CompaniesRepository', () => {
           lastName: 'Nowak',
           email: 'anna@textilepro.pl',
           passwordHash: 'hash-abc',
+          emailVerificationTokenHash: 'b'.repeat(64),
+          emailVerificationTokenExpiresAt: expiresAt,
         },
         tx as never,
       );
@@ -232,9 +279,12 @@ describe('CompaniesRepository', () => {
           email: 'anna@textilepro.pl',
           passwordHash: 'hash-abc',
           active: true,
+          emailVerificationTokenHash: 'b'.repeat(64),
+          emailVerificationTokenExpiresAt: expiresAt,
           roles: { create: [{ roleId: 'role-admin' }] },
         },
       });
+      expect(tx.user.create.mock.calls[0][0].data).not.toHaveProperty('emailVerifiedAt');
     });
   });
 });

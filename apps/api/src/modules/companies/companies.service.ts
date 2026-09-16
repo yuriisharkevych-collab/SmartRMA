@@ -1,17 +1,16 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { OrganizationKind, OrganizationType, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { AppException } from '../../common/exceptions/app.exception';
 import { ERROR_CODES } from '../../common/exceptions/error-codes.const';
 import { deriveCaseNumberPrefix, slugify } from '../../common/utils/organization-slug.util';
+import { generateAccountToken, hashAccountToken } from '../../common/utils/account-token.util';
 import { AuditRepository } from '../audit/audit.repository';
-import { AuthService } from '../auth/auth.service';
-import { AuthTokensEntity } from '../auth/entities/auth-tokens.entity';
 import { PasswordService } from '../auth/services/password.service';
-import { UsersRepository } from '../users/users.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { IStorageService, STORAGE_SERVICE } from '../../storage/storage.interface';
 import {
+  CompanySignupCompletedPayload,
   CompanyUpdatedPayload,
   ShopCreatedPayload,
   ShopDeactivatedPayload,
@@ -27,6 +26,7 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
 import { UpdateShopDto } from './dto/update-shop.dto';
 import { CompanyEntity } from './entities/company.entity';
 import { ShopEntity } from './entities/shop.entity';
+import { SignupResultEntity } from './entities/signup-result.entity';
 import { CompanyMapper } from './mappers/company.mapper';
 
 const SHOP_AUDIT_FIELDS = ['name', 'address', 'city', 'postalCode', 'phone', 'email'] as const;
@@ -79,21 +79,17 @@ export class CompaniesService {
     private readonly auditRepository: AuditRepository,
     private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,
-    private readonly usersRepository: UsersRepository,
-    private readonly authService: AuthService,
     @Inject(EVENT_BUS) private readonly eventBus: IEventBus,
     @Inject(STORAGE_SERVICE) private readonly storageService: IStorageService,
   ) {}
 
   /**
-   * Etap 6 — onboarding samoobsługowy: NOWA firma typu Producent/Dystrybutor
-   * "od zera", bez ręcznego SQL/Prisma/skryptu developerskiego. Dokładnie ten
-   * sam wzorzec co `PartnershipsService.acceptPartnerInvite` (załóż firmę →
-   * załóż JEDNEGO Administratora → automatyczny login), świadomie NIE nowy,
-   * równoległy mechanizm — różnica jest wyłącznie w tym, KTO inicjuje
-   * (tu: sam zakładający, tam: zaproszenie od dystrybutora) i że tu NIE MA
-   * kroku e-mail/token (jeden krok zamiast dwóch, bo nie ma kogo informować
-   * z wyprzedzeniem).
+   * Onboarding samoobsługowy: NOWA firma "od zera", bez ręcznego SQL/Prisma/
+   * skryptu developerskiego. Etap 6 ograniczał to do Producent/Dystrybutor i
+   * logował od razu; Fundament „Fresh Install" rozszerza o `Shop`
+   * (`dto.orgType`, patrz `CompanySignupDto`) i USUWA auto-login (breaking
+   * change, wprost wymagany) — konto czeka na potwierdzenie e-maila przed
+   * pierwszym logowaniem (AUTH-007, `AccountRecoveryService`).
    *
    * Bezpieczeństwo (wprost wymagane przez właściciela):
    *  - DTO nie przyjmuje `companyId`/`orgId`/`roleId` — `id` firmy i admina są
@@ -105,13 +101,22 @@ export class CompaniesService {
    *    (`SYSTEM_ROLE_CODES.ADMINISTRATOR`, `companyId:null`), TA SAMA co
    *    każdy inny bootstrap w tym repo, więc RBAC nowej firmy jest identyczne
    *    z każdą inną (`ALL_PERMISSION_CODES` minus `cases.decision.*`, seed.ts);
-   *  - Company+CompanySettings+Shop+samoopisany profil+katalog statusów+User
-   *    w JEDNEJ `prisma.$transaction` — częściowy zapis (np. firma bez
-   *    Administratora) nie może przetrwać awarii w środku sekwencji;
+   *  - Company+CompanySettings+Shop+(samoopisany profil dla Producent/
+   *    Dystrybutor)+katalog statusów+User+token weryfikacji w JEDNEJ
+   *    `prisma.$transaction` — częściowy zapis (np. firma bez Administratora,
+   *    albo Administrator bez tokenu) nie może przetrwać awarii w środku
+   *    sekwencji;
    *  - izolacja tenantów jest strukturalna: nowa firma nie ma ŻADNEJ relacji
-   *    do jakiejkolwiek istniejącej — wszystko poniżej to świeże `id`.
+   *    do jakiejkolwiek istniejącej — wszystko poniżej to świeże `id`;
+   *  - wysyłka e-maila weryfikacyjnego dzieje się PO commitcie transakcji
+   *    (nie w jej środku — `MailService.sendPlatformEmail` nigdy nie rzuca,
+   *    ale zewnętrzne wywołanie sieciowe nie powinno trzymać otwartej
+   *    transakcji bazodanowej) — awaria wysyłki jest logowana przez
+   *    `AccountRecoveryService`, ale NIE cofa już utworzonego konta (spójne z
+   *    NOTIFICATION-002: konto istnieje, e-mail można wysłać ponownie przez
+   *    `POST /auth/verify-email/resend`).
    */
-  async signup(dto: CompanySignupDto): Promise<AuthTokensEntity> {
+  async signup(dto: CompanySignupDto): Promise<SignupResultEntity> {
     const emailTaken = await this.companiesRepository.passwordAccountEmailExists(dto.adminEmail);
     if (emailTaken) {
       throw new AppException(
@@ -121,7 +126,13 @@ export class CompaniesService {
       );
     }
 
+    const type: OrganizationType = dto.orgType === 'Shop' ? 'Shop' : 'ManufacturerDistributor';
+    const orgKind: OrganizationKind | null = dto.orgType === 'Shop' ? null : dto.orgType;
+
     const passwordHash = await this.passwordService.hash(dto.password);
+    const verificationToken = generateAccountToken();
+    const verificationTokenHash = hashAccountToken(verificationToken);
+    const verificationTokenExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const baseSlug = slugify(dto.companyName);
     const baseCaseNumberPrefix = deriveCaseNumberPrefix(dto.companyName);
 
@@ -149,7 +160,7 @@ export class CompaniesService {
 
       const result = await this.prisma.$transaction(async (tx) => {
         const company = await this.companiesRepository.createOrganizationShell(
-          { name: dto.companyName, slug, orgKind: dto.orgKind, caseNumberPrefix },
+          { name: dto.companyName, slug, type, orgKind, nip: dto.nip, caseNumberPrefix },
           tx,
         );
         const user = await this.companiesRepository.createFirstAdmin(
@@ -159,6 +170,8 @@ export class CompaniesService {
             lastName: dto.adminLastName,
             email: dto.adminEmail,
             passwordHash,
+            emailVerificationTokenHash: verificationTokenHash,
+            emailVerificationTokenExpiresAt: verificationTokenExpiresAt,
           },
           tx,
         );
@@ -185,11 +198,35 @@ export class CompaniesService {
       action: 'COMPANY_SIGNUP',
       entityType: 'Company',
       entityId: companyId,
-      newValue: { companyName: dto.companyName, orgKind: dto.orgKind } as Prisma.InputJsonValue,
+      newValue: { companyName: dto.companyName, orgType: dto.orgType } as Prisma.InputJsonValue,
     });
 
-    const userWithRoles = await this.usersRepository.findPasswordAccountByEmail(dto.adminEmail);
-    return this.authService.login(userWithRoles!);
+    // Zdarzenie, nie wywołanie wprost `AccountRecoveryService` — patrz TODO
+    // `event-names.const.ts` przy `COMPANY_SIGNUP_COMPLETED`: import
+    // `AccountRecoveryModule` tutaj zamykał cykl modułów
+    // (CompaniesModule → AccountRecoveryModule → MailModule → CompaniesModule),
+    // na którym `NestFactory.create()` faktycznie się wieszał.
+    await this.eventBus.publish(
+      new DomainEvent<CompanySignupCompletedPayload>({
+        eventName: EVENT_NAMES.COMPANY_SIGNUP_COMPLETED,
+        companyId,
+        aggregateType: 'Company',
+        aggregateId: companyId,
+        actorUserId: userId,
+        correlationId: randomUUID(),
+        payload: {
+          email: dto.adminEmail,
+          firstName: dto.adminFirstName,
+          companyName: dto.companyName,
+          verificationToken,
+        },
+      }),
+    );
+
+    return {
+      message: 'Konto założone. Sprawdź skrzynkę e-mail, aby potwierdzić adres i aktywować konto.',
+      email: dto.adminEmail,
+    };
   }
 
   async findById(id: string): Promise<CompanyEntity> {

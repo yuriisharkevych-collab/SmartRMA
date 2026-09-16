@@ -1,25 +1,20 @@
 import { type FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { isPublicApiError } from '@/api/publicClient';
 import { companiesApi, type CompanySignupPayload } from '@/api/companies.api';
 import { EyeIcon, EyeOffIcon } from '@/components/common/icons';
-import { useAuth } from '@/hooks/useAuth';
 
 /**
- * Etap 6 — `/signup`. Odpowiednik `AcceptPartnerInvitePage.tsx`, ale bez
- * zaproszenia z góry: KAŻDY może założyć nową organizację Producent/Dystrybutor
- * i od razu zostaje jej pierwszym (i jedynym) Administratorem — zero SQL, zero
- * skryptu developerskiego, zero pomocy administratora SmartRMA. Marka, katalog,
- * partnerzy i formularz publiczny konfiguruje się PO zalogowaniu, w tych samych
- * ekranach co każda inna firma (Producenci/Produkty/Partnerzy/Ustawienia) —
- * ten formularz zakłada wyłącznie "pustą skorupę" organizacji.
+ * `/signup` — onboarding samoobsługowy. Fundament „Fresh Install" rozszerza
+ * Etap 6 (Producent/Dystrybutor) o `Shop` i dokłada wymagany NIP; USUWA
+ * auto-login (breaking change) — konto czeka na potwierdzenie e-maila
+ * (AUTH-007), więc po sukcesie pokazujemy ekran "sprawdź skrzynkę" zamiast
+ * przekierowywać od razu do panelu.
  */
 export function SignupPage() {
-  const { loginWithTokens } = useAuth();
-  const navigate = useNavigate();
-
   const [companyName, setCompanyName] = useState('');
-  const [orgKind, setOrgKind] = useState<CompanySignupPayload['orgKind']>('Producent');
+  const [orgType, setOrgType] = useState<CompanySignupPayload['orgType']>('Shop');
+  const [nip, setNip] = useState('');
   const [adminFirstName, setAdminFirstName] = useState('');
   const [adminLastName, setAdminLastName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
@@ -27,22 +22,23 @@ export function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
     try {
-      const tokens = await companiesApi.signup({
+      const result = await companiesApi.signup({
         companyName: companyName.trim(),
-        orgKind,
+        orgType,
+        nip: nip.trim(),
         adminFirstName: adminFirstName.trim(),
         adminLastName: adminLastName.trim(),
         adminEmail: adminEmail.trim(),
         password,
       });
-      loginWithTokens(tokens);
-      navigate('/', { replace: true });
+      setSubmittedEmail(result.email);
     } catch (err) {
       setError(
         isPublicApiError(err)
@@ -52,6 +48,30 @@ export function SignupPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (submittedEmail) {
+    return (
+      <div className="login-page">
+        <div className="login-card">
+          <div className="login-brand">
+            <div className="sidebar-brand-mark">R</div>
+            <div className="sidebar-brand-text" style={{ fontSize: 16 }}>
+              Smart<span>RMA</span> AI
+            </div>
+          </div>
+          <h1 className="login-title">Sprawdź skrzynkę e-mail</h1>
+          <p className="login-subtitle">
+            Wysłaliśmy link potwierdzający na adres <strong>{submittedEmail}</strong>. Kliknij go,
+            aby aktywować konto — dopiero wtedy będzie można się zalogować.
+          </p>
+          <p className="text-sm text-muted" style={{ textAlign: 'center', marginTop: 18 }}>
+            Nie widzisz wiadomości? Sprawdź folder Spam albo{' '}
+            <Link to="/login">wróć do logowania</Link>, żeby wysłać link ponownie.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -66,8 +86,8 @@ export function SignupPage() {
 
         <h1 className="login-title">Załóż firmę w SmartRMA</h1>
         <p className="login-subtitle">
-          Dla producentów i dystrybutorów. Po założeniu skonfigurujesz markę, produkty i formularz
-          reklamacyjny samodzielnie z panelu — bez naszej pomocy.
+          Dla sklepów, producentów i dystrybutorów. Po potwierdzeniu e-maila skonfigurujesz markę,
+          produkty i formularz reklamacyjny samodzielnie z panelu — bez naszej pomocy.
         </p>
 
         <form className="login-form" onSubmit={handleSubmit}>
@@ -89,15 +109,28 @@ export function SignupPage() {
             />
           </div>
           <div className="field">
-            <label htmlFor="su-org-kind">Rodzaj działalności</label>
+            <label htmlFor="su-org-type">Rodzaj działalności</label>
             <select
-              id="su-org-kind"
-              value={orgKind}
-              onChange={(e) => setOrgKind(e.target.value as CompanySignupPayload['orgKind'])}
+              id="su-org-type"
+              value={orgType}
+              onChange={(e) => setOrgType(e.target.value as CompanySignupPayload['orgType'])}
             >
+              <option value="Shop">Sklep</option>
               <option value="Producent">Producent</option>
               <option value="Dystrybutor">Dystrybutor</option>
             </select>
+          </div>
+          <div className="field">
+            <label htmlFor="su-nip">NIP</label>
+            <input
+              id="su-nip"
+              type="text"
+              required
+              placeholder="np. 123-456-32-18"
+              value={nip}
+              onChange={(e) => setNip(e.target.value)}
+              autoComplete="off"
+            />
           </div>
           <div className="field">
             <label htmlFor="su-first-name">Imię (Administrator)</label>
@@ -165,9 +198,13 @@ export function SignupPage() {
             style={{ justifyContent: 'center', padding: 11 }}
             disabled={submitting}
           >
-            {submitting ? 'Zakładanie firmy…' : 'Załóż firmę i przejdź do panelu'}
+            {submitting ? 'Zakładanie firmy…' : 'Załóż firmę'}
           </button>
         </form>
+
+        <p className="text-sm text-muted" style={{ textAlign: 'center', marginTop: 18 }}>
+          Masz już konto? <Link to="/login">Zaloguj się</Link>
+        </p>
       </div>
     </div>
   );

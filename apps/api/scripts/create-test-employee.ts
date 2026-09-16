@@ -46,6 +46,7 @@ async function main() {
       email,
       passwordHash,
       active: true,
+      emailVerifiedAt: new Date(),
       roles: { create: { roleId: role.id } },
     },
   });

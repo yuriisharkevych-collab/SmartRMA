@@ -21,4 +21,12 @@ export type SendEmailResult = { ok: true } | { ok: false; error: string };
  */
 export interface IMailService {
   send(email: OutboundEmail): Promise<SendEmailResult>;
+  /**
+   * Fundament „Fresh Install" — e-maile cyklu życia konta (potwierdzenie
+   * adresu, reset hasła), wysyłane PRZED tym, zanim odbiorca ma jakikolwiek
+   * dostęp do panelu — patrz doc-comment `MailService.sendPlatformEmail`.
+   * Część portu (nie tylko `MailService`) — `AccountRecoveryService` zna
+   * WYŁĄCZNIE `IMailService`/`MAIL_SERVICE`, tak jak reszta kodu domenowego.
+   */
+  sendPlatformEmail(email: { to: string; subject: string; html: string }): Promise<SendEmailResult>;
 }

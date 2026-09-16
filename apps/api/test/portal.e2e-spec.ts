@@ -65,7 +65,7 @@ describe('Portal Klienta (e2e)', () => {
     const email = `e2e-portal-${name.toLowerCase()}-${suffix}@example.com`;
     const passwordService = app.get(PasswordService);
     await prisma.user.create({
-      data: { companyId: company.id, firstName: name, lastName: 'E2E', email, passwordHash: await passwordService.hash(password), active: true, roles: { create: [{ roleId: role.id }] } },
+      data: { companyId: company.id, firstName: name, lastName: 'E2E', email, passwordHash: await passwordService.hash(password), active: true, emailVerifiedAt: new Date(), roles: { create: [{ roleId: role.id }] } },
     });
 
     const login = await request(app.getHttpServer()).post('/api/auth/login').send({ email, password });

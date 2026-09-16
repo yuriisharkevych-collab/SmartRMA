@@ -20,8 +20,11 @@ import { ClientNewCasePage } from '@/pages/portal/ClientNewCasePage';
 import { ClientPortalPage } from '@/pages/portal/ClientPortalPage';
 import { AcceptPartnerInvitePage } from '@/pages/public/AcceptPartnerInvitePage';
 import { BrandComplaintFormPage } from '@/pages/public/BrandComplaintFormPage';
+import { ForgotPasswordPage } from '@/pages/public/ForgotPasswordPage';
 import { PublicComplaintFormPage } from '@/pages/public/PublicComplaintFormPage';
+import { ResetPasswordPage } from '@/pages/public/ResetPasswordPage';
 import { SignupPage } from '@/pages/public/SignupPage';
+import { VerifyEmailPage } from '@/pages/public/VerifyEmailPage';
 
 /**
  * Trasy pod powłoką pracownika (`/`), pod Portalem Klienta (`/portal`, obsługa
@@ -38,6 +41,12 @@ export const router = createBrowserRouter([
   // `AuthLayout`/`ProtectedRoute` z tego samego powodu co `/partner-invite/:token`:
   // zakładający nie ma jeszcze żadnej sesji ani firmy.
   { path: '/signup', element: <SignupPage /> },
+  // Fundament „Fresh Install" — potwierdzenie e-maila / reset hasła, oba
+  // BEZ sesji z tego samego powodu co `/signup` wyżej (token w query string
+  // jest jedyną tożsamością wołającego na tym etapie).
+  { path: '/verify-email', element: <VerifyEmailPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   // Publiczny Formularz Reklamacyjny — świadomie POZA każdym layoutem (nie
   // `AppLayout`/`ProtectedRoute`: klient nie ma sesji; nie `PortalLayout`: to
   // ekran PRZED istnieniem jakiejkolwiek sprawy). `.wizard-page` z

@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Company, LoginMethod, OrganizationKind, Prisma, Shop } from '@prisma/client';
+import {
+  Company,
+  LoginMethod,
+  OrganizationKind,
+  OrganizationType,
+  Prisma,
+  Shop,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DEFAULT_STATUS_CATALOG } from '../case-statuses/case-statuses.service';
 import { SYSTEM_ROLE_CODES } from '../../rbac/constants/roles.const';
@@ -56,25 +63,40 @@ export class CompaniesRepository {
   }
 
   /**
-   * Zakłada organizację typu Producent/Dystrybutor "od zera" — DOKŁADNIE ten sam
-   * komplet co `scripts/create-organization.ts` (Company + CompanySettings +
-   * Shop + samoopisany Contractor/Manufacturer/Brand + katalog statusów), tylko
-   * jako wywoływalna metoda repozytorium zamiast jednorazowego skryptu poza
-   * NestJS DI — świadomie NIE nowy, równoległy mechanizm inicjalizacji firmy
-   * (właściciel: "nie twórz równoległego mechanizmu"), tylko ten sam wzorzec
-   * przeniesiony do warstwy aplikacji, żeby `CompaniesService.signup` mógł go
-   * wywołać wewnątrz JEDNEJ transakcji z utworzeniem pierwszego Administratora.
+   * Zakłada organizację "od zera" — DOKŁADNIE ten sam komplet co
+   * `scripts/create-organization.ts` (Company + CompanySettings + Shop +
+   * katalog statusów), tylko jako wywoływalna metoda repozytorium zamiast
+   * jednorazowego skryptu poza NestJS DI — świadomie NIE nowy, równoległy
+   * mechanizm inicjalizacji firmy (właściciel: "nie twórz równoległego
+   * mechanizmu"), tylko ten sam wzorzec przeniesiony do warstwy aplikacji,
+   * żeby `CompaniesService.signup` mógł go wywołać wewnątrz JEDNEJ transakcji
+   * z utworzeniem pierwszego Administratora.
+   *
+   * Fundament „Fresh Install" dokłada gałąź `type=Shop`: samoopisany
+   * Contractor/Manufacturer/Brand (katalog "producentów, których TA firma
+   * obsługuje") ma sens WYŁĄCZNIE dla `ManufacturerDistributor` — Sklep
+   * prowadzi katalog o KIMŚ INNYM (istniejąca mechanika `ManufacturersPage`),
+   * nie o sobie samym. Tworzenie go dla nowego Sklepu byłoby pustym,
+   * mylącym rekordem "producenta" o tej samej nazwie co sam Sklep.
    */
   async createOrganizationShell(
-    data: { name: string; slug: string; orgKind: OrganizationKind; caseNumberPrefix: string },
+    data: {
+      name: string;
+      slug: string;
+      type: OrganizationType;
+      orgKind: OrganizationKind | null;
+      nip: string;
+      caseNumberPrefix: string;
+    },
     client: PrismaClientLike = this.prisma,
   ): Promise<Company> {
     const company = await client.company.create({
       data: {
         name: data.name,
         slug: data.slug,
-        type: 'ManufacturerDistributor',
+        type: data.type,
         orgKind: data.orgKind,
+        nip: data.nip,
       },
     });
     await client.companySettings.create({
@@ -82,19 +104,21 @@ export class CompaniesRepository {
     });
     await client.shop.create({ data: { companyId: company.id, name: `${data.name} — siedziba` } });
 
-    const contractor = await client.contractor.create({
-      data: { companyId: company.id, name: data.name, category: 'Manufacturer' },
-    });
-    const manufacturer = await client.manufacturer.create({
-      data: {
-        companyId: company.id,
-        contractorId: contractor.id,
-        submissionMethod: 'FormularzWWW',
-      },
-    });
-    await client.brand.create({
-      data: { companyId: company.id, manufacturerId: manufacturer.id, name: data.name },
-    });
+    if (data.type === 'ManufacturerDistributor') {
+      const contractor = await client.contractor.create({
+        data: { companyId: company.id, name: data.name, category: 'Manufacturer' },
+      });
+      const manufacturer = await client.manufacturer.create({
+        data: {
+          companyId: company.id,
+          contractorId: contractor.id,
+          submissionMethod: 'FormularzWWW',
+        },
+      });
+      await client.brand.create({
+        data: { companyId: company.id, manufacturerId: manufacturer.id, name: data.name },
+      });
+    }
 
     await client.caseStatusDefinition.createMany({
       data: DEFAULT_STATUS_CATALOG.map((row) => ({ ...row, companyId: company.id })),
@@ -103,10 +127,29 @@ export class CompaniesRepository {
     return company;
   }
 
-  /** Pierwszy i JEDYNY Administrator zakładany przez `signup()` — rola systemowa (`companyId:null`), dokładnie ten sam wzorzec co `PartnershipsRepository.createAdminUser`/`create-organization.ts`. Woła się RAZ, wewnątrz tej samej transakcji co `createOrganizationShell`. */
+  /**
+   * Pierwszy i JEDYNY Administrator zakładany przez `signup()` — rola
+   * systemowa (`companyId:null`), dokładnie ten sam wzorzec co
+   * `PartnershipsRepository.createAdminUser`/`create-organization.ts`. Woła
+   * się RAZ, wewnątrz tej samej transakcji co `createOrganizationShell`.
+   *
+   * Fundament „Fresh Install" — BRAK `emailVerifiedAt` (zostaje `null`, w
+   * przeciwieństwie do `UsersRepository.create`/`PartnershipsRepository.
+   * createAdminUser`, patrz ich doc-comment): to JEDYNE miejsce tworzenia
+   * `User`, gdzie nikt wcześniej nie poświadczył adresu e-mail — self-service
+   * rejestracja wymaga potwierdzenia PRZED pierwszym logowaniem (AUTH-007).
+   * Token weryfikacyjny zapisywany w TEJ SAMEJ transakcji co reszta konta.
+   */
   async createFirstAdmin(
     companyId: string,
-    data: { firstName: string; lastName: string; email: string; passwordHash: string },
+    data: {
+      firstName: string;
+      lastName: string;
+      email: string;
+      passwordHash: string;
+      emailVerificationTokenHash: string;
+      emailVerificationTokenExpiresAt: Date;
+    },
     client: PrismaClientLike = this.prisma,
   ) {
     const role = await this.findAdministratorRole(client);
@@ -119,6 +162,8 @@ export class CompaniesRepository {
         email: data.email,
         passwordHash: data.passwordHash,
         active: true,
+        emailVerificationTokenHash: data.emailVerificationTokenHash,
+        emailVerificationTokenExpiresAt: data.emailVerificationTokenExpiresAt,
         roles: { create: [{ roleId: role.id }] },
       },
     });

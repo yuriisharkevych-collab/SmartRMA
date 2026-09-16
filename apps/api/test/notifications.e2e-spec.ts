@@ -100,10 +100,10 @@ describe('Notifications (e2e)', () => {
     const noPermRole = await prisma.role.create({ data: { companyId, name: `E2E Notifications No Perms ${Date.now()}`, code: `e2e-notifications-no-perms-${Date.now()}` } });
 
     await prisma.user.create({
-      data: { companyId, firstName: 'Admin', lastName: 'E2E', email: adminEmail, passwordHash: await passwordService.hash(password), active: true, roles: { create: [{ roleId: adminRole.id }] } },
+      data: { companyId, firstName: 'Admin', lastName: 'E2E', email: adminEmail, passwordHash: await passwordService.hash(password), active: true, emailVerifiedAt: new Date(), roles: { create: [{ roleId: adminRole.id }] } },
     });
     await prisma.user.create({
-      data: { companyId, firstName: 'NoPerm', lastName: 'E2E', email: noPermEmail, passwordHash: await passwordService.hash(password), active: true, roles: { create: [{ roleId: noPermRole.id }] } },
+      data: { companyId, firstName: 'NoPerm', lastName: 'E2E', email: noPermEmail, passwordHash: await passwordService.hash(password), active: true, emailVerifiedAt: new Date(), roles: { create: [{ roleId: noPermRole.id }] } },
     });
 
     const adminLogin = await request(app.getHttpServer()).post('/api/auth/login').send({ email: adminEmail, password });

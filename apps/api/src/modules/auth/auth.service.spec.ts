@@ -24,6 +24,15 @@ function buildUser(overrides: Partial<UserWithRoles> = {}): UserWithRoles {
     active: true,
     lastLoginAt: null,
     createdAt: new Date('2026-01-01'),
+    // Fundament „Fresh Install" — konto zweryfikowane domyślnie w tym fixture,
+    // żeby testy istniejące PRZED AUTH-007 (logowanie hasłem/PIN-em, blokady,
+    // login/refresh) nie musiały same o tym wiedzieć; test AUTH-007 niżej
+    // nadpisuje `emailVerifiedAt: null` jawnie.
+    emailVerifiedAt: new Date('2026-01-01'),
+    emailVerificationTokenHash: null,
+    emailVerificationTokenExpiresAt: null,
+    passwordResetTokenHash: null,
+    passwordResetTokenExpiresAt: null,
     roles: [
       {
         userId: 'user-1',
@@ -163,6 +172,44 @@ describe('AuthService', () => {
       await expect(
         service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
       ).resolves.toBe(user);
+    });
+  });
+
+  describe('validateCredentials — potwierdzenie e-maila (AUTH-007, Fundament „Fresh Install")', () => {
+    it('rzuca AUTH-007, gdy hasło jest poprawne, ale emailVerifiedAt=null — PO sprawdzeniu hasła, nie przed (nie zdradza, że konto istnieje, komuś bez hasła)', async () => {
+      const user = buildUser({ emailVerifiedAt: null });
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(user);
+      passwordService.compare.mockResolvedValue(true);
+
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
+      ).rejects.toMatchObject({ code: 'AUTH-007' });
+      expect(passwordService.compare).toHaveBeenCalled();
+    });
+
+    it('rzuca AUTH-001 (nie AUTH-007) gdy hasło jest złe I konto niezweryfikowane — kolejność sprawdzeń nie zmienia się', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(
+        buildUser({ emailVerifiedAt: null }),
+      );
+      passwordService.compare.mockResolvedValue(false);
+
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'zle-haslo'),
+      ).rejects.toMatchObject({ code: 'AUTH-001' });
+    });
+
+    it('zapisuje nieudaną próbę logowania (LoginEvent) przy odrzuceniu AUTH-007, tak samo jak przy AUTH-001/AUTH-002', async () => {
+      usersRepository.findPasswordAccountByEmail.mockResolvedValue(
+        buildUser({ emailVerifiedAt: null }),
+      );
+      passwordService.compare.mockResolvedValue(true);
+
+      await expect(
+        service.validateCredentials('jan.kowalski@sklep.pl', 'dobre-haslo'),
+      ).rejects.toMatchObject({ code: 'AUTH-007' });
+      expect(usersRepository.recordLoginEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-1', success: false }),
+      );
     });
   });
 

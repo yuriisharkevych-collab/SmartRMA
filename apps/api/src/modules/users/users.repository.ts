@@ -55,6 +55,14 @@ export class UsersRepository {
     return this.prisma.user.findMany({ where: { companyId }, include: WITH_ROLES });
   }
 
+  /**
+   * Konto zakładane przez administratora firmy (`users.manage`) — z definicji
+   * konto "z polecenia" kogoś już uwierzytelnionego w tej firmie, nie
+   * samodzielna rejestracja. `emailVerifiedAt` ustawiony OD RAZU — fundament
+   * „Fresh Install" wymaga weryfikacji e-maila WYŁĄCZNIE dla self-service
+   * `POST /companies/signup` (`CompaniesRepository.createFirstAdmin`), nie
+   * dla kont zakładanych ręcznie przez kogoś, kto już ma dostęp do panelu.
+   */
   create(data: {
     companyId: string;
     shopId?: string | null;
@@ -76,6 +84,7 @@ export class UsersRepository {
         loginMethod: data.loginMethod,
         passwordHash: data.passwordHash,
         pinHash: data.pinHash,
+        emailVerifiedAt: new Date(),
         roles: { create: data.roleIds.map((roleId) => ({ roleId })) },
       },
       include: WITH_ROLES,
@@ -196,5 +205,66 @@ export class UsersRepository {
     client: Prisma.TransactionClient | PrismaService = this.prisma,
   ): Promise<unknown> {
     return client.user.delete({ where: { id } });
+  }
+
+  // --- Fundament „Fresh Install" — potwierdzenie e-maila + reset hasła ---
+
+  /** `AccountRecoveryService.resendVerification`/`CompaniesService.signup` (nowy token przy ponownej wysyłce) — nadpisuje POPRZEDNI token, jeśli istniał (poprzedni link naturalnie przestaje działać, `findByEmailVerificationTokenHash` go już nie znajdzie). */
+  setEmailVerificationToken(
+    id: string,
+    tokenHash: string,
+    expiresAt: Date,
+  ): Promise<UserWithRoles> {
+    return this.prisma.user.update({
+      where: { id },
+      data: { emailVerificationTokenHash: tokenHash, emailVerificationTokenExpiresAt: expiresAt },
+      include: WITH_ROLES,
+    });
+  }
+
+  /** `AccountRecoveryService.verifyEmail` — token jest hashowany SHA-256 (`account-token.util.ts`), więc porównanie jest wprost po wartości hasha (jak `PartnershipsRepository` dla `inviteTokenHash`), bez `bcrypt.compare`. */
+  findByEmailVerificationTokenHash(tokenHash: string): Promise<UserWithRoles | null> {
+    return this.prisma.user.findFirst({
+      where: { emailVerificationTokenHash: tokenHash },
+      include: WITH_ROLES,
+    });
+  }
+
+  /** Token jednorazowy — kasowany PRZY UŻYCIU (nie tylko przy wygaśnięciu), żeby ten sam link nie zadziałał drugi raz. */
+  markEmailVerified(id: string): Promise<UserWithRoles> {
+    return this.prisma.user.update({
+      where: { id },
+      data: {
+        emailVerifiedAt: new Date(),
+        emailVerificationTokenHash: null,
+        emailVerificationTokenExpiresAt: null,
+      },
+      include: WITH_ROLES,
+    });
+  }
+
+  /** `AccountRecoveryService.forgotPassword` — analogiczne do `setEmailVerificationToken`, osobna kolumna (`User.passwordResetTokenHash`), żeby link weryfikacji e-maila i link resetu hasła nigdy nie były tym samym tokenem. */
+  setPasswordResetToken(id: string, tokenHash: string, expiresAt: Date): Promise<UserWithRoles> {
+    return this.prisma.user.update({
+      where: { id },
+      data: { passwordResetTokenHash: tokenHash, passwordResetTokenExpiresAt: expiresAt },
+      include: WITH_ROLES,
+    });
+  }
+
+  findByPasswordResetTokenHash(tokenHash: string): Promise<UserWithRoles | null> {
+    return this.prisma.user.findFirst({
+      where: { passwordResetTokenHash: tokenHash },
+      include: WITH_ROLES,
+    });
+  }
+
+  /** `AccountRecoveryService.resetPassword` — ustawia nowe hasło i kasuje token jednorazowo w JEDNYM zapisie (bez okna między "hasło zmienione" a "token unieważniony"). Unieważnienie sesji (`RefreshTokenStoreService.revoke`) dzieje się osobno w serwisie — to repozytorium nie zna Redis. */
+  updatePasswordAndClearResetToken(id: string, passwordHash: string): Promise<UserWithRoles> {
+    return this.prisma.user.update({
+      where: { id },
+      data: { passwordHash, passwordResetTokenHash: null, passwordResetTokenExpiresAt: null },
+      include: WITH_ROLES,
+    });
   }
 }

@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EmailProvider } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { EmailProvider, SmtpEncryption } from '@prisma/client';
+import { PlatformMailConfig } from '../config/configuration';
 import { EncryptionService } from '../crypto/encryption.service';
 import { CompaniesService } from '../modules/companies/companies.service';
 import { CompanySettingsService } from '../modules/company-settings/company-settings.service';
@@ -24,6 +26,7 @@ export class MailService implements IMailService {
     private readonly companySettingsService: CompanySettingsService,
     private readonly companiesService: CompaniesService,
     private readonly encryption: EncryptionService,
+    private readonly config: ConfigService,
   ) {}
 
   async send(email: OutboundEmail): Promise<SendEmailResult> {
@@ -97,5 +100,77 @@ export class MailService implements IMailService {
       }),
       from,
     };
+  }
+
+  /**
+   * Fundament „Fresh Install" — e-maile CYKLU ŻYCIA KONTA (potwierdzenie
+   * adresu, reset hasła), wysyłane PRZED tym, zanim odbiorca ma jakikolwiek
+   * dostęp do panelu (a więc i do Ustawienia → E-mail swojej firmy) — patrz
+   * doc-comment `PlatformMailConfig`. Reużywa DOKŁADNIE te same klasy
+   * transportu (`ResendTransport`/`SmtpTransport`) i to samo opakowanie HTML
+   * (`wrapEmailHtml`) co `send()` wyżej — jedyna różnica to ŹRÓDŁO
+   * konfiguracji (ENV zamiast `EmailSettings` per `companyId`) i brak
+   * `companyId` w ogóle (bo `PlatformAdmin` żadnego nie ma, a przy signupie
+   * nowej firmy jeszcze nie istnieje jej własna konfiguracja poczty).
+   * Ten sam kontrakt "nigdy nie rzuca" co `send()`.
+   */
+  async sendPlatformEmail(email: {
+    to: string;
+    subject: string;
+    html: string;
+  }): Promise<SendEmailResult> {
+    try {
+      const built = this.buildPlatformTransport();
+      if (!built) {
+        return {
+          ok: false,
+          error: 'Brak konfiguracji poczty platformy (zmienne środowiskowe PLATFORM_MAIL_*).',
+        };
+      }
+      const html = wrapEmailHtml({ name: built.from.name }, email.html);
+      await built.transport.send({ to: email.to, subject: email.subject, html }, built.from);
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Wysyłka e-maila platformy nieudana (to=${email.to}): ${message}`);
+      return { ok: false, error: message };
+    }
+  }
+
+  private buildPlatformTransport(): {
+    transport: MailTransport;
+    from: { name: string; email: string };
+  } | null {
+    const settings = this.config.get<PlatformMailConfig>('platformMail')!;
+    if (!settings.senderName || !settings.senderEmail) return null;
+    const from = { name: settings.senderName, email: settings.senderEmail };
+
+    if (settings.provider === 'Resend') {
+      if (!settings.resendApiKey) return null;
+      return { transport: new ResendTransport(settings.resendApiKey), from };
+    }
+
+    if (settings.provider === 'Smtp') {
+      if (
+        !settings.smtpHost ||
+        !settings.smtpPort ||
+        !settings.smtpUsername ||
+        !settings.smtpPassword
+      ) {
+        return null;
+      }
+      return {
+        transport: new SmtpTransport({
+          host: settings.smtpHost,
+          port: settings.smtpPort,
+          username: settings.smtpUsername,
+          password: settings.smtpPassword,
+          encryption: settings.smtpEncryption as SmtpEncryption,
+        }),
+        from,
+      };
+    }
+
+    return null;
   }
 }

@@ -45,4 +45,23 @@ export const validationSchema = Joi.object({
   // Ustawienia › Backup — WYŁĄCZNIE informacyjne (patrz configuration.ts).
   // Opcjonalne: brak = ekran szczerze pokazuje "nieskonfigurowane".
   BACKUP_STORAGE_LOCATION: Joi.string().optional(),
+
+  // Fundament „Fresh Install" — Platform Admin (patrz configuration.ts,
+  // PlatformAuthConfig). Opcjonalne: brak = funkcja pozostaje nieaktywna,
+  // nie blokuje startu reszty aplikacji (identyczny kompromis co BACKUP_*).
+  PLATFORM_JWT_SECRET: Joi.string().min(16).optional(),
+  PLATFORM_JWT_EXPIRES_IN: Joi.string().default('30m'),
+
+  // Fundament „Fresh Install" — nadawca e-maili cyklu życia konta
+  // (potwierdzenie adresu, reset hasła), NIEZALEŻNY od EmailSettings
+  // per-tenant (patrz PlatformMailConfig). Wszystkie opcjonalne.
+  PLATFORM_MAIL_PROVIDER: Joi.string().valid('Resend', 'Smtp').optional(),
+  PLATFORM_MAIL_SENDER_NAME: Joi.string().optional(),
+  PLATFORM_MAIL_SENDER_EMAIL: Joi.string().optional(),
+  PLATFORM_RESEND_API_KEY: Joi.string().optional(),
+  PLATFORM_SMTP_HOST: Joi.string().optional(),
+  PLATFORM_SMTP_PORT: Joi.number().integer().optional(),
+  PLATFORM_SMTP_USERNAME: Joi.string().optional(),
+  PLATFORM_SMTP_PASSWORD: Joi.string().optional(),
+  PLATFORM_SMTP_ENCRYPTION: Joi.string().valid('None', 'Tls', 'Ssl').default('Tls'),
 });

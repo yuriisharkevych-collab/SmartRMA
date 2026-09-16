@@ -724,6 +724,25 @@ model User {
   lastLoginAt  DateTime?
   createdAt    DateTime    @default(now())
 
+  // Fundament „Fresh Install” — potwierdzenie adresu e-mail + self-service reset hasła.
+  // `emailVerifiedAt` — `null` = konto NIE może się jeszcze zalogować hasłem (patrz
+  // AUTH-007, AuthService.validatePasswordLogin), o ile wymaga weryfikacji (patrz niżej).
+  // Migracja BACKFILLUJE tę kolumnę `= createdAt` dla WSZYSTKICH istniejących wierszy —
+  // każde konto sprzed tej zmiany (bootstrap scripts, panel admina, akceptacja
+  // zaproszenia partnera — wszystkie ścieżki poza publicznym `/companies/signup`)
+  // zostaje potraktowane jako już zweryfikowane, zero regresji w logowaniu.
+  emailVerifiedAt DateTime?
+  // Token jednorazowy (SHA-256, NIGDY plaintext — patrz `common/utils/account-token.util.ts`,
+  // ten sam kompromis co `Partnership.inviteTokenHash`) — WYŁĄCZNIE bieżący, ważny token;
+  // ponowne wysłanie / zużycie nadpisuje albo czyści to pole, więc historii się tu nie trzyma
+  // (nie jest potrzebna — `AuditLog` i tak zapisuje fakt wysłania/weryfikacji).
+  emailVerificationTokenHash       String?
+  emailVerificationTokenExpiresAt  DateTime?
+  // „Nie pamiętam hasła” — identyczny wzorzec jak wyżej, osobne pole (inny TTL, inny cykl
+  // życia: nie każde konto kiedykolwiek go użyje, w przeciwieństwie do weryfikacji e-mail).
+  passwordResetTokenHash           String?
+  passwordResetTokenExpiresAt      DateTime?
+
   roles               UserRoleAssignment[]
   employee            Employee?
   ownedCases          Case[]               @relation("CaseOwner")
@@ -739,6 +758,30 @@ model User {
 
   @@index([email])
   @@index([companyId])
+  @@index([emailVerificationTokenHash])
+  @@index([passwordResetTokenHash])
+}
+
+// Fundament „Fresh Install" — Administrator PLATFORMY SmartRMA, celowo
+// CAŁKOWICIE ROZŁĄCZNY z User/Company: brak jakiejkolwiek relacji/FK do
+// tenanta. To nie „User z companyId=null" (świadomie odrzucone — User.companyId
+// zostaje WYMAGANE, żeby nie musieć przemyśleć na nowo całego modelu
+// bezpieczeństwa opartego dziś na tym założeniu, patrz każdy findFirst({where:
+// {id, companyId}}) w repozytoriach) — to ZUPEŁNIE INNY byt, uwierzytelniany
+// osobnym sekretem JWT (PlatformAuthConfig, INNY niż JwtConfig/PortalConfig,
+// dokładnie ten sam wzorzec rozdzielenia co Portal Klienta) i osobnym guardem
+// (PlatformAuthGuard), nigdy przepuszczanym przez PermissionsGuard/
+// RequirePermissions (te operują na Role/Permission per-tenant). Efekt:
+// nawet błąd w kodzie nie może przez pomyłkę nadać Platform Adminowi
+// uprawnień/danych JAKIEGOKOLWIEK tenanta — nie istnieje ścieżka zapytania,
+// którą dałoby się tak skierować.
+model PlatformAdmin {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
 }
 
 // Dane kadrowe - stanowisko, data zatrudnienia. Relacja 1:1 z User,

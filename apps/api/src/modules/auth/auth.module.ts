@@ -50,6 +50,9 @@ import { LocalStrategy } from './strategies/local.strategy';
     JwtStrategy,
     JwtRefreshStrategy,
   ],
-  exports: [AuthService, PasswordService],
+  // `RefreshTokenStoreService` — dodane dla `AccountRecoveryModule`
+  // (Fundament „Fresh Install"), `resetPassword` unieważnia sesję po zmianie
+  // hasła (`.revoke(userId)`) tym samym mechanizmem co `AuthService.logout`.
+  exports: [AuthService, PasswordService, RefreshTokenStoreService],
 })
 export class AuthModule {}

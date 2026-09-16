@@ -79,6 +79,53 @@ export interface MailDispatchConfig {
 }
 
 /**
+ * Fundament „Fresh Install" — sekret JWT dla `PlatformAdmin`, CELOWO
+ * ODDZIELNY od `JwtConfig` (pracownicy) i `PortalConfig` (Portal Klienta) —
+ * dokładnie ten sam wzorzec izolacji domen uwierzytelniania, co już
+ * istniejące rozdzielenie tamtych dwóch. Token podpisany `jwt.accessSecret`
+ * nigdy nie przejdzie walidacji jako token platformowy i odwrotnie — nawet
+ * błąd w guardzie nie pomyliłby tych dwóch światów, bo klucze są różne.
+ * Opcjonalny w Joi (nie blokuje startu aplikacji) — funkcja Platform Admin
+ * pozostaje nieaktywna (jasny błąd konfiguracji przy próbie użycia), dopóki
+ * operator świadomie jej nie skonfiguruje, zamiast wymagać tego od każdego
+ * dotychczasowego środowiska.
+ */
+export interface PlatformAuthConfig {
+  jwtSecret: string | null;
+  accessExpiresIn: string;
+}
+
+/**
+ * Fundament „Fresh Install" — nadawca dla e-maili CYKLU ŻYCIA KONTA
+ * (potwierdzenie adresu, reset hasła). Celowo ODDZIELNY od `EmailSettings`
+ * per-tenant (`MailService.buildTransport`): w chwili wysyłki potwierdzenia
+ * rejestracji NOWA firma z definicji NIE MA jeszcze skonfigurowanej własnej
+ * poczty (Ustawienia › E-mail — ekran dostępny dopiero PO zalogowaniu, a
+ * zalogować się można dopiero PO potwierdzeniu e-maila) — próba użycia
+ * konfiguracji tenanta byłaby więc zawsze pusta. To samo dotyczy
+ * `PlatformAdmin`, który w ogóle nie ma `companyId`. Ten sam kształt pól co
+ * `EmailSettings` (żeby dało się użyć TYCH SAMYCH klas transportu,
+ * `ResendTransport`/`SmtpTransport` — patrz `MailService.sendPlatformEmail`),
+ * ale czytany z ENV, nie z bazy — jeden, systemowy nadawca dla całej
+ * instalacji, nie per-tenant. W pełni opcjonalny (jak `backup` niżej) —
+ * brak konfiguracji = te trzy przepływy (weryfikacja e-mail, ponowna
+ * wysyłka, reset hasła) kończą się jawnym, nieudanym wynikiem wysyłki
+ * zamiast cichej próby przez transport, którego nie ma.
+ */
+export interface PlatformMailConfig {
+  provider: 'Resend' | 'Smtp' | null;
+  senderName: string | null;
+  senderEmail: string | null;
+  resendApiKey: string | null;
+  smtpHost: string | null;
+  smtpPort: number | null;
+  smtpUsername: string | null;
+  smtpPassword: string | null;
+  /** `SmtpEncryption` (`@prisma/client`) — string tutaj, żeby ten plik nie musiał importować klienta Prisma tylko po jeden typ; rzutowane w `MailService.buildPlatformTransport`, dokładnie tam, gdzie faktycznie trafia do `SmtpTransport`. */
+  smtpEncryption: 'None' | 'Tls' | 'Ssl';
+}
+
+/**
  * `validationSchema` (Joi, patrz `validation.schema.ts`) gwarantuje przy
  * starcie modułu, że pola bez `??` niżej są obecne w `process.env`
  * (`.required()`) — `ConfigModule.forRoot` rzuca przed wywołaniem tej
@@ -132,4 +179,20 @@ export default () => ({
   mailDispatch: {
     intervalMs: parseInt(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS ?? '10000', 10),
   } satisfies MailDispatchConfig,
+  platformAuth: {
+    jwtSecret: process.env.PLATFORM_JWT_SECRET ?? null,
+    accessExpiresIn: process.env.PLATFORM_JWT_EXPIRES_IN ?? '30m',
+  } satisfies PlatformAuthConfig,
+  platformMail: {
+    provider: (process.env.PLATFORM_MAIL_PROVIDER as 'Resend' | 'Smtp' | undefined) ?? null,
+    senderName: process.env.PLATFORM_MAIL_SENDER_NAME ?? null,
+    senderEmail: process.env.PLATFORM_MAIL_SENDER_EMAIL ?? null,
+    resendApiKey: process.env.PLATFORM_RESEND_API_KEY ?? null,
+    smtpHost: process.env.PLATFORM_SMTP_HOST ?? null,
+    smtpPort: process.env.PLATFORM_SMTP_PORT ? parseInt(process.env.PLATFORM_SMTP_PORT, 10) : null,
+    smtpUsername: process.env.PLATFORM_SMTP_USERNAME ?? null,
+    smtpPassword: process.env.PLATFORM_SMTP_PASSWORD ?? null,
+    smtpEncryption:
+      (process.env.PLATFORM_SMTP_ENCRYPTION as 'None' | 'Tls' | 'Ssl' | undefined) ?? 'Tls',
+  } satisfies PlatformMailConfig,
 });

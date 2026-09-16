@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { isApiError } from '@/api/client';
+import { authApi } from '@/api/auth.api';
 import { EyeIcon, EyeOffIcon } from '@/components/common/icons';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -12,16 +13,27 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Fundament „Fresh Install" — AUTH-007: konto istnieje, hasło poprawne, ale
+  // e-mail niepotwierdzony. Zamiast tylko pokazać komunikat, dajemy od razu
+  // akcję "wyślij ponownie" (POST /auth/verify-email/resend) — bez tego
+  // użytkownik utknąłby bez wskazówki, co dalej.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
     setError(null);
+    setUnverifiedEmail(null);
+    setResendState('idle');
     try {
       await login(email, password);
       navigate('/', { replace: true });
     } catch (err) {
+      if (isApiError(err) && err.response?.data.error.code === 'AUTH-007') {
+        setUnverifiedEmail(email);
+      }
       setError(
         isApiError(err)
           ? (err.response?.data.error.message ?? 'Błąd logowania.')
@@ -29,6 +41,16 @@ export function LoginPage() {
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleResendVerification() {
+    if (!unverifiedEmail) return;
+    setResendState('sending');
+    try {
+      await authApi.resendVerification(unverifiedEmail);
+    } finally {
+      setResendState('sent');
     }
   }
 
@@ -49,6 +71,29 @@ export function LoginPage() {
           {error && (
             <p className="field-error" style={{ display: 'block' }}>
               {error}
+            </p>
+          )}
+          {unverifiedEmail && (
+            <p className="text-sm text-muted" style={{ marginTop: -8 }}>
+              {resendState === 'sent' ? (
+                'Jeśli konto istnieje, wysłaliśmy nowy link potwierdzający na podany adres.'
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resendState === 'sending'}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    color: 'var(--primary, #2563eb)',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {resendState === 'sending' ? 'Wysyłanie…' : 'Wyślij link potwierdzający ponownie'}
+                </button>
+              )}
             </p>
           )}
           <div className="field">
@@ -98,8 +143,11 @@ export function LoginPage() {
           </button>
         </form>
 
-        <p className="text-sm text-muted" style={{ textAlign: 'center', marginTop: 18 }}>
-          Reprezentujesz producenta lub dystrybutora?{' '}
+        <p className="text-sm text-muted" style={{ textAlign: 'center', marginTop: 12 }}>
+          <Link to="/forgot-password">Nie pamiętam hasła</Link>
+        </p>
+        <p className="text-sm text-muted" style={{ textAlign: 'center', marginTop: 6 }}>
+          Reprezentujesz sklep, producenta lub dystrybutora?{' '}
           <Link to="/signup">Załóż firmę w SmartRMA</Link>
         </p>
       </div>

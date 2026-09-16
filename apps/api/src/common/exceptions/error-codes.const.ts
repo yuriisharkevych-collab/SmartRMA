@@ -132,6 +132,24 @@ export const ERROR_CODES = {
     status: HttpStatus.TOO_MANY_REQUESTS,
     message: 'Zbyt wiele nieudanych prób logowania PIN-em — spróbuj ponownie później.',
   },
+  /** Fundament „Fresh Install" — hasło poprawne, ale `User.emailVerifiedAt` wciąż `null`. Rzucane DOPIERO po weryfikacji hasła (AuthService.validatePasswordLogin) — nigdy przy złym haśle, żeby nie ujawniać stanu konta próbującemu zgadnąć hasło. */
+  AUTH_007: {
+    code: 'AUTH-007',
+    status: HttpStatus.FORBIDDEN,
+    message: 'Potwierdź adres e-mail, aby się zalogować — sprawdź skrzynkę pocztową.',
+  },
+  /** `POST /auth/verify-email` — token nieprawidłowy/wygasły/już użyty. Jeden, generyczny komunikat dla wszystkich trzech przyczyn (ten sam wzorzec co PARTNERSHIP-007) — nie zdradza, KTÓRA z nich zaszła. */
+  AUTH_008: {
+    code: 'AUTH-008',
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'Link potwierdzający jest nieprawidłowy, wygasł albo został już wykorzystany.',
+  },
+  /** `POST /auth/reset-password` — analogicznie do AUTH-008, dla tokenu resetu hasła. */
+  AUTH_009: {
+    code: 'AUTH-009',
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'Link resetu hasła jest nieprawidłowy, wygasł albo został już wykorzystany.',
+  },
 
   // --- RBAC ---
   RBAC_001: {
@@ -393,6 +411,18 @@ export const ERROR_CODES = {
     code: 'NOTIFICATION-002',
     status: HttpStatus.INTERNAL_SERVER_ERROR,
     message: 'Brak szablonu powiadomienia dla tego zdarzenia.',
+  },
+
+  // --- PLATFORM (Fundament „Fresh Install" — Administrator platformy, poza tenantami) ---
+  PLATFORM_001: {
+    code: 'PLATFORM-001',
+    status: HttpStatus.UNAUTHORIZED,
+    message: 'Nieprawidłowy adres e-mail lub hasło.',
+  },
+  PLATFORM_002: {
+    code: 'PLATFORM-002',
+    status: HttpStatus.FORBIDDEN,
+    message: 'Konto administratora platformy jest nieaktywne.',
   },
 } as const;
 

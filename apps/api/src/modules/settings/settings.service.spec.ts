@@ -98,7 +98,7 @@ describe('SettingsService', () => {
       get: jest.fn().mockReturnValue({ location: null, configured: false }),
     } as unknown as ConfigService;
     auditRepository = { create: jest.fn() };
-    mailService = { send: jest.fn() };
+    mailService = { send: jest.fn(), sendPlatformEmail: jest.fn() };
 
     service = new SettingsService(
       settingsRepository as unknown as SettingsRepository,

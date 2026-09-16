@@ -8,6 +8,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { DomainEventBusModule } from './events/event-bus.module';
 import { HealthModule } from './health/health.module';
 import { LoggerModule } from './logger/logger.module';
+import { AccountRecoveryModule } from './modules/account-recovery/account-recovery.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
@@ -24,6 +25,7 @@ import { ManufacturersModule } from './modules/manufacturers/manufacturers.modul
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { PartnershipsModule } from './modules/partnerships/partnerships.module';
+import { PlatformAdminModule } from './modules/platform-admin/platform-admin.module';
 import { PortalModule } from './modules/portal/portal.module';
 import { ProductsModule } from './modules/products/products.module';
 import { ReportsModule } from './modules/reports/reports.module';
@@ -58,6 +60,7 @@ import { MailModule } from './mail/mail.module';
 
     // --- Moduły domenowe (punkt 2) ---
     AuthModule,
+    AccountRecoveryModule,
     UsersModule,
     RolesModule,
     CompaniesModule,
@@ -70,6 +73,7 @@ import { MailModule } from './mail/mail.module';
     ContractorsModule,
     ManufacturersModule,
     PartnershipsModule,
+    PlatformAdminModule,
     DocumentsModule,
     NotificationsModule,
     PortalModule,

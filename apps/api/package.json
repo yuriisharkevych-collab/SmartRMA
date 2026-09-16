@@ -17,7 +17,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "seed:admin": "ts-node scripts/create-admin.ts"
+    "seed:admin": "ts-node scripts/create-admin.ts",
+    "seed:platform-admin": "ts-node scripts/create-platform-admin.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.4",

@@ -87,6 +87,7 @@ describe('Auth (e2e)', () => {
         email,
         passwordHash: await passwordService.hash(password),
         active: true,
+        emailVerifiedAt: new Date(),
       },
     });
     userId = user.id;

@@ -4,7 +4,23 @@ import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { HttpExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { toValidationException } from '../src/common/validation/to-validation-exception';
+import { MAIL_SERVICE } from '../src/mail/mail.interface';
 import { PrismaService } from '../src/prisma/prisma.service';
+
+/** NIP testowy o poprawnej sumie kontrolnej (Ministerstwo Finansów, powszechnie używany w środowiskach testowych) — `Company.nip` nie ma unikalności w bazie, więc bezpieczny do reużycia przez wszystkie signupy w tym pliku. */
+const TEST_NIP = '5260001246';
+
+/**
+ * Fundament „Fresh Install" — `POST /companies/signup` NIE loguje już
+ * automatycznie: e-mail weryfikacyjny idzie przez `MailService.sendPlatformEmail`
+ * (ENV, NIE `Notification`/dispatcher — patrz doc-comment `AccountRecoveryService`),
+ * więc nie ma go skąd odczytać z bazy (w przeciwieństwie do np.
+ * `partnership.invited.partner`, które LĄDUJE w tabeli `Notification`).
+ * `.overrideProvider(MailService)` przechwytuje treść e-maila TAK, jak
+ * zaplanowano (test-double zamiast prawdziwej wysyłki/loga w plaintext) —
+ * `capturedEmails` niżej.
+ */
+const capturedEmails: Array<{ to: string; subject: string; html: string }> = [];
 
 /**
  * Etap 6 — Onboarding samoobsługowy nowej firmy Producent/Dystrybutor, NA ŻYWO
@@ -64,8 +80,46 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
   let prefixCompanyAToken: string;
   let prefixCompanyBToken: string;
 
+  async function signupAndLogin(payload: {
+    companyName: string;
+    orgType: 'Shop' | 'Producent' | 'Dystrybutor';
+    adminFirstName: string;
+    adminLastName: string;
+    adminEmail: string;
+    password: string;
+  }): Promise<{ status: number; token?: string }> {
+    const signup = await request(app.getHttpServer())
+      .post('/api/companies/signup')
+      .send({ ...payload, nip: TEST_NIP });
+    if (signup.status !== 201) return { status: signup.status };
+
+    const email = capturedEmails
+      .slice()
+      .reverse()
+      .find((e) => e.to === payload.adminEmail);
+    const token = email?.html.match(/token=([0-9a-f]{64})/)?.[1];
+    const verify = await request(app.getHttpServer())
+      .post('/api/auth/verify-email')
+      .send({ token });
+    expect(verify.status).toBe(204);
+
+    const login = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ email: payload.adminEmail, password: payload.password });
+    return { status: signup.status, token: login.body.accessToken };
+  }
+
   beforeAll(async () => {
-    const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] })
+      .overrideProvider(MAIL_SERVICE)
+      .useValue({
+        send: jest.fn().mockResolvedValue({ ok: true }),
+        sendPlatformEmail: jest.fn((email: { to: string; subject: string; html: string }) => {
+          capturedEmails.push(email);
+          return Promise.resolve({ ok: true });
+        }),
+      })
+      .compile();
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(
       new ValidationPipe({
@@ -82,33 +136,29 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
     await app.init();
     prisma = app.get(PrismaService);
 
-    // --- Krok 1: onboarding — WYŁĄCZNIE przez POST /companies/signup ---
-    const textileSignup = await request(app.getHttpServer())
-      .post('/api/companies/signup')
-      .send({
-        companyName: `TextilePro ${suffix}`,
-        orgKind: 'Producent',
-        adminFirstName: 'Ola',
-        adminLastName: 'Włókniarz',
-        adminEmail: `ola-${suffix}@textilepro.local`,
-        password: 'Bezpieczne-Haslo-123!',
-      });
+    // --- Krok 1: onboarding — WYŁĄCZNIE przez POST /companies/signup (+ weryfikacja e-maila + login, Fundament „Fresh Install") ---
+    const textileSignup = await signupAndLogin({
+      companyName: `TextilePro ${suffix}`,
+      orgType: 'Producent',
+      adminFirstName: 'Ola',
+      adminLastName: 'Włókniarz',
+      adminEmail: `ola-${suffix}@textilepro.local`,
+      password: 'Bezpieczne-Haslo-123!',
+    });
     expect(textileSignup.status).toBe(201);
-    textileToken = textileSignup.body.accessToken;
+    textileToken = textileSignup.token!;
     textileCompanyId = decodeCompanyId(textileToken);
 
-    const isolationSignup = await request(app.getHttpServer())
-      .post('/api/companies/signup')
-      .send({
-        companyName: `IsolationCheck ${suffix}`,
-        orgKind: 'Dystrybutor',
-        adminFirstName: 'Ktoś',
-        adminLastName: 'Inny',
-        adminEmail: `inny-${suffix}@example.local`,
-        password: 'Bezpieczne-Haslo-456!',
-      });
+    const isolationSignup = await signupAndLogin({
+      companyName: `IsolationCheck ${suffix}`,
+      orgType: 'Dystrybutor',
+      adminFirstName: 'Ktoś',
+      adminLastName: 'Inny',
+      adminEmail: `inny-${suffix}@example.local`,
+      password: 'Bezpieczne-Haslo-456!',
+    });
     expect(isolationSignup.status).toBe(201);
-    isolationToken = isolationSignup.body.accessToken;
+    isolationToken = isolationSignup.token!;
 
     // Firmy izolacyjnej katalog (marka/kategoria/produkt) — cel testów IDOR niżej.
     const isolationManufacturers = await request(app.getHttpServer())
@@ -225,16 +275,16 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
     // (dociera dopiero po pierwszych 4 znakach), więc obie firmy tu
     // NAPRAWDĘ kolidują.
     it('pierwsza firma "Alfa Tekstylna" dostaje prefiks "ALFA"', async () => {
-      const signup = await request(app.getHttpServer()).post('/api/companies/signup').send({
+      const signup = await signupAndLogin({
         companyName: `Alfa Tekstylna ${suffix}`,
-        orgKind: 'Producent',
+        orgType: 'Producent',
         adminFirstName: 'Adam',
         adminLastName: 'Kolizja',
         adminEmail: `adam-kolizja-${suffix}@example.local`,
         password: 'Bezpieczne-Haslo-Kolizja-123!',
       });
       expect(signup.status).toBe(201);
-      prefixCompanyAToken = signup.body.accessToken;
+      prefixCompanyAToken = signup.token!;
 
       const overview = await request(app.getHttpServer())
         .get('/api/settings/overview')
@@ -243,16 +293,16 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
     });
 
     it('druga firma "Alfabet Corp" — TA SAMA baza prefiksu ("ALFA") — dostaje "ALFA2", NIE dzieli sekwencji z pierwszą', async () => {
-      const signup = await request(app.getHttpServer()).post('/api/companies/signup').send({
+      const signup = await signupAndLogin({
         companyName: `Alfabet Corp ${suffix}`,
-        orgKind: 'Dystrybutor',
+        orgType: 'Dystrybutor',
         adminFirstName: 'Ewa',
         adminLastName: 'Kolizja',
         adminEmail: `ewa-kolizja-${suffix}@example.local`,
         password: 'Bezpieczne-Haslo-Kolizja-456!',
       });
       expect(signup.status).toBe(201);
-      prefixCompanyBToken = signup.body.accessToken;
+      prefixCompanyBToken = signup.token!;
 
       const overview = await request(app.getHttpServer())
         .get('/api/settings/overview')

@@ -124,6 +124,7 @@ async function main(): Promise<void> {
       lastName: ORG_NAME,
       email: ORG_ADMIN_EMAIL,
       passwordHash,
+      emailVerifiedAt: new Date(),
       roles: { create: [{ roleId: role.id }] },
     },
   });

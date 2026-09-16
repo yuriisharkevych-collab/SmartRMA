@@ -1,6 +1,5 @@
 import { apiClient } from './client';
 import { publicClient } from './publicClient';
-import type { AuthTokens } from '@/types/auth';
 
 /** Kształt odzwierciedla `CompanyEntity` z `apps/api`. */
 export interface Company {
@@ -40,20 +39,30 @@ export interface UpdateCompanyPayload {
   termsUrl?: string;
 }
 
-/** `POST /companies/signup` (Etap 6) — publiczny, bez sesji. */
+/**
+ * `POST /companies/signup` — publiczny, bez sesji. Fundament „Fresh Install"
+ * rozszerza `orgKind` na `orgType` (dokłada `Shop`) i dokłada `nip` wymagany.
+ */
 export interface CompanySignupPayload {
   companyName: string;
-  orgKind: 'Producent' | 'Dystrybutor';
+  orgType: 'Shop' | 'Producent' | 'Dystrybutor';
+  nip: string;
   adminFirstName: string;
   adminLastName: string;
   adminEmail: string;
   password: string;
 }
 
+/** Fundament „Fresh Install" — signup NIE loguje już automatycznie, konto czeka na potwierdzenie e-maila. */
+export interface SignupResult {
+  message: string;
+  email: string;
+}
+
 export const companiesApi = {
-  /** Onboarding samoobsługowy nowej firmy Producent/Dystrybutor — zwraca AuthTokens, logowanie od razu (jak `partnershipsApi.acceptInvite`). */
+  /** Onboarding samoobsługowy nowej firmy (Sklep/Producent/Dystrybutor) — wysyła e-mail weryfikacyjny, NIE loguje automatycznie (AUTH-007). */
   signup: (payload: CompanySignupPayload) =>
-    publicClient.post<AuthTokens>('/companies/signup', payload).then((res) => res.data),
+    publicClient.post<SignupResult>('/companies/signup', payload).then((res) => res.data),
   me: () => apiClient.get<Company>('/companies/me').then((res) => res.data),
   update: (payload: UpdateCompanyPayload) =>
     apiClient.patch<Company>('/companies/me', payload).then((res) => res.data),
