@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { PlatformAdminProtectedRoute } from '@/components/common/PlatformAdminProtectedRoute';
 import { ProtectedRoute } from '@/components/common/ProtectedRoute';
 import { AppLayout } from '@/layouts/AppLayout';
 import { AuthLayout } from '@/layouts/AuthLayout';
@@ -11,6 +12,8 @@ import { DashboardRouter } from '@/pages/DashboardRouter';
 import { LoginPage } from '@/pages/LoginPage';
 import { ManufacturersPage } from '@/pages/ManufacturersPage';
 import { PartnersPage } from '@/pages/PartnersPage';
+import { PlatformAdminLoginPage } from '@/pages/platform-admin/PlatformAdminLoginPage';
+import { PlatformAdminPanelPage } from '@/pages/platform-admin/PlatformAdminPanelPage';
 import { ProductsPage } from '@/pages/ProductsPage';
 import { ReportsPage } from '@/pages/ReportsPage';
 import { SettingsPage } from '@/pages/SettingsPage';
@@ -64,6 +67,16 @@ export const router = createBrowserRouter([
   // nie istnieje w SmartRMA). Poza `AppLayout`/`ProtectedRoute`: zaproszony nie ma
   // jeszcze sesji ani konta — dokładnie ten sam powód co dwie trasy `/reklamacja*` wyżej.
   { path: '/partner-invite/:token', element: <AcceptPartnerInvitePage /> },
+  // Fundament „Fresh Install" — Administrator PLATFORMY, trzeci, całkowicie
+  // rozłączny mechanizm uwierzytelniania (`PlatformAuthGuard`, osobny sekret
+  // JWT, zero relacji do Company/User) — świadomie POZA `ProtectedRoute`
+  // (ten guard sprawdza sesję PRACOWNIKA) i POZA `AppLayout` (sidebar/topbar
+  // pokazują dane firmy, których Platform Admin nie ma).
+  { path: '/platform-admin/login', element: <PlatformAdminLoginPage /> },
+  {
+    element: <PlatformAdminProtectedRoute />,
+    children: [{ path: '/platform-admin', element: <PlatformAdminPanelPage /> }],
+  },
   {
     element: <ProtectedRoute />,
     children: [
