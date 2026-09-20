@@ -1,0 +1,699 @@
+/* ============================================================================
+   SmartRMA — Landing page (/, niezalogowany odwiedzający)
+   Wyłącznie istniejące tokeny z design-system.css (var(--primary), --bg,
+   --text, --surface, --border, --font-display/--font-body/--font-mono) —
+   ZERO nowych kolorów marki. Ten plik jest importowany WYŁĄCZNIE przez
+   LandingPage.tsx, więc żadna reguła tutaj nie może wpłynąć na inne strony.
+   ========================================================================= */
+
+.landing-page {
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.landing-container {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------------------------------------------------------------------------
+   Header
+   ------------------------------------------------------------------------ */
+
+.landing-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.landing-header-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+}
+
+.landing-nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.landing-nav-link {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.landing-nav-link:hover {
+  color: var(--text);
+}
+
+.landing-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 860px) {
+  .landing-nav {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .landing-header-actions .btn-secondary {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Hero
+   ------------------------------------------------------------------------ */
+
+.landing-hero {
+  background:
+    radial-gradient(circle at 12% 15%, rgba(15, 110, 99, 0.12), transparent 42%),
+    radial-gradient(circle at 88% 75%, rgba(15, 110, 99, 0.08), transparent 45%),
+    var(--bg);
+  padding: 64px 0 76px;
+}
+
+.landing-hero-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 460px) 1fr;
+  gap: 56px;
+  align-items: center;
+}
+
+.landing-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.landing-hero h1 {
+  font-size: 40px;
+  line-height: 1.12;
+  margin-bottom: 18px;
+}
+
+.landing-hero-text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 28px;
+  max-width: 460px;
+}
+
+.landing-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+
+.landing-hero-benefits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.landing-benefit-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.landing-benefit-item .landing-check {
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Mockup dashboardu (dekoracyjny, aria-hidden) — te same tokeny co realny
+   dashboard (ciemny pasek = var(--text), akcent = var(--primary), karty =
+   var(--surface)/var(--border)), świadomie NIE literalnie reużyte klasy
+   .sidebar/.app-shell (position:sticky + 100vh nie nadają się do kontenera
+   dekoracyjnego) — patrz doc-comment w LandingPage.tsx.
+   ------------------------------------------------------------------------ */
+
+.landing-mockup {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  min-height: 380px;
+  user-select: none;
+}
+
+.landing-mockup-sidebar {
+  background: var(--text);
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.landing-mockup-brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 16px;
+}
+
+.landing-mockup-brand-mark {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, var(--primary), #14a093);
+  flex-shrink: 0;
+}
+
+.landing-mockup-brand-text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  color: #e5e7eb;
+}
+
+.landing-mockup-nav-item {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: #c9d3db;
+  padding: 6px 8px;
+  border-radius: 5px;
+}
+
+.landing-mockup-nav-item.active {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.landing-mockup-main {
+  padding: 16px 18px 18px;
+  min-width: 0;
+}
+
+.landing-mockup-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.landing-mockup-search {
+  flex: 1;
+  max-width: 220px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+}
+
+.landing-mockup-user {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.landing-mockup-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing-mockup-user-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.landing-mockup-user-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.landing-mockup-user-role {
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.landing-mockup-heading {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.landing-mockup-subheading {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.landing-mockup-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.landing-mockup-stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 9px;
+}
+
+.landing-mockup-stat-label {
+  font-size: 8.5px;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+  line-height: 1.3;
+}
+
+.landing-mockup-stat-value {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.landing-mockup-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.landing-mockup-panel {
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  min-height: 64px;
+}
+
+.landing-mockup-panel-title {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.landing-mockup-panel-empty {
+  font-size: 8.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+@media (max-width: 980px) {
+  .landing-hero-inner {
+    grid-template-columns: 1fr;
+  }
+  .landing-mockup {
+    max-width: 480px;
+  }
+}
+
+@media (max-width: 560px) {
+  .landing-hero {
+    padding: 40px 0 48px;
+  }
+  .landing-hero h1 {
+    font-size: 30px;
+  }
+  .landing-mockup {
+    grid-template-columns: 84px 1fr;
+    min-height: 300px;
+  }
+  .landing-mockup-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Sekcje ogólne (nagłówek + eyebrow)
+   ------------------------------------------------------------------------ */
+
+.landing-section {
+  padding: 64px 0;
+}
+
+.landing-section-alt {
+  background: var(--surface-sunken);
+}
+
+.landing-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary-hover);
+  margin-bottom: 10px;
+}
+
+.landing-section-title {
+  font-size: 28px;
+  margin-bottom: 10px;
+}
+
+.landing-section-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 560px;
+  margin-bottom: 36px;
+}
+
+/* ---------------------------------------------------------------------------
+   Kategorie (REKLAMACJE / ZWROTY / SERWIS / PRODUCENCI / DOKUMENTACJA)
+   ------------------------------------------------------------------------ */
+
+.landing-categories {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+
+.landing-category-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.landing-icon-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.landing-category-card h4 {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.landing-category-card p {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (max-width: 980px) {
+  .landing-categories {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .landing-categories {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Proces: Zgłoszenie → Weryfikacja → Producent → Decyzja → Realizacja → Zamknięcie
+   ------------------------------------------------------------------------ */
+
+.landing-process-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.landing-process-step {
+  flex: 1 0 150px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 14px;
+}
+
+.landing-process-step h4 {
+  font-size: 13.5px;
+  margin: 10px 0 4px;
+}
+
+.landing-process-step p {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.landing-process-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .landing-process-row {
+    flex-wrap: nowrap;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Funkcje
+   ------------------------------------------------------------------------ */
+
+.landing-features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.landing-feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.landing-feature-card h4 {
+  font-size: 14.5px;
+  margin: 12px 0 5px;
+}
+
+.landing-feature-card p {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+@media (max-width: 860px) {
+  .landing-features-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 560px) {
+  .landing-features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Dla sklepów / dystrybutorów / producentów
+   ------------------------------------------------------------------------ */
+
+.landing-split {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 40px;
+  align-items: center;
+}
+
+.landing-split-text .landing-section-title {
+  font-size: 26px;
+}
+
+.landing-benefit-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.landing-benefit-card .landing-benefit-item {
+  font-size: 13px;
+  color: var(--text);
+}
+
+@media (max-width: 900px) {
+  .landing-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Cennik — placeholder (bez cen)
+   ------------------------------------------------------------------------ */
+
+.landing-pricing-card {
+  max-width: 520px;
+  margin: 0 auto;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 40px 32px;
+}
+
+.landing-pricing-card h3 {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+
+.landing-pricing-card p {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+   CTA końcowe + stopka (ciemna, spójna sekcja)
+   ------------------------------------------------------------------------ */
+
+.landing-dark {
+  background: var(--text);
+  color: #e5e7eb;
+}
+
+.landing-final-cta {
+  padding: 44px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.landing-final-cta h3 {
+  font-size: 21px;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.landing-final-cta p {
+  font-size: 13px;
+  color: #b7bec8;
+}
+
+.landing-final-cta-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.landing-final-cta-hint {
+  font-size: 11.5px;
+  color: #8a93a3;
+}
+
+.landing-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.landing-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.landing-footer-brand .landing-mockup-brand-text {
+  font-size: 13px;
+}
+
+.landing-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.landing-footer-link {
+  font-size: 12.5px;
+  color: #b7bec8;
+}
+
+.landing-footer-link:hover {
+  color: #ffffff;
+}
+
+.landing-footer-link-disabled {
+  font-size: 12.5px;
+  color: #6b7280;
+  cursor: default;
+}
+
+@media (max-width: 700px) {
+  .landing-final-cta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .landing-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
