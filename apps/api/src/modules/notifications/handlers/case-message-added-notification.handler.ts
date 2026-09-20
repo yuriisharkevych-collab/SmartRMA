@@ -62,8 +62,8 @@ export class CaseMessageAddedNotificationHandler {
     if (!customer.email) return;
 
     const company = await this.companiesService.findById(event.companyId);
-    const [primaryOrigin] = this.config.get<string[]>('cors.origin')!;
-    const portalUrl = `${primaryOrigin}/portal/login`;
+    const publicUrl = this.config.get<string>('publicUrl.url')!;
+    const portalUrl = `${publicUrl}/portal/login`;
     const messagePreview =
       message.content.length > MESSAGE_PREVIEW_MAX_LENGTH
         ? `${message.content.slice(0, MESSAGE_PREVIEW_MAX_LENGTH)}…`

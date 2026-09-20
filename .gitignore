@@ -45,3 +45,9 @@ apps/api/uploads/
 # Husky internal runtime dir (created by `husky` on `npm install`, never hand-edited)
 .husky/_/
 .claude/
+
+# Osobisty launcher developerski (hardcoded lokalna sciezka, nie wersjonujemy)
+Start-SmartRMA.ps1
+
+# Prywatne backupy bazy danych (pg_dump) — nigdy nie wersjonujemy
+backups/

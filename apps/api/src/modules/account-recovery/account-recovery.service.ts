@@ -169,8 +169,8 @@ export class AccountRecoveryService {
   }
 
   private buildLink(path: string, token: string): string {
-    const [primaryOrigin] = this.config.get<string[]>('cors.origin')!;
-    return `${primaryOrigin}/${path}?token=${encodeURIComponent(token)}`;
+    const publicUrl = this.config.get<string>('publicUrl.url')!;
+    return `${publicUrl}/${path}?token=${encodeURIComponent(token)}`;
   }
 
   /** Wspólna ścieżka wysyłki dla wszystkich trzech szablonów `account.*` (patrz doc-comment klasy) — brak globalnego szablonu (seed nieuruchomiony) i awaria transportu kończą się TAK SAMO: ostrzeżenie w logu, operacja wyzwalająca (rejestracja/reset) i tak kończy się sukcesem. */

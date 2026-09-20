@@ -261,10 +261,8 @@ export class IntakeService {
       userAgent,
     });
 
-    // `cors.origin` — jedyne miejsce, gdzie backend już zna adres(y) frontendu (patrz `main.ts`); nie duplikujemy tego jako osobną zmienną środowiskową.
-    // Może zawierać kilka originów (rozdzielonych przecinkiem, np. lokalny + LAN do testów na telefonie) — pierwszy jest traktowany jako kanoniczny adres do linków w e-mailach.
-    const [primaryOrigin] = this.config.get<string[]>('cors.origin')!;
-    const portalUrl = `${primaryOrigin}/portal/login?case=${encodeURIComponent(caseEntity.caseNumber)}&code=${encodeURIComponent(credential.value)}`;
+    const publicUrl = this.config.get<string>('publicUrl.url')!;
+    const portalUrl = `${publicUrl}/portal/login?case=${encodeURIComponent(caseEntity.caseNumber)}&code=${encodeURIComponent(credential.value)}`;
     // Dane kontaktowe firmy w stopce e-maila — budowane tu (nie w treści szablonu, który
     // umie tylko podstawić `{{var}}`, bez warunków), żeby brak telefonu/e-maila w Ustawieniach
     // firmy nie zostawił pustej linijki "Kontakt: " w wysłanej wiadomości.
@@ -634,8 +632,8 @@ export class IntakeService {
       userAgent,
     });
 
-    const [primaryOrigin] = this.config.get<string[]>('cors.origin')!;
-    const portalUrl = `${primaryOrigin}/portal/login?case=${encodeURIComponent(caseEntity.caseNumber)}&code=${encodeURIComponent(credential.value)}`;
+    const publicUrl = this.config.get<string>('publicUrl.url')!;
+    const portalUrl = `${publicUrl}/portal/login?case=${encodeURIComponent(caseEntity.caseNumber)}&code=${encodeURIComponent(credential.value)}`;
     const contactParts = [company.phone, company.email].filter((v): v is string => Boolean(v));
     const companyContactLine =
       contactParts.length > 0 ? `\nKontakt: ${contactParts.join(' / ')}` : '';

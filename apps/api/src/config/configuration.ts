@@ -46,6 +46,21 @@ export interface CorsConfig {
   origin: string[];
 }
 
+/**
+ * Fundament „Fresh Install" — publiczny adres aplikacji używany do budowy
+ * linków wysyłanych w e-mailach/powiadomieniach (potwierdzenie adresu, reset
+ * hasła, zaproszenie partnera, link Portalu Klienta) — CELOWO ODDZIELONY od
+ * `CorsConfig.origin`, który steruje wyłącznie allow-listą CORS i może
+ * zawierać kilka originów deweloperskich naraz (kolejność której nie da się
+ * bezpiecznie interpretować jako "adres publiczny"). `PUBLIC_APP_URL` jest
+ * opcjonalny — gdy nieustawiony, spada na dotychczasowe zachowanie
+ * (pierwszy origin z `CORS_ORIGIN`), więc środowiska, które go jeszcze nie
+ * skonfigurowały, działają bez zmian.
+ */
+export interface PublicUrlConfig {
+  url: string;
+}
+
 /** `IStorageService` (dysk lokalny MVP, DECISIONS.md). `uploadsDir` jest ścieżką ABSOLUTNĄ — rozwiązaną raz tutaj, żeby implementacja nie liczyła jej z `__dirname` (co po kompilacji wskazywałoby wnętrze `dist/`, kasowane przy każdym buildzie). */
 export interface StorageConfig {
   uploadsDir: string;
@@ -132,67 +147,76 @@ export interface PlatformMailConfig {
  * fabryki, jeśli ich brak. Asercja `!` odzwierciedla tę gwarancję zamiast
  * dublować wartości domyślne, których i tak nie ma w schemacie Joi.
  */
-export default () => ({
-  app: {
-    nodeEnv: process.env.NODE_ENV ?? 'development',
-    port: parseInt(process.env.PORT ?? '3000', 10),
-    globalPrefix: process.env.API_GLOBAL_PREFIX ?? 'api',
-  } satisfies AppConfig,
-  database: {
-    url: process.env.DATABASE_URL!,
-  } satisfies DatabaseConfig,
-  redis: {
-    url: process.env.REDIS_URL!,
-  } satisfies RedisConfig,
-  jwt: {
-    accessSecret: process.env.JWT_ACCESS_SECRET!,
-    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-    refreshSecret: process.env.JWT_REFRESH_SECRET!,
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
-  } satisfies JwtConfig,
-  portal: {
-    secret: process.env.JWT_PORTAL_SECRET!,
-    expiresIn: process.env.JWT_PORTAL_EXPIRES_IN ?? '30m',
-  } satisfies PortalConfig,
-  bcrypt: {
-    rounds: parseInt(process.env.BCRYPT_ROUNDS ?? '10', 10),
-  } satisfies BcryptConfig,
-  cors: {
-    origin: (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean),
-  } satisfies CorsConfig,
-  storage: {
-    uploadsDir: path.resolve(process.cwd(), process.env.UPLOADS_DIR ?? 'uploads'),
-  } satisfies StorageConfig,
-  logger: {
-    level: process.env.LOG_LEVEL ?? 'debug',
-  } satisfies LoggerConfig,
-  backup: {
-    location: process.env.BACKUP_STORAGE_LOCATION ?? null,
-    configured: Boolean(process.env.BACKUP_STORAGE_LOCATION),
-  } satisfies BackupConfig,
-  encryption: {
-    key: process.env.ENCRYPTION_KEY!,
-  } satisfies EncryptionConfig,
-  mailDispatch: {
-    intervalMs: parseInt(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS ?? '10000', 10),
-  } satisfies MailDispatchConfig,
-  platformAuth: {
-    jwtSecret: process.env.PLATFORM_JWT_SECRET ?? null,
-    accessExpiresIn: process.env.PLATFORM_JWT_EXPIRES_IN ?? '30m',
-  } satisfies PlatformAuthConfig,
-  platformMail: {
-    provider: (process.env.PLATFORM_MAIL_PROVIDER as 'Resend' | 'Smtp' | undefined) ?? null,
-    senderName: process.env.PLATFORM_MAIL_SENDER_NAME ?? null,
-    senderEmail: process.env.PLATFORM_MAIL_SENDER_EMAIL ?? null,
-    resendApiKey: process.env.PLATFORM_RESEND_API_KEY ?? null,
-    smtpHost: process.env.PLATFORM_SMTP_HOST ?? null,
-    smtpPort: process.env.PLATFORM_SMTP_PORT ? parseInt(process.env.PLATFORM_SMTP_PORT, 10) : null,
-    smtpUsername: process.env.PLATFORM_SMTP_USERNAME ?? null,
-    smtpPassword: process.env.PLATFORM_SMTP_PASSWORD ?? null,
-    smtpEncryption:
-      (process.env.PLATFORM_SMTP_ENCRYPTION as 'None' | 'Tls' | 'Ssl' | undefined) ?? 'Tls',
-  } satisfies PlatformMailConfig,
-});
+export default () => {
+  const corsOrigins = (process.env.CORS_ORIGIN ?? 'http://localhost:5173')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return {
+    app: {
+      nodeEnv: process.env.NODE_ENV ?? 'development',
+      port: parseInt(process.env.PORT ?? '3000', 10),
+      globalPrefix: process.env.API_GLOBAL_PREFIX ?? 'api',
+    } satisfies AppConfig,
+    database: {
+      url: process.env.DATABASE_URL!,
+    } satisfies DatabaseConfig,
+    redis: {
+      url: process.env.REDIS_URL!,
+    } satisfies RedisConfig,
+    jwt: {
+      accessSecret: process.env.JWT_ACCESS_SECRET!,
+      accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
+      refreshSecret: process.env.JWT_REFRESH_SECRET!,
+      refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+    } satisfies JwtConfig,
+    portal: {
+      secret: process.env.JWT_PORTAL_SECRET!,
+      expiresIn: process.env.JWT_PORTAL_EXPIRES_IN ?? '30m',
+    } satisfies PortalConfig,
+    bcrypt: {
+      rounds: parseInt(process.env.BCRYPT_ROUNDS ?? '10', 10),
+    } satisfies BcryptConfig,
+    cors: {
+      origin: corsOrigins,
+    } satisfies CorsConfig,
+    publicUrl: {
+      url: process.env.PUBLIC_APP_URL ?? corsOrigins[0],
+    } satisfies PublicUrlConfig,
+    storage: {
+      uploadsDir: path.resolve(process.cwd(), process.env.UPLOADS_DIR ?? 'uploads'),
+    } satisfies StorageConfig,
+    logger: {
+      level: process.env.LOG_LEVEL ?? 'debug',
+    } satisfies LoggerConfig,
+    backup: {
+      location: process.env.BACKUP_STORAGE_LOCATION ?? null,
+      configured: Boolean(process.env.BACKUP_STORAGE_LOCATION),
+    } satisfies BackupConfig,
+    encryption: {
+      key: process.env.ENCRYPTION_KEY!,
+    } satisfies EncryptionConfig,
+    mailDispatch: {
+      intervalMs: parseInt(process.env.NOTIFICATION_DISPATCH_INTERVAL_MS ?? '10000', 10),
+    } satisfies MailDispatchConfig,
+    platformAuth: {
+      jwtSecret: process.env.PLATFORM_JWT_SECRET ?? null,
+      accessExpiresIn: process.env.PLATFORM_JWT_EXPIRES_IN ?? '30m',
+    } satisfies PlatformAuthConfig,
+    platformMail: {
+      provider: (process.env.PLATFORM_MAIL_PROVIDER as 'Resend' | 'Smtp' | undefined) ?? null,
+      senderName: process.env.PLATFORM_MAIL_SENDER_NAME ?? null,
+      senderEmail: process.env.PLATFORM_MAIL_SENDER_EMAIL ?? null,
+      resendApiKey: process.env.PLATFORM_RESEND_API_KEY ?? null,
+      smtpHost: process.env.PLATFORM_SMTP_HOST ?? null,
+      smtpPort: process.env.PLATFORM_SMTP_PORT
+        ? parseInt(process.env.PLATFORM_SMTP_PORT, 10)
+        : null,
+      smtpUsername: process.env.PLATFORM_SMTP_USERNAME ?? null,
+      smtpPassword: process.env.PLATFORM_SMTP_PASSWORD ?? null,
+      smtpEncryption:
+        (process.env.PLATFORM_SMTP_ENCRYPTION as 'None' | 'Tls' | 'Ssl' | undefined) ?? 'Tls',
+    } satisfies PlatformMailConfig,
+  };
+};

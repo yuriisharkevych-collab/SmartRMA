@@ -38,6 +38,11 @@ export const validationSchema = Joi.object({
   UPLOADS_DIR: Joi.string().default('uploads'),
 
   CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
+
+  // Fundament „Fresh Install" — publiczny adres aplikacji do linków w
+  // e-mailach/powiadomieniach (patrz configuration.ts, PublicUrlConfig).
+  // Opcjonalny: brak = fallback na pierwszy origin z CORS_ORIGIN.
+  PUBLIC_APP_URL: Joi.string().uri().optional(),
   LOG_LEVEL: Joi.string()
     .valid('fatal', 'error', 'warn', 'info', 'debug', 'trace')
     .default('debug'),

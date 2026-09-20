@@ -261,8 +261,8 @@ export class PartnershipsService {
       } as Prisma.InputJsonValue,
     });
 
-    const [primaryOrigin] = this.config.get<string[]>('cors.origin')!;
-    const inviteUrl = `${primaryOrigin}/partner-invite/${token}`;
+    const publicUrl = this.config.get<string>('publicUrl.url')!;
+    const inviteUrl = `${publicUrl}/partner-invite/${token}`;
     await this.notificationsService.createNotificationFromTemplate({
       companyId: distributorCompanyId,
       code: 'partnership.invited.partner',
