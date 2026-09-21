@@ -175,13 +175,13 @@ function DashboardMockup() {
           <div className="landing-mockup-search" />
           <div className="landing-mockup-user">
             <div className="landing-mockup-user-text">
-              <div className="landing-mockup-user-name">Yurii Sharkevych</div>
+              <div className="landing-mockup-user-name">Anna Kowalska</div>
               <div className="landing-mockup-user-role">Administrator</div>
             </div>
-            <div className="landing-mockup-avatar">Y</div>
+            <div className="landing-mockup-avatar">A</div>
           </div>
         </div>
-        <div className="landing-mockup-heading">Witaj, Yurii</div>
+        <div className="landing-mockup-heading">Witaj!</div>
         <div className="landing-mockup-subheading">
           Masz 0 otwartych spraw, w tym 0 przeterminowanych.
         </div>
