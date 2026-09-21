@@ -24,15 +24,6 @@
   padding: 0 24px;
 }
 
-@media (max-width: 480px) {
-  .landing-container,
-  .landing-header-inner,
-  .landing-hero-inner {
-    padding-left: 16px;
-    padding-right: 16px;
-  }
-}
-
 /* ---------------------------------------------------------------------------
    Header
    ------------------------------------------------------------------------ */
@@ -389,6 +380,19 @@
   .landing-mockup-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+  /* Wordmark "SmartRMA" (font-display, bold) w wąskim sidebarze mockupu nie
+     ma się gdzie zmieścić obok plakietki "R" — nie zawija się (flex row bez
+     wrap), więc renderuje się POZA granicą sidebaru, na białym panelu obok
+     (kolumny gridu nie przycinają wzajemnie treści sąsiada). Rozwiązanie
+     wprost z wymagania: na małym mockupie zostaje wyłącznie plakietka "R",
+     wyśrodkowana — bez ryzykownego doginania szerokości fontu do kontenera. */
+  .landing-mockup-brand-text {
+    display: none;
+  }
+  .landing-mockup-brand {
+    justify-content: center;
+    padding: 2px 4px 14px;
+  }
 }
 
 /* Telefony wąskie (375/390/414px) — dociąg fontów/paddingów mockupu, bez
@@ -701,7 +705,13 @@
 }
 
 .landing-final-cta {
-  padding: 44px 0;
+  /* NIE `padding: 44px 0` — ten skrót zerowałby padding-left/right z
+     `.landing-container` (ten sam element łączy obie klasy, ta sama
+     specyficzność, ta reguła jest niżej w pliku → wygrywa i kasuje boczny
+     odstęp). Stąd treść dotykała krawędzi ekranu na mobile — realny błąd, nie
+     fałszywy alarm. Tylko góra/dół, boki zostają nietknięte. */
+  padding-top: 44px;
+  padding-bottom: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -734,7 +744,9 @@
 
 .landing-footer {
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 24px 0;
+  /* Ten sam powód co w `.landing-final-cta` wyżej — tylko góra/dół. */
+  padding-top: 24px;
+  padding-bottom: 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -781,5 +793,41 @@
   .landing-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+}
+
+/* Stopka ≤480px: `.landing-footer-links` jako `flex-wrap` z 6 pozycjami
+   różnej długości ("Polityka prywatności" vs "Kontakt") zawija się
+   nieprzewidywalnie — ostatni element (Regulamin) często ląduje samotnie w
+   nowym wierszu. Siatka 2×3 daje przewidywalny, celowo zaprojektowany układ:
+   logo osobno, potem równa siatka linków (Polityka prywatności/Regulamin
+   traktowane tak samo jak reszta — te same klasy, ten sam grid), na końcu
+   copyright. Struktura `.landing-footer` (logo/nav/hint jako osobne wiersze)
+   już istnieje wyżej (≤700px) — tu tylko doprecyzowujemy `.landing-footer-links`. */
+@media (max-width: 480px) {
+  .landing-footer {
+    gap: 16px;
+  }
+  .landing-footer-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    width: 100%;
+  }
+}
+
+/* Węższy boczny odstęp na najmniejszych telefonach — CELOWO na samym końcu
+   pliku: `.landing-header-inner`/`.landing-hero-inner` mają własne reguły
+   bazowe (`padding: 12px 24px` / zawarte w `.landing-hero-inner`) zdefiniowane
+   WCZEŚNIEJ w tym pliku; przy takiej samej specyficzności (jedna klasa) wygrywa
+   reguła PÓŹNIEJSZA w kolejności źródła, niezależnie od media query — stąd ta
+   sama poprawka umieszczona wcześniej (przy `.landing-container`) była cicho
+   nadpisywana i nie działała. Tutaj, na końcu pliku, faktycznie wygrywa. */
+@media (max-width: 480px) {
+  .landing-container,
+  .landing-header-inner,
+  .landing-hero-inner {
+    padding-left: 16px;
+    padding-right: 16px;
   }
 }
