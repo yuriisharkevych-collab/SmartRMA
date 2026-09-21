@@ -175,10 +175,10 @@ function DashboardMockup() {
           <div className="landing-mockup-search" />
           <div className="landing-mockup-user">
             <div className="landing-mockup-user-text">
-              <div className="landing-mockup-user-name">Anna Kowalska</div>
+              <div className="landing-mockup-user-name">Jan Kowalski</div>
               <div className="landing-mockup-user-role">Administrator</div>
             </div>
-            <div className="landing-mockup-avatar">A</div>
+            <div className="landing-mockup-avatar">J</div>
           </div>
         </div>
         <div className="landing-mockup-heading">Witaj!</div>

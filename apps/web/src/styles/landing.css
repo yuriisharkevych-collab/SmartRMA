@@ -9,12 +9,28 @@
 .landing-page {
   min-height: 100vh;
   background: var(--bg);
+  /* Siatka: bare `1fr` = `minmax(auto, 1fr)`, więc bez wyjątków niżej ślad
+     min-content długiej treści (np. "DOKUMENTACJA") potrafiłby przecisnąć
+     kolumnę szerzej niż dostępne miejsce na wąskim ekranie — to jedyne
+     realne źródło poziomego scrolla, poza tym `minmax(0, 1fr)` wszędzie.
+     Ten `overflow-x` to tylko siatka bezpieczeństwa na wypadek sub-pikselowego
+     błędu zaokrąglenia, nie licencja na obcinanie treści. */
+  overflow-x: hidden;
 }
 
 .landing-container {
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 24px;
+}
+
+@media (max-width: 480px) {
+  .landing-container,
+  .landing-header-inner,
+  .landing-hero-inner {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -164,13 +180,15 @@
    ------------------------------------------------------------------------ */
 
 .landing-mockup {
+  width: 100%;
+  max-width: 100%;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: 130px minmax(0, 1fr);
   min-height: 380px;
   user-select: none;
 }
@@ -294,7 +312,7 @@
 
 .landing-mockup-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -322,7 +340,7 @@
 
 .landing-mockup-panels {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -349,10 +367,11 @@
 
 @media (max-width: 980px) {
   .landing-hero-inner {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .landing-mockup {
     max-width: 480px;
+    margin: 0 auto;
   }
 }
 
@@ -364,11 +383,39 @@
     font-size: 30px;
   }
   .landing-mockup {
-    grid-template-columns: 84px 1fr;
+    grid-template-columns: 84px minmax(0, 1fr);
     min-height: 300px;
   }
   .landing-mockup-stats {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Telefony wąskie (375/390/414px) — dociąg fontów/paddingów mockupu, bez
+   zmiany żadnej reguły powyżej (desktop/tablet zostają nietknięte). */
+@media (max-width: 400px) {
+  .landing-hero h1 {
+    font-size: 26px;
+  }
+  .landing-mockup {
+    grid-template-columns: 72px minmax(0, 1fr);
+    min-height: 270px;
+  }
+  .landing-mockup-sidebar {
+    padding: 10px 7px;
+  }
+  .landing-mockup-nav-item {
+    font-size: 9.5px;
+    padding: 5px 6px;
+  }
+  .landing-mockup-main {
+    padding: 12px 12px 14px;
+  }
+  .landing-mockup-stats {
+    gap: 6px;
+  }
+  .landing-mockup-stat {
+    padding: 7px;
   }
 }
 
@@ -405,13 +452,25 @@
   margin-bottom: 36px;
 }
 
+@media (max-width: 480px) {
+  .landing-section {
+    padding: 44px 0;
+  }
+  .landing-section-title {
+    font-size: 22px;
+  }
+  .landing-split-text .landing-section-title {
+    font-size: 21px;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    Kategorie (REKLAMACJE / ZWROTY / SERWIS / PRODUCENCI / DOKUMENTACJA)
    ------------------------------------------------------------------------ */
 
 .landing-categories {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -450,13 +509,19 @@
 
 @media (max-width: 980px) {
   .landing-categories {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 620px) {
   .landing-categories {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 420px) {
+  .landing-categories {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -498,9 +563,24 @@
   flex-shrink: 0;
 }
 
+/* Poniżej 700px proces przechodzi z poziomego scrolla na pionowy stos —
+   wymóg "żadnego poziomego scrollowania" na mobile. Ta sama struktura DOM
+   (LandingPage.tsx się nie zmienia), tylko kierunek flexa + obrócona strzałka. */
 @media (max-width: 700px) {
   .landing-process-row {
-    flex-wrap: nowrap;
+    flex-direction: column;
+    overflow-x: visible;
+    align-items: stretch;
+  }
+  .landing-process-step {
+    flex: 1 1 auto;
+  }
+  .landing-process-arrow {
+    justify-content: center;
+    padding: 2px 0;
+  }
+  .landing-process-arrow svg {
+    transform: rotate(90deg);
   }
 }
 
@@ -510,7 +590,7 @@
 
 .landing-features-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -534,7 +614,7 @@
 
 @media (max-width: 860px) {
   .landing-features-grid {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -577,7 +657,7 @@
 
 @media (max-width: 900px) {
   .landing-split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -593,6 +673,12 @@
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-lg);
   padding: 40px 32px;
+}
+
+@media (max-width: 480px) {
+  .landing-pricing-card {
+    padding: 28px 20px;
+  }
 }
 
 .landing-pricing-card h3 {
