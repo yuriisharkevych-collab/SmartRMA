@@ -51,6 +51,24 @@ COPY --from=build /workspace/node_modules ./node_modules
 COPY --from=build /workspace/apps/api/dist ./apps/api/dist
 COPY --from=build /workspace/apps/api/prisma ./apps/api/prisma
 COPY --from=build /workspace/apps/api/package.json ./apps/api/package.json
+# Etap 9 — `prisma/seed.ts` biegnie przez `ts-node` (patrz `package.json` ->
+# `prisma.seed`), więc potrzebuje PRAWDZIWEGO źródła TS pod importami, które
+# ma zapisane dosłownie (`../src/rbac/constants/...`) — skompilowany
+# odpowiednik w `dist/` tu nie pomaga, `ts-node` nie wie o jego istnieniu.
+# `src/` całościowo świadomie NIE trafia do runtime (aplikacja startuje z
+# `dist/`, nie z TS) — kopiujemy WYŁĄCZNIE ten jeden katalog, od którego
+# `seed.ts` faktycznie zależy (zweryfikowane: oba pliki są samodzielne, bez
+# dalszych importów z reszty `src/`), żeby nie rozdymać obrazu produkcyjnego.
+COPY --from=build /workspace/apps/api/src/rbac/constants ./apps/api/src/rbac/constants
+# Etap 9 (c.d.) — bez `apps/api/tsconfig.json` w obrazie `ts-node` nie ma skąd
+# wziąć `module: commonjs`, więc kompiluje/ładuje `seed.ts` w złym formacie
+# (ESM) — dwa różne objawy tego samego braku, zweryfikowane empirycznie:
+# `ERR_UNKNOWN_FILE_EXTENSION` (natywny loader Node) albo, po wymuszeniu
+# starszej detekcji, `Cannot use import statement outside a module` (hak
+# ts-node owszem się odpala, ale kompiluje bez znajomości `module: commonjs`).
+# Wstrzyknięcie samej treści tego pliku do testowego kontenera (bez zmiany
+# repo) usunęło oba objawy naraz — jedyna brakująca zależność.
+COPY --from=build /workspace/apps/api/tsconfig.json ./apps/api/tsconfig.json
 # Etap 8 (audyt bezpieczeństwa) — proces działał jako root wewnątrz kontenera
 # (obraz `node:20-alpine` startuje jako root, jeśli nikt tego nie zmieni).
 # `node` to wbudowany, niskouprawniony użytkownik w oficjalnym obrazie —
