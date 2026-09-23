@@ -81,6 +81,10 @@ services:
       ENCRYPTION_KEY: "${ENCRYPTION_KEY:?wygeneruj z openssl rand -hex 32}"
       UPLOADS_DIR: /data/uploads
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      PLATFORM_MAIL_PROVIDER: ${PLATFORM_MAIL_PROVIDER:-Resend}
+      PLATFORM_MAIL_SENDER_NAME: ${PLATFORM_MAIL_SENDER_NAME:-SmartRMA}
+      PLATFORM_MAIL_SENDER_EMAIL: ${PLATFORM_MAIL_SENDER_EMAIL:-noreply@smartrma.pl}
+      PLATFORM_RESEND_API_KEY: ${PLATFORM_RESEND_API_KEY:?PLATFORM_RESEND_API_KEY wymagany}
     volumes:
       - uploads_data:/data/uploads
     depends_on:
