@@ -60,7 +60,7 @@ export function LoginPage() {
         <div className="login-brand">
           <div className="sidebar-brand-mark">R</div>
           <div className="sidebar-brand-text" style={{ fontSize: 16 }}>
-            Smart<span>RMA</span> AI
+            Smart<span>RMA</span>
           </div>
         </div>
 

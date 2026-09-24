@@ -47,7 +47,7 @@ export function ResetPasswordPage() {
           <div className="login-brand">
             <div className="sidebar-brand-mark">R</div>
             <div className="sidebar-brand-text" style={{ fontSize: 16 }}>
-              Smart<span>RMA</span> AI
+              Smart<span>RMA</span>
             </div>
           </div>
           <h1 className="login-title">Link resetu hasła jest nieprawidłowy</h1>
@@ -70,7 +70,7 @@ export function ResetPasswordPage() {
           <div className="login-brand">
             <div className="sidebar-brand-mark">R</div>
             <div className="sidebar-brand-text" style={{ fontSize: 16 }}>
-              Smart<span>RMA</span> AI
+              Smart<span>RMA</span>
             </div>
           </div>
           <h1 className="login-title">Hasło zmienione</h1>
@@ -93,7 +93,7 @@ export function ResetPasswordPage() {
         <div className="login-brand">
           <div className="sidebar-brand-mark">R</div>
           <div className="sidebar-brand-text" style={{ fontSize: 16 }}>
-            Smart<span>RMA</span> AI
+            Smart<span>RMA</span>
           </div>
         </div>
 
