@@ -50,7 +50,7 @@ export class ProductsRepository {
   create(
     companyId: string,
     data: {
-      manufacturerId: string;
+      manufacturerId?: string;
       name: string;
       sku?: string;
       category?: string;

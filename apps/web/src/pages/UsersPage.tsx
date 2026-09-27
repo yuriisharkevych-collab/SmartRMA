@@ -45,6 +45,7 @@ interface FormState {
   firstName: string;
   lastName: string;
   email: string;
+  login: string;
   loginMethod: LoginMethod;
   password: string;
   pin: string;
@@ -57,6 +58,7 @@ const EMPTY_FORM: FormState = {
   firstName: '',
   lastName: '',
   email: '',
+  login: '',
   loginMethod: 'Password',
   password: '',
   pin: '',
@@ -156,7 +158,11 @@ export function UsersPage() {
       )
       .filter((u) => (roleFilter ? u.roles.includes(roleFilter) : true))
       .filter((u) =>
-        query ? `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(query) : true,
+        query
+          ? `${u.firstName} ${u.lastName} ${u.email ?? ''} ${u.login ?? ''}`
+              .toLowerCase()
+              .includes(query)
+          : true,
       )
       .sort((a, b) =>
         `${a.lastName}${a.firstName}`.localeCompare(`${b.lastName}${b.firstName}`, 'pl'),
@@ -176,7 +182,8 @@ export function UsersPage() {
     setForm({
       firstName: user.firstName,
       lastName: user.lastName,
-      email: user.email,
+      email: user.email ?? '',
+      login: user.login ?? '',
       loginMethod: user.loginMethod,
       password: '',
       pin: '',
@@ -198,7 +205,8 @@ export function UsersPage() {
         await usersApi.update(editing.id, {
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
-          email: form.email.trim(),
+          email: form.email.trim() || undefined,
+          login: form.login.trim() || undefined,
           shopId: form.shopId || undefined,
         });
 
@@ -233,7 +241,8 @@ export function UsersPage() {
       await usersApi.create({
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
-        email: form.email.trim(),
+        email: form.email.trim() || undefined,
+        login: form.loginMethod === 'Pin' ? undefined : form.login.trim(),
         loginMethod: form.loginMethod,
         password: form.loginMethod === 'Pin' ? undefined : form.password,
         pin: form.loginMethod === 'Pin' ? form.pin.trim() : undefined,
@@ -308,8 +317,8 @@ export function UsersPage() {
 
   function handleSave() {
     setError(null);
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim()) {
-      setError('Uzupełnij imię, nazwisko i e-mail.');
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      setError('Uzupełnij imię i nazwisko.');
       return;
     }
     if (form.roleIds.length === 0) {
@@ -322,9 +331,15 @@ export function UsersPage() {
           setError(`PIN musi mieć dokładnie ${pinLength} cyfr.`);
           return;
         }
-      } else if (form.password.length < 8) {
-        setError('Hasło początkowe musi mieć co najmniej 8 znaków (AUTH-004).');
-        return;
+      } else {
+        if (!form.login.trim()) {
+          setError('Podaj login — jest wymagany do zalogowania.');
+          return;
+        }
+        if (form.password.length < 8) {
+          setError('Hasło początkowe musi mieć co najmniej 8 znaków (AUTH-004).');
+          return;
+        }
       }
     }
     saveMutation.mutate();
@@ -458,7 +473,7 @@ export function UsersPage() {
                       </div>
                     </td>
                     <td className="cell-secondary">
-                      {u.email}
+                      {u.email ?? (u.login ? `login: ${u.login}` : '—')}
                       {u.loginMethod === 'Pin' && (
                         <span
                           className="badge badge-gray"
@@ -592,8 +607,10 @@ export function UsersPage() {
                 onChange={(e) => set('lastName', e.target.value)}
               />
             </div>
-            <div className="field span-2">
-              <label htmlFor="u-email">E-mail</label>
+            <div className="field">
+              <label htmlFor="u-email">
+                E-mail <span className="hint">(opcjonalnie — do powiadomień)</span>
+              </label>
               <input
                 id="u-email"
                 type="email"
@@ -601,6 +618,19 @@ export function UsersPage() {
                 onChange={(e) => set('email', e.target.value)}
               />
             </div>
+            {form.loginMethod !== 'Pin' && (
+              <div className="field">
+                <label htmlFor="u-login">Login</label>
+                <input
+                  id="u-login"
+                  type="text"
+                  autoComplete="off"
+                  value={form.login}
+                  onChange={(e) => set('login', e.target.value)}
+                />
+                <span className="hint">Do logowania zamiast e-maila. Unikalny w tej firmie.</span>
+              </div>
+            )}
             {!editing && pinLoginEnabled && (
               <div className="field span-2">
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -893,6 +923,7 @@ export function UsersPage() {
       </Modal>
 
       {/* --- Modal: TRWAŁE usunięcie (RBAC.md §5, wyłącznie Administrator) --- */}
+      {/* Potwierdzenie wpisaniem e-maila ALBO loginu (pracownik bez e-maila) — bez fallbacku admin nie mógłby w ogóle usunąć takiego konta. */}
       <Modal
         open={deleteTarget !== null}
         title={`Trwale usunąć konto ${deleteTarget?.firstName ?? ''} ${deleteTarget?.lastName ?? ''}?`}
@@ -907,7 +938,8 @@ export function UsersPage() {
               className="btn btn-danger"
               onClick={() => deleteMutation.mutate()}
               disabled={
-                deleteConfirmText.trim() !== deleteTarget?.email || deleteMutation.isPending
+                deleteConfirmText.trim() !== (deleteTarget?.email ?? deleteTarget?.login ?? '') ||
+                deleteMutation.isPending
               }
             >
               {deleteMutation.isPending ? 'Usuwanie…' : 'Usuń trwale'}
@@ -922,7 +954,8 @@ export function UsersPage() {
         </p>
         <div className="field">
           <label htmlFor="u-delete-confirm">
-            Wpisz adres e-mail <strong className="mono">{deleteTarget?.email}</strong>, aby
+            Wpisz {deleteTarget?.email ? 'adres e-mail' : 'login'}{' '}
+            <strong className="mono">{deleteTarget?.email ?? deleteTarget?.login}</strong>, aby
             potwierdzić
           </label>
           <input
@@ -930,7 +963,7 @@ export function UsersPage() {
             type="text"
             value={deleteConfirmText}
             onChange={(e) => setDeleteConfirmText(e.target.value)}
-            placeholder={deleteTarget?.email}
+            placeholder={deleteTarget?.email ?? deleteTarget?.login ?? undefined}
             autoComplete="off"
           />
         </div>

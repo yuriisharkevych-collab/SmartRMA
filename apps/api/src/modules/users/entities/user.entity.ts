@@ -8,7 +8,8 @@ export class UserEntity {
   @ApiPropertyOptional({ nullable: true }) shopId!: string | null;
   @ApiProperty() firstName!: string;
   @ApiProperty() lastName!: string;
-  @ApiProperty() email!: string;
+  @ApiPropertyOptional({ nullable: true }) email!: string | null;
+  @ApiPropertyOptional({ nullable: true }) login!: string | null;
   @ApiProperty({
     enum: LoginMethod,
     description:

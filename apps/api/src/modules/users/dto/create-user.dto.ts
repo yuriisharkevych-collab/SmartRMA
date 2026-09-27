@@ -26,6 +26,13 @@ import {
  * `loginMethod` — reszta walidacji (długość PIN-u, czy firma w ogóle
  * dopuszcza PIN, czy wybrane role nie kolidują z PIN-em) żyje w
  * `UsersService`/`CompanySettingsService`, bo zależy od ustawień firmy.
+ *
+ * `login` — zadanie "Pracownicy bez e-maila": część pracowników nie ma
+ * własnej skrzynki firmowej, więc dla `loginMethod=Password` (jedyna ścieżka,
+ * której to dotyczy — `Pin` nadal dzieli `email` jak dotychczas) `login` jest
+ * WYMAGANY, a `email` staje się OPCJONALNY (nadal przydatny do powiadomień).
+ * Unikalność loginu jest w obrębie firmy (USER-009), w odróżnieniu od e-maila
+ * (USER-001, globalny) — patrz komentarz przy `User.login` w schema.prisma.
  */
 export class CreateUserDto {
   @ApiProperty()
@@ -36,9 +43,22 @@ export class CreateUserDto {
   @IsString()
   lastName!: string;
 
-  @ApiProperty()
+  @ApiPropertyOptional({
+    description:
+      'Opcjonalny — do powiadomień. Wymagany identyfikator logowania to `login` dla kont Password.',
+  })
+  @IsOptional()
   @IsEmail({}, { message: 'VALIDATION-002' })
-  email!: string;
+  email?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Wymagany, gdy loginMethod=Password (domyślnie) i nie podano `email` — identyfikator logowania zamiast e-maila. Jeśli podano oba, konto ma obie ścieżki logowania.',
+  })
+  @ValidateIf((o: CreateUserDto) => o.loginMethod !== LoginMethod.Pin && (!!o.login || !o.email))
+  @IsString()
+  @Matches(/^[a-zA-Z0-9._-]{3,32}$/, { message: 'USER-010' })
+  login?: string;
 
   @ApiPropertyOptional({ enum: LoginMethod, default: LoginMethod.Password })
   @IsOptional()

@@ -51,6 +51,26 @@ export class UsersRepository {
     });
   }
 
+  /**
+   * Logowanie loginem (pracownik bez e-maila) — `login` jest unikalny
+   * WYŁĄCZNIE w obrębie firmy (`User_companyId_login_key`), nie globalnie jak
+   * e-mail — endpoint logowania nie zna firmy, więc różne firmy MOGĄ mieć
+   * pracownika o tym samym loginie. `AuthService` próbuje dopasować hasło do
+   * KAŻDEGO kandydata (dokładnie ten sam wzorzec co `findPinAccountsByEmail`
+   * wyżej), zanim przejdzie do pełnej walidacji dopasowanego konta.
+   */
+  findPasswordAccountsByLogin(login: string): Promise<UserWithRoles[]> {
+    return this.prisma.user.findMany({
+      where: { login, loginMethod: LoginMethod.Password },
+      include: WITH_ROLES,
+    });
+  }
+
+  /** Sprawdzenie unikalności loginu W OBRĘBIE FIRMY (USER-009) — analogicznie do sprawdzenia e-maila (USER-001), ale scope'owane, bo login nie jest unikalny globalnie. */
+  findByCompanyAndLogin(companyId: string, login: string): Promise<UserWithRoles | null> {
+    return this.prisma.user.findFirst({ where: { companyId, login }, include: WITH_ROLES });
+  }
+
   findAllByCompany(companyId: string): Promise<UserWithRoles[]> {
     return this.prisma.user.findMany({ where: { companyId }, include: WITH_ROLES });
   }
@@ -68,7 +88,8 @@ export class UsersRepository {
     shopId?: string | null;
     firstName: string;
     lastName: string;
-    email: string;
+    email?: string | null;
+    login?: string | null;
     loginMethod: LoginMethod;
     passwordHash?: string;
     pinHash?: string;
@@ -80,10 +101,15 @@ export class UsersRepository {
         shopId: data.shopId ?? null,
         firstName: data.firstName,
         lastName: data.lastName,
-        email: data.email,
+        email: data.email ?? null,
+        login: data.login ?? null,
         loginMethod: data.loginMethod,
         passwordHash: data.passwordHash,
         pinHash: data.pinHash,
+        // Konto bez e-maila nie ma czego "weryfikować" (AUTH-007 dotyczy
+        // wyłącznie self-service `POST /companies/signup`) — `emailVerifiedAt`
+        // zostaje ustawione od razu jak dla każdego konta zakładanego przez
+        // administratora, niezależnie od tego, czy e-mail w ogóle podano.
         emailVerifiedAt: new Date(),
         roles: { create: data.roleIds.map((roleId) => ({ roleId })) },
       },
@@ -97,6 +123,7 @@ export class UsersRepository {
       firstName: string;
       lastName: string;
       email: string;
+      login: string;
       shopId: string | null;
       active: boolean;
     }>,

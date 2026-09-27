@@ -805,6 +805,7 @@ export function CaseDetailPage() {
                       onClick={() => {
                         setItemForm({
                           manufacturerId: item?.manufacturerId ?? '',
+                          brandId: product?.brandId ?? '',
                           productName: product?.name ?? '',
                           serialNumber: item?.serialNumber ?? '',
                           frameNumber: item?.frameNumber ?? '',
@@ -1993,7 +1994,40 @@ export function CaseDetailPage() {
       >
         <div className="form-grid">
           <div className="field">
-            <label htmlFor="item-manufacturer">Producent</label>
+            <label htmlFor="item-brand">
+              Marka <span className="hint">(opcjonalnie — przyspiesza wybór producenta)</span>
+            </label>
+            <select
+              id="item-brand"
+              value={itemForm.brandId ?? ''}
+              onChange={(e) => {
+                const nextBrandId = e.target.value || undefined;
+                const brand = Array.from(lookups.brandById.values()).find(
+                  (b) => b.id === nextBrandId,
+                );
+                setItemForm((f) => ({
+                  ...f,
+                  brandId: nextBrandId,
+                  manufacturerId: brand ? brand.manufacturerId : f.manufacturerId,
+                }));
+              }}
+            >
+              <option value="">— wybierz markę —</option>
+              {Array.from(lookups.brandById.values())
+                .filter(
+                  (b) => !itemForm.manufacturerId || b.manufacturerId === itemForm.manufacturerId,
+                )
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="item-manufacturer">
+              Producent / Dystrybutor <span className="hint">(opcjonalnie)</span>
+            </label>
             <select
               id="item-manufacturer"
               value={itemForm.manufacturerId ?? ''}

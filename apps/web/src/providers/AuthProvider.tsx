@@ -7,7 +7,7 @@ import type { AuthenticatedUser, AuthTokens } from '@/types/auth';
 export interface AuthContextValue {
   user: AuthenticatedUser | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
   /** Etap 5 — logowanie z już wydanych tokenów (np. `POST /partnerships/invite/:token/accept`), bez ponownego `POST /auth/login`. */
   loginWithTokens: (tokens: AuthTokens) => void;
   logout: () => void;
@@ -29,8 +29,8 @@ function userFromStorage(): AuthenticatedUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthenticatedUser | null>(() => userFromStorage());
 
-  const login = useCallback(async (email: string, password: string) => {
-    const tokens = await authApi.login(email, password);
+  const login = useCallback(async (identifier: string, password: string) => {
+    const tokens = await authApi.login(identifier, password);
     setStoredTokens(tokens);
     setUser(decodeAccessToken(tokens.accessToken));
   }, []);

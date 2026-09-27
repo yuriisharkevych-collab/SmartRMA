@@ -3,6 +3,7 @@ import { publicClient } from './publicClient';
 import type { AuthTokens } from '@/types/auth';
 
 export const authApi = {
+  /** `email` (pole) niesie ALBO e-mail (konta dotychczasowe), ALBO login (pracownicy bez e-maila) — kontrakt `/auth/login` świadomie niezmieniony, patrz `LoginDto` w apps/api. */
   login: (email: string, password: string) =>
     apiClient.post<AuthTokens>('/auth/login', { email, password }).then((res) => res.data),
 

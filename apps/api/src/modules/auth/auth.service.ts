@@ -49,31 +49,37 @@ export class AuthService {
    * e-mailem (patrz komentarz przy `User.loginMethod` w schema.prisma —
    * właściciel: wiele stanowisk w firmie dzieli jeden e-mail firmowy, PIN
    * odróżnia pracownika).
+   *
+   * `login` (parametr) niesie ALBO e-mail (konta dotychczasowe — zachowanie
+   * NIEZMIENIONE), ALBO login (zadanie "Pracownicy bez e-maila", `User.login`).
+   * Próbujemy po kolei: konto Password po e-mailu (dokładnie jak dotychczas)
+   * → konto(a) Password po loginie (NOWE, wzorem PIN-u niżej — `login` jest
+   * unikalny TYLKO w obrębie firmy, więc różne firmy mogą mieć ten sam login;
+   * porównujemy hasło z KAŻDYM kandydatem, zanim cokolwiek zapiszemy) → PIN po
+   * e-mailu (bez zmian). Żaden z tych kroków nie zmienia zachowania dla
+   * istniejących kont — `login` jest `NULL` dla wszystkich sprzed tej zmiany.
    */
   async validateCredentials(
-    email: string,
+    login: string,
     secret: string,
     context?: LoginContext,
   ): Promise<UserWithRoles> {
-    // `LoginDto.email` niesie `@IsEmail({message:'VALIDATION-002'})`, ale `LocalAuthGuard`
-    // (Passport) wykonuje się PRZED `ValidationPipe` w cyklu życia żądania Nest — ten
-    // dekorator nigdy by się nie uruchomił dla tego endpointu bez powtórzenia sprawdzenia
-    // tutaj. Sam format e-maila (bez odpytania bazy) nie ujawnia, czy konto istnieje.
-    if (!isEmail(email)) {
-      throw new AppException(
-        ERROR_CODES.VALIDATION_002.code,
-        ERROR_CODES.VALIDATION_002.message,
-        ERROR_CODES.VALIDATION_002.status,
-        { field: 'email' },
-      );
+    // Format e-maila sprawdzany tylko INFORMACYJNIE (żeby ewentualnie skierować
+    // do właściwej ścieżki) — NIE odrzucamy już wejścia, które nie wygląda jak
+    // e-mail, bo `login` z definicji nim nie jest.
+    if (isEmail(login)) {
+      const passwordAccount = await this.usersRepository.findPasswordAccountByEmail(login);
+      if (passwordAccount) {
+        return this.validatePasswordLogin(passwordAccount, secret, context);
+      }
     }
 
-    const passwordAccount = await this.usersRepository.findPasswordAccountByEmail(email);
-    if (passwordAccount) {
-      return this.validatePasswordLogin(passwordAccount, secret, context);
+    const loginCandidates = await this.usersRepository.findPasswordAccountsByLogin(login);
+    if (loginCandidates.length > 0) {
+      return this.validateMultiCandidatePasswordLogin(loginCandidates, secret, context);
     }
 
-    const pinCandidates = await this.usersRepository.findPinAccountsByEmail(email);
+    const pinCandidates = await this.usersRepository.findPinAccountsByEmail(login);
     if (pinCandidates.length === 0) {
       throw new AppException(
         ERROR_CODES.AUTH_001.code,
@@ -81,7 +87,35 @@ export class AuthService {
         ERROR_CODES.AUTH_001.status,
       );
     }
-    return this.validatePinLogin(email, pinCandidates, secret);
+    return this.validatePinLogin(login, pinCandidates, secret);
+  }
+
+  /**
+   * Logowanie loginem — `candidates` to WSZYSTKIE konta `loginMethod=Password`
+   * z tym loginem (teoretycznie różne firmy, `login` jest unikalny tylko W
+   * OBRĘBIE FIRMY, patrz `User_companyId_login_key`). Dopasowanie hasła
+   * PRZED jakimikolwiek efektami ubocznymi (ten sam wzorzec co
+   * `validatePinLogin` niżej) — dopiero dla TRAFIONEGO kandydata wołamy
+   * PEŁNĄ, niezmienioną `validatePasswordLogin` (blokada/`active`/
+   * `emailVerifiedAt`), żeby nie duplikować tej logiki.
+   */
+  private async validateMultiCandidatePasswordLogin(
+    candidates: UserWithRoles[],
+    password: string,
+    context?: LoginContext,
+  ): Promise<UserWithRoles> {
+    for (const candidate of candidates) {
+      // passwordHash ZAWSZE ustawiony dla loginMethod=Password.
+      const matches = await this.passwordService.compare(password, candidate.passwordHash!);
+      if (matches) {
+        return this.validatePasswordLogin(candidate, password, context);
+      }
+    }
+    throw new AppException(
+      ERROR_CODES.AUTH_001.code,
+      ERROR_CODES.AUTH_001.message,
+      ERROR_CODES.AUTH_001.status,
+    );
   }
 
   /**
@@ -207,6 +241,7 @@ export class AuthService {
     const accessPayload: JwtAccessPayload = {
       sub: user.id,
       email: user.email,
+      login: user.login,
       firstName: user.firstName,
       lastName: user.lastName,
       companyId: user.companyId,

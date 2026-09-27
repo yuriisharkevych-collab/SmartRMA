@@ -91,12 +91,19 @@ export function AppLayout() {
 
   const primaryRole = user?.roles[0] ?? '—';
   // Token wydany przed dodaniem firstName/lastName do payloadu (stara sesja w localStorage)
-  // niesie puste stringi — awaryjnie e-mail, dopóki `POST /auth/refresh` nie wyda nowego tokenu.
+  // niesie puste stringi — awaryjnie e-mail/login, dopóki `POST /auth/refresh` nie wyda nowego tokenu.
+  // Pracownik bez e-maila (zadanie "Pracownicy bez e-maila") — `email` może być `null`
+  // mimo że `user` istnieje, więc `user?.email` samo w sobie NIE wystarcza jako fallback.
   const displayName =
     user && (user.firstName || user.lastName)
       ? `${user.firstName} ${user.lastName}`.trim()
-      : (user?.email ?? '');
-  const avatarInitial = (user?.firstName?.[0] ?? user?.email[0] ?? '?').toUpperCase();
+      : (user?.email ?? user?.login ?? '');
+  const avatarInitial = (
+    user?.firstName?.[0] ??
+    user?.email?.[0] ??
+    user?.login?.[0] ??
+    '?'
+  ).toUpperCase();
 
   return (
     <div className="app-shell">

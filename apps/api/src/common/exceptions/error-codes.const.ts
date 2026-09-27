@@ -284,6 +284,18 @@ export const ERROR_CODES = {
     status: HttpStatus.CONFLICT,
     message: 'To konto loguje się hasłem, nie PIN-em.',
   },
+  /** Zadanie "Pracownicy bez e-maila" — format loginu (`CreateUserDto.login`). */
+  USER_010: {
+    code: 'USER-010',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Login musi mieć 3-32 znaki: litery, cyfry, kropka, podkreślenie lub myślnik.',
+  },
+  /** Zadanie "Pracownicy bez e-maila" — USER-001 dla loginu (unikalność W OBRĘBIE FIRMY, nie globalnie). */
+  USER_011: {
+    code: 'USER-011',
+    status: HttpStatus.CONFLICT,
+    message: 'Ten login jest już zajęty w tej firmie.',
+  },
 
   // --- CONTRACTOR / MANUFACTURER ---
   CONTRACTOR_001: {

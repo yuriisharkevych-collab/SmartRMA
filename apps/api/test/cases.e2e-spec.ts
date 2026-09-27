@@ -34,6 +34,7 @@ describe('Cases (e2e)', () => {
   let companyId: string;
   let customerId: string;
   let productId: string;
+  let manufacturerId: string;
   let adminAccessToken: string;
   let noPermAccessToken: string;
   const adminEmail = `e2e-cases-admin-${Date.now()}@sklep.pl`;
@@ -110,6 +111,7 @@ describe('Cases (e2e)', () => {
 
     const contractor = await prisma.contractor.create({ data: { companyId, name: `E2E Producent ${Date.now()}` } });
     const manufacturer = await prisma.manufacturer.create({ data: { companyId, contractorId: contractor.id } });
+    manufacturerId = manufacturer.id;
     const product = await prisma.product.create({ data: { companyId, manufacturerId: manufacturer.id, name: 'Rower X' } });
     productId = product.id;
 
@@ -170,6 +172,9 @@ describe('Cases (e2e)', () => {
     await prisma.caseItem.deleteMany({ where: { case: { companyId } } }).catch(() => undefined);
     await prisma.case.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.product.deleteMany({ where: { companyId } }).catch(() => undefined);
+    // Marka utworzona w teście "Producent/Dystrybutor i Marka opcjonalne" —
+    // FK Brand→Manufacturer/Company blokowałaby usunięcie obu poniżej.
+    await prisma.brand.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.manufacturer.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.contractor.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.customer.deleteMany({ where: { companyId } }).catch(() => undefined);
@@ -240,6 +245,83 @@ describe('Cases (e2e)', () => {
       expect(auditEntries).toHaveLength(1);
       const history = await prisma.caseHistory.findMany({ where: { caseId: res.body.id } });
       expect(history.map((h) => h.action)).toContain('CaseCreated');
+    });
+  });
+
+  /**
+   * Zadanie "Producent/Dystrybutor i Marka opcjonalne" — model spoza katalogu
+   * bez wskazanego producenta/dystrybutora musi dać się zgłosić (BR-072/BR-074,
+   * `resolveItemProduct` już nie rzuca VALIDATION-001 dla brakującego
+   * `manufacturerId`), a administrator/pracownik musi mieć drogę uzupełnienia
+   * producenta i marki PO fakcie, przez edycję pozycji sprawy.
+   */
+  describe('Producent/Dystrybutor i Marka opcjonalne (uzupełniane po fakcie)', () => {
+    let openCaseId: string;
+    let openItemId: string;
+
+    it('tworzy sprawę z pozycją BEZ producenta i BEZ marki — nowy model spoza katalogu', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/cases')
+        .set(authHeader(adminAccessToken))
+        .send({
+          ...baseCaseBody(),
+          items: [
+            {
+              productName: `Model bez producenta ${Date.now()}`,
+              description: 'Nie uruchamia się',
+              // Bez `manufacturerId` `assertManufacturerRequirements` nie jest
+              // egzekwowane (wraca wcześnie), więc `purchaseProofNumber` tu nie
+              // jest wymagany — ustawiony i tak, żeby kolejny test (uzupełnienie
+              // producenta) nie wpadł w CASE-006 z innego powodu.
+              purchaseProofNumber: 'FV/2026/002',
+            },
+          ],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.items).toHaveLength(1);
+      const item = res.body.items[0];
+      expect(item.manufacturerId).toBeNull();
+      expect(item.brandId).toBeNull();
+
+      const product = await prisma.product.findUnique({ where: { id: item.productId } });
+      expect(product?.manufacturerId).toBeNull();
+      expect(product?.brandId).toBeNull();
+
+      openCaseId = res.body.id;
+      openItemId = item.id;
+    });
+
+    it('PATCH /api/cases/:id/items/:itemId pozwala później uzupełnić producenta/dystrybutora', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/cases/${openCaseId}/items/${openItemId}`)
+        .set(authHeader(adminAccessToken))
+        .send({ manufacturerId });
+
+      expect(res.status).toBe(200);
+      const item = res.body.items.find((i: { id: string }) => i.id === openItemId);
+      expect(item.manufacturerId).toBe(manufacturerId);
+    });
+
+    it('PATCH /api/cases/:id/items/:itemId pozwala uzupełnić SAMĄ markę, bez dotykania modelu/producenta (regresja: `touchesProduct` ignorował samodzielny `brandId`)', async () => {
+      const brand = await prisma.brand.create({
+        data: { companyId, manufacturerId, name: `E2E Marka ${Date.now()}` },
+      });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/cases/${openCaseId}/items/${openItemId}`)
+        .set(authHeader(adminAccessToken))
+        .send({ brandId: brand.id });
+
+      expect(res.status).toBe(200);
+      const item = res.body.items.find((i: { id: string }) => i.id === openItemId);
+      expect(item.brandId).toBe(brand.id);
+      // Producent ustawiony w poprzednim teście musi PRZETRWAĆ — edycja marki
+      // "samodzielnie" nie może cofnąć wcześniej uzupełnionego producenta.
+      expect(item.manufacturerId).toBe(manufacturerId);
+
+      const product = await prisma.product.findUnique({ where: { id: item.productId } });
+      expect(product?.brandId).toBe(brand.id);
     });
   });
 

@@ -43,7 +43,7 @@ interface PickedFile {
 /**
  * Odpowiednik `case-new.html` + `js/case-new.js`, w kolejności sekcji
  * uzgodnionej po testach: typ zgłoszenia → źródło → klient → produkt →
- * dowód zakupu → opis → zdjęcia i pliki → oczekiwane rozwiązanie →
+ * dowód zakupu → zdjęcia i pliki → oczekiwane rozwiązanie →
  * właściciel sprawy.
  *
  * Produkt: prototyp miał wolny tekst „model" + select producenta + datalist
@@ -57,6 +57,13 @@ interface PickedFile {
  *
  * Marka: wybór marki podstawia producenta automatycznie — dokładnie jak
  * `wireBrandAutoDetect()` w prototypie („sugeruje, nie wymusza", BR-076).
+ * Producent/Dystrybutor NIE jest wymagany — zgłoszenie na model, którego
+ * producenta/dystrybutora jeszcze nie ma w katalogu, musi dać się zapisać
+ * (uzupełnia się go później przez edycję pozycji sprawy, `CaseDetailPage.tsx`).
+ *
+ * Dawna Sekcja 6 „Opis zgłoszenia" usunięta — duplikowała „Opis usterki
+ * produktu" (Sekcja 4); to drugie pole pełni teraz obie role
+ * (`Case.description` wyprowadzane z niego w `handleSubmit`).
  */
 export function CaseNewPage() {
   const { user, hasPermission } = useAuth();
@@ -163,9 +170,7 @@ export function CaseNewPage() {
     setFiles((current) => [...current, ...picked]);
   }
 
-  // --- 6. Opis / 8. Rozwiązanie ---
-  const [description, setDescription] = useState('');
-  const [customerStatement, setCustomerStatement] = useState('');
+  // --- 4. Opis usterki (pełni też rolę Case.description, patrz handleSubmit) / 7. Rozwiązanie ---
   const [itemDescription, setItemDescription] = useState('');
   const [requestedResolution, setRequestedResolution] = useState('');
 
@@ -226,10 +231,8 @@ export function CaseNewPage() {
     setFormError(null);
 
     if (!selectedCustomer) return setFormError('Wybierz klienta lub dodaj nowego.');
-    if (!manufacturerId) return setFormError('Wybierz producenta.');
     if (!model.trim()) return setFormError('Podaj model produktu.');
     if (!itemDescription.trim()) return setFormError('Opisz usterkę produktu.');
-    if (!description.trim()) return setFormError('Uzupełnij opis zgłoszenia.');
     if (!requestedResolution) return setFormError('Wybierz oczekiwane rozwiązanie.');
 
     // Wymagania producenta (CASE-004/005/006) — sprawdzamy po stronie UI, żeby pracownik
@@ -265,14 +268,16 @@ export function CaseNewPage() {
         complaintType,
         source,
         requestedResolution,
-        description: description.trim(),
-        customerStatement: customerStatement.trim() || undefined,
+        // Sekcja "Opis zgłoszenia" usunięta z formularza (duplikowała to pole) —
+        // "Opis usterki produktu" pełni teraz obie role, backend nadal wymaga
+        // niepustego Case.description poza trybem BezposrednioDoProducenta.
+        description: itemDescription.trim(),
         items: [
           {
             ...(existing
               ? { productId: existing.id }
               : { productName: model.trim(), brandId: brandId || undefined }),
-            manufacturerId,
+            manufacturerId: manufacturerId || undefined,
             description: itemDescription.trim(),
             serialNumber: serialNumber.trim() || undefined,
             frameNumber: frameNumber.trim() || undefined,
@@ -587,14 +592,16 @@ export function CaseNewPage() {
             </div>
 
             <div className="field">
-              <label htmlFor="p-manufacturer">Producent</label>
+              <label htmlFor="p-manufacturer">
+                Producent / Dystrybutor{' '}
+                <span className="hint">(opcjonalnie — można uzupełnić później)</span>
+              </label>
               <select
                 id="p-manufacturer"
                 value={manufacturerId}
                 onChange={(e) => setManufacturerId(e.target.value)}
-                required
               >
-                <option value="">Wybierz producenta…</option>
+                <option value="">— wybierz —</option>
                 {(manufacturers ?? [])
                   .filter((m) => m.active)
                   .map((m) => (
@@ -692,6 +699,7 @@ export function CaseNewPage() {
                 placeholder="Co dokładnie jest niesprawne w tym egzemplarzu."
                 value={itemDescription}
                 onChange={(e) => setItemDescription(e.target.value)}
+                required
               />
             </div>
           </div>
@@ -730,36 +738,8 @@ export function CaseNewPage() {
           </div>
         </Section>
 
-        {/* --- 6. Opis zgłoszenia --- */}
-        <Section index={6} title="Opis zgłoszenia" subtitle="Podsumowanie sprawy i słowa klienta.">
-          <div className="form-grid single">
-            <div className="field">
-              <label htmlFor="f-description">Opis zgłoszenia</label>
-              <textarea
-                id="f-description"
-                placeholder="Krótkie podsumowanie sprawy widoczne w historii i na liście."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="f-statement">
-                Treść zgłoszenia klienta{' '}
-                <span className="hint">(opcjonalnie — dosłowne słowa klienta)</span>
-              </label>
-              <textarea
-                id="f-statement"
-                placeholder="Np. dokładny cytat z rozmowy lub wiadomości klienta."
-                value={customerStatement}
-                onChange={(e) => setCustomerStatement(e.target.value)}
-              />
-            </div>
-          </div>
-        </Section>
-
-        {/* --- 7. Zdjęcia i pliki --- */}
-        <Section index={7} title="Zdjęcia i pliki" subtitle="Zdjęcia wady, dokumenty, filmy.">
+        {/* --- 6. Zdjęcia i pliki --- */}
+        <Section index={6} title="Zdjęcia i pliki" subtitle="Zdjęcia wady, dokumenty, filmy.">
           <div className="form-grid single">
             <div className="field">
               <div className="file-drop" onClick={() => attachmentsInputRef.current?.click()}>
@@ -803,7 +783,7 @@ export function CaseNewPage() {
         </Section>
 
         {/* --- 8. Oczekiwane rozwiązanie --- */}
-        <Section index={8} title="Oczekiwane rozwiązanie" subtitle="Czego oczekuje klient.">
+        <Section index={7} title="Oczekiwane rozwiązanie" subtitle="Czego oczekuje klient.">
           <div className="form-grid single">
             <div className="field">
               <label htmlFor="f-resolution">Oczekiwane rozwiązanie zgłoszone przez klienta</label>
@@ -826,7 +806,7 @@ export function CaseNewPage() {
 
         {/* --- 9. Właściciel sprawy --- */}
         <Section
-          index={9}
+          index={8}
           title="Właściciel sprawy"
           subtitle="Pracownik odpowiedzialny za prowadzenie zgłoszenia."
         >
@@ -864,7 +844,7 @@ export function CaseNewPage() {
         {/* --- 10. Portal Klienta --- */}
         {hasPermission('cases.portal.manage') && (
           <Section
-            index={10}
+            index={9}
             title="Portal Klienta"
             subtitle="Dostęp klienta do statusu sprawy online, bez dzwonienia do sklepu."
           >

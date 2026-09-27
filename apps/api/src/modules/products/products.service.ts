@@ -110,7 +110,7 @@ export class ProductsService {
     dto: CreateProductDto,
     actorUserId: string,
   ): Promise<ProductEntity> {
-    await this.manufacturersService.findById(dto.manufacturerId, companyId);
+    if (dto.manufacturerId) await this.manufacturersService.findById(dto.manufacturerId, companyId);
     if (dto.brandId) await this.findBrandOrThrow(dto.brandId, companyId);
     if (dto.categoryId) await this.findCategoryOrThrow(dto.categoryId, companyId);
 

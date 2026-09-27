@@ -10,7 +10,10 @@ export interface User {
   shopId: string | null;
   firstName: string;
   lastName: string;
-  email: string;
+  /** `null` dla pracowników bez e-maila — patrz `login`. */
+  email: string | null;
+  /** `null` dla kont logujących się e-mailem albo PIN-em. */
+  login: string | null;
   loginMethod: LoginMethod;
   active: boolean;
   lastLoginAt: string | null;
@@ -43,7 +46,10 @@ export interface LoginEvent {
 export interface CreateUserPayload {
   firstName: string;
   lastName: string;
-  email: string;
+  /** Opcjonalny — do powiadomień. Wymagany identyfikator logowania to `login` (dla kont Password). */
+  email?: string;
+  /** Wymagany, gdy loginMethod=Password (domyślnie) — identyfikator logowania zamiast e-maila. */
+  login?: string;
   loginMethod?: LoginMethod;
   password?: string;
   pin?: string;
@@ -56,6 +62,7 @@ export interface UpdateUserPayload {
   firstName?: string;
   lastName?: string;
   email?: string;
+  login?: string;
   shopId?: string;
 }
 

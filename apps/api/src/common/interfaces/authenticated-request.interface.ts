@@ -10,7 +10,10 @@ export interface AuthenticatedUser {
   userId: string;
   companyId: string;
   shopId: string | null;
-  email: string;
+  /** `null` dla pracowników bez e-maila (zadanie "Pracownicy bez e-maila") — patrz `login`. */
+  email: string | null;
+  /** `null` dla kont logujących się e-mailem albo PIN-em. */
+  login: string | null;
   firstName: string;
   lastName: string;
   roles: string[];

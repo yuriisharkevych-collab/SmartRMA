@@ -10,6 +10,7 @@ export class LocalStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly authService: AuthService) {
     // `passReqToCallback` — IP i User-Agent są potrzebne do zapisu NIEUDANEJ próby
     // logowania w `LoginEvent`; serwis nie zna `Request`, więc kontekst wędruje stąd.
+    // `email` (pole) niesie ALBO e-mail, ALBO login — patrz doc-comment `LoginDto`.
     super({ usernameField: 'email', passReqToCallback: true });
   }
 

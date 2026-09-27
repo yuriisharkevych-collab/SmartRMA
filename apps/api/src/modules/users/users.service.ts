@@ -95,13 +95,34 @@ export class UsersService {
     let pinHash: string | undefined;
 
     if (loginMethod === LoginMethod.Password) {
-      const existing = await this.usersRepository.findPasswordAccountByEmail(dto.email);
-      if (existing) {
-        throw new AppException(
-          ERROR_CODES.USER_001.code,
-          ERROR_CODES.USER_001.message,
-          ERROR_CODES.USER_001.status,
+      // `email` jest teraz opcjonalny (zadanie "Pracownicy bez e-maila") —
+      // sprawdzamy kolizję TYLKO gdy faktycznie podano. `login` DTO gwarantuje
+      // obecne dla loginMethod!=Pin (@ValidateIf) — sprawdzamy kolizję W
+      // OBRĘBIE FIRMY (USER-011), w odróżnieniu od e-maila (USER-001, globalny).
+      if (dto.email) {
+        const existing = await this.usersRepository.findPasswordAccountByEmail(dto.email);
+        if (existing) {
+          throw new AppException(
+            ERROR_CODES.USER_001.code,
+            ERROR_CODES.USER_001.message,
+            ERROR_CODES.USER_001.status,
+          );
+        }
+      }
+      // `login` opcjonalny na poziomie DTO, gdy podano `email` (@ValidateIf) —
+      // sprawdzamy kolizję tylko, gdy faktycznie podano.
+      if (dto.login) {
+        const existingLogin = await this.usersRepository.findByCompanyAndLogin(
+          companyId,
+          dto.login,
         );
+        if (existingLogin) {
+          throw new AppException(
+            ERROR_CODES.USER_011.code,
+            ERROR_CODES.USER_011.message,
+            ERROR_CODES.USER_011.status,
+          );
+        }
       }
       // DTO gwarantuje `password` obecne, gdy loginMethod!=Pin (@ValidateIf).
       await this.companySettingsService.assertPasswordMeetsPolicy(companyId, dto.password!);
@@ -117,7 +138,8 @@ export class UsersService {
       shopId: dto.shopId ?? null,
       firstName: dto.firstName,
       lastName: dto.lastName,
-      email: dto.email,
+      email: dto.email ?? null,
+      login: loginMethod === LoginMethod.Password ? dto.login : null,
       loginMethod,
       passwordHash,
       pinHash,
@@ -137,6 +159,16 @@ export class UsersService {
           ERROR_CODES.USER_001.code,
           ERROR_CODES.USER_001.message,
           ERROR_CODES.USER_001.status,
+        );
+      }
+    }
+    if (dto.login && existingRecord.loginMethod === LoginMethod.Password) {
+      const existingLogin = await this.usersRepository.findByCompanyAndLogin(companyId, dto.login);
+      if (existingLogin && existingLogin.id !== id) {
+        throw new AppException(
+          ERROR_CODES.USER_011.code,
+          ERROR_CODES.USER_011.message,
+          ERROR_CODES.USER_011.status,
         );
       }
     }

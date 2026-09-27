@@ -105,7 +105,10 @@ export class AccountRecoveryService {
     );
 
     const companyName = await this.getCompanyName(user.companyId);
-    await this.dispatchAccountEmail('account.emailVerificationResend', user.email, {
+    // `email` (parametr), nie `user.email` — logicznie ten sam string (znaleziony
+    // przez dokładne dopasowanie `WHERE email = ...`), ale typowany jako `string`,
+    // nie `string | null` (kolumna nullable od zadania "Pracownicy bez e-maila").
+    await this.dispatchAccountEmail('account.emailVerificationResend', email, {
       firstName: user.firstName,
       companyName,
       verificationUrl: this.buildLink('verify-email', token),
@@ -123,7 +126,8 @@ export class AccountRecoveryService {
     await this.usersRepository.setPasswordResetToken(user.id, hashAccountToken(token), expiresAt);
 
     const companyName = await this.getCompanyName(user.companyId);
-    await this.dispatchAccountEmail('account.passwordReset', user.email, {
+    // `email` (parametr), ten sam powód co w `resendVerification` wyżej.
+    await this.dispatchAccountEmail('account.passwordReset', email, {
       firstName: user.firstName,
       companyName,
       resetUrl: this.buildLink('reset-password', token),

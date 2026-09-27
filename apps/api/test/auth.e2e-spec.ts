@@ -48,8 +48,12 @@ describe('Auth (e2e)', () => {
 
   let companyId: string;
   let userId: string;
+  let loginOnlyUserId: string;
   const email = `e2e-auth-${Date.now()}@sklep.pl`;
   const password = 'Test-Password-123!';
+  // Zadanie "Pracownicy bez e-maila" — konto BEZ e-maila, logujące się loginem.
+  const login = `e2e-login-${Date.now()}`;
+  const loginPassword = 'Test-Login-Password-123!';
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -91,10 +95,25 @@ describe('Auth (e2e)', () => {
       },
     });
     userId = user.id;
+
+    const loginOnlyUser = await prisma.user.create({
+      data: {
+        companyId,
+        firstName: 'BezEmaila',
+        lastName: 'Pracownik',
+        email: null,
+        login,
+        passwordHash: await passwordService.hash(loginPassword),
+        active: true,
+        emailVerifiedAt: new Date(),
+      },
+    });
+    loginOnlyUserId = loginOnlyUser.id;
   });
 
   afterAll(async () => {
     await prisma.user.delete({ where: { id: userId } }).catch(() => undefined);
+    await prisma.user.delete({ where: { id: loginOnlyUserId } }).catch(() => undefined);
     await prisma.company.delete({ where: { id: companyId } }).catch(() => undefined);
     await app.close();
   });
@@ -114,12 +133,20 @@ describe('Auth (e2e)', () => {
       expect(res.body.error.code).toBe('AUTH-001');
     });
 
-    it('zwraca 422 VALIDATION-002 dla nieprawidłowego formatu e-maila', async () => {
+    /**
+     * Zadanie "Pracownicy bez e-maila" — pole `email` niesie teraz ALBO
+     * e-mail, ALBO login, więc string niewyglądający jak e-mail NIE jest już
+     * odrzucany formatem (mógłby być czyimś loginem) — trafia w zwykłą
+     * ścieżkę "nie znaleziono żadnego konta", tak samo jak nieistniejący
+     * e-mail wyżej (celowo ten sam AUTH-001, przeciw enumeracji formatów
+     * identyfikatora logowania).
+     */
+    it('zwraca 401 AUTH-001 dla stringa, który nie jest ani e-mailem, ani istniejącym loginem', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/auth/login')
-        .send({ email: 'nie-jest-emailem', password: 'cokolwiek' });
-      expect(res.status).toBe(422);
-      expect(res.body.error.code).toBe('VALIDATION-002');
+        .send({ email: 'nie-jest-emailem-ani-loginem', password: 'cokolwiek' });
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('AUTH-001');
     });
 
     it('zwraca 200 z parą tokenów dla poprawnych danych', async () => {
@@ -130,6 +157,27 @@ describe('Auth (e2e)', () => {
         refreshToken: expect.any(String),
         expiresIn: expect.any(Number),
       });
+    });
+
+    /** Zadanie "Pracownicy bez e-maila" — konto BEZ e-maila (`email: null`), loguje się `login`+hasłem, dokładnie tym samym endpointem/polem `email` co konta e-mailowe. */
+    it('zwraca 200 z parą tokenów dla pracownika logującego się loginem (bez e-maila)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: login, password: loginPassword });
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+        expiresIn: expect.any(Number),
+      });
+    });
+
+    it('zwraca 401 AUTH-001 dla poprawnego loginu, ale złego hasła', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: login, password: 'zle-haslo' });
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('AUTH-001');
     });
   });
 

@@ -2,7 +2,9 @@ import type { AuthenticatedUser } from '@/types/auth';
 
 interface JwtAccessPayload {
   sub: string;
-  email: string;
+  email: string | null;
+  /** Nieobecne w tokenach wydanych przed zadaniem "Pracownicy bez e-maila". */
+  login?: string | null;
   firstName?: string;
   lastName?: string;
   companyId: string;
@@ -43,6 +45,7 @@ export function decodeAccessToken(accessToken: string): AuthenticatedUser {
     companyId: payload.companyId,
     shopId: payload.shopId,
     email: payload.email,
+    login: payload.login ?? null,
     firstName: payload.firstName ?? '',
     lastName: payload.lastName ?? '',
     roles: payload.roles,

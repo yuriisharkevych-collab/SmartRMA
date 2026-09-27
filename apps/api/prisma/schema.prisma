@@ -716,7 +716,15 @@ model User {
 
   firstName    String
   lastName     String
-  email        String
+  // Opcjonalny od zadania "Pracownicy bez e-maila" — część pracowników nie ma
+  // własnej skrzynki firmowej. `login` poniżej jest wtedy jego identyfikatorem
+  // logowania zamiast `email` (patrz `AuthService.validateCredentials`); `email`,
+  // jeśli podany, nadal może służyć do powiadomień i jako alternatywny login.
+  email        String?
+  // Login, jeśli konto go ma — unikalny W OBRĘBIE FIRMY (nie globalnie, w
+  // odróżnieniu od `email`), częściowy indeks w migracji
+  // (`User_companyId_login_key`, WHERE "login" IS NOT NULL).
+  login        String?
   loginMethod  LoginMethod @default(Password)
   passwordHash String? // ustawiane wyłącznie dla loginMethod=Password
   pinHash      String? // ustawiane wyłącznie dla loginMethod=Pin — hashowane tym samym PasswordService (bcrypt), to tylko ciąg znaków
@@ -757,6 +765,7 @@ model User {
   createdCaseHandoffs CaseHandoff[]
 
   @@index([email])
+  @@index([login])
   @@index([companyId])
   @@index([emailVerificationTokenHash])
   @@index([passwordResetTokenHash])
@@ -1228,8 +1237,11 @@ model Product {
   id             String       @id @default(uuid())
   companyId      String
   company        Company      @relation(fields: [companyId], references: [id])
-  manufacturerId String
-  manufacturer   Manufacturer @relation(fields: [manufacturerId], references: [id])
+  // Nullable od zadania "Producent/Dystrybutor i Marka opcjonalne" — pracownik
+  // może zarejestrować reklamację na model, którego producenta/dystrybutora
+  // jeszcze nie ma w katalogu; uzupełnia się go później (edycja pozycji sprawy).
+  manufacturerId String?
+  manufacturer   Manufacturer? @relation(fields: [manufacturerId], references: [id])
   brandId        String?
   brand          Brand?       @relation(fields: [brandId], references: [id])
 

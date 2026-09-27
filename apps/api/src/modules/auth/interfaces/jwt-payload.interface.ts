@@ -1,7 +1,10 @@
 /** Zawartość podpisanego JWT (access token). Odświeżany token niesie wyłącznie `sub`+`jti`+`type`. */
 export interface JwtAccessPayload {
   sub: string; // User.id
-  email: string;
+  /** `null` dla pracowników bez e-maila (zadanie "Pracownicy bez e-maila") — patrz `login` niżej. */
+  email: string | null;
+  /** `null` dla kont logujących się e-mailem (dotychczasowe zachowanie) albo PIN-em. */
+  login: string | null;
   firstName: string;
   lastName: string;
   companyId: string;

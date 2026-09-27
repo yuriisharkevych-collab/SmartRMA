@@ -658,6 +658,17 @@ export class CasesService {
         });
         productId = product.id;
         resolvedBrandId = product.brandId;
+      } else if (dto.brandId !== undefined) {
+        // Marka zmieniana SAMODZIELNIE, bez dotykania modelu/producenta (np.
+        // uzupełnienie marki po fakcie, patrz "Edytuj dane pozycji") — patchujemy
+        // brandId na już przypisanym Product, ten sam wpis katalogowy dostaje markę.
+        const updated = await this.productsService.updateProduct(
+          item.productId,
+          companyId,
+          { brandId: dto.brandId },
+          actorUserId,
+        );
+        resolvedBrandId = updated.brandId;
       }
 
       const touchesRequirementFields =
@@ -1892,21 +1903,19 @@ export class CasesService {
         { field: 'items.productId' },
       );
     }
-    if (!input.manufacturerId) {
-      throw new AppException(
-        ERROR_CODES.VALIDATION_001.code,
-        ERROR_CODES.VALIDATION_001.message,
-        ERROR_CODES.VALIDATION_001.status,
-        { field: 'items.manufacturerId' },
-      );
-    }
+    // Producent/dystrybutor NIE jest wymagany — zgłoszenie na model spoza
+    // katalogu, którego producenta jeszcze nie znamy, musi dać się zapisać
+    // (uzupełnia się go później, przez edycję pozycji sprawy). `?? null`
+    // przy dopasowaniu, żeby powtórne zgłoszenie tego samego modelu BEZ
+    // producenta trafiało w ten sam, już istniejący "niesklasyfikowany" Product,
+    // zamiast tworzyć duplikat za każdym razem.
     const candidates = await this.productsService.searchProducts(
       companyId,
       input.productName.trim(),
     );
     const existing = candidates.find(
       (p) =>
-        p.manufacturerId === input.manufacturerId &&
+        (p.manufacturerId ?? null) === (input.manufacturerId ?? null) &&
         p.name.trim().toLowerCase() === input.productName!.trim().toLowerCase(),
     );
     return (

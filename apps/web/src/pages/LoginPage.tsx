@@ -9,7 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +28,11 @@ export function LoginPage() {
     setUnverifiedEmail(null);
     setResendState('idle');
     try {
-      await login(email, password);
+      await login(identifier, password);
       navigate('/', { replace: true });
     } catch (err) {
       if (isApiError(err) && err.response?.data.error.code === 'AUTH-007') {
-        setUnverifiedEmail(email);
+        setUnverifiedEmail(identifier);
       }
       setError(
         isApiError(err)
@@ -97,13 +97,13 @@ export function LoginPage() {
             </p>
           )}
           <div className="field">
-            <label htmlFor="email">Adres e-mail</label>
+            <label htmlFor="email">E-mail lub login</label>
             <input
               id="email"
-              type="email"
+              type="text"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
               autoComplete="username"
             />
           </div>
