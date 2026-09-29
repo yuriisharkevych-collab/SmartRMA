@@ -105,6 +105,17 @@ describe('Companies (e2e)', () => {
   afterAll(async () => {
     await prisma.auditLog.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.shop.deleteMany({ where: { companyId } }).catch(() => undefined);
+    // `UserRoleAssignment`/`RolePermission` (tabele łączące) nie mają `onDelete: Cascade` —
+    // bez ich usunięcia NAJPIERW, `user.deleteMany`/`role.deleteMany` niżej cicho rzucają FK
+    // violation (połknięte przez `.catch(() => undefined)`), więc `company.delete` NIGDY się
+    // nie udawało — `Company` (z fixture NIP `1112223330`) zostawała osierocona przy KAŻDYM
+    // uruchomieniu tego pliku, bez widocznego błędu testu. Nieszkodliwe, dopóki `Company.nip`
+    // nie miał unikalności; Etap 6 (Partnerzy B2B, `Company_nip_key`) to ujawnił — drugie
+    // uruchomienie zaczęło padać na `beforeAll`/`prisma.company.create` (kolizja NIP). Ten sam
+    // wzorzec poprawki co w `partner-onboarding.e2e-spec.ts`/`account-recovery.e2e-spec.ts`.
+    await prisma.userRoleAssignment.deleteMany({ where: { user: { companyId } } }).catch(() => undefined);
+    await prisma.rolePermission.deleteMany({ where: { role: { companyId } } }).catch(() => undefined);
+    await prisma.loginEvent.deleteMany({ where: { user: { companyId } } }).catch(() => undefined);
     await prisma.user.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.role.deleteMany({ where: { companyId } }).catch(() => undefined);
     await prisma.company.delete({ where: { id: companyId } }).catch(() => undefined);

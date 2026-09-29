@@ -844,17 +844,24 @@ describe('CasesService', () => {
         ).rejects.toMatchObject({ code: 'VALIDATION-001' });
       });
 
-      it('VALIDATION-001 — rzuca, gdy productName podany bez manufacturerId', async () => {
-        await expect(
-          service.create(
-            'company-1',
-            {
-              ...createDto,
-              items: [{ productName: 'Model bez producenta', description: 'Rysa' } as never],
-            },
-            'user-1',
-          ),
-        ).rejects.toMatchObject({ code: 'VALIDATION-001' });
+      it('Producent/Dystrybutor opcjonalny — NIE rzuca, gdy productName podany bez manufacturerId, tworzy produkt z manufacturerId=undefined', async () => {
+        productsService.searchProducts.mockResolvedValue([]);
+        casesRepository.create.mockResolvedValue(buildCase());
+
+        await service.create(
+          'company-1',
+          {
+            ...createDto,
+            items: [{ productName: 'Model bez producenta', description: 'Rysa' } as never],
+          },
+          'user-1',
+        );
+
+        expect(productsService.createProduct).toHaveBeenCalledWith(
+          'company-1',
+          { manufacturerId: undefined, brandId: undefined, name: 'Model bez producenta' },
+          'user-1',
+        );
       });
     });
   });

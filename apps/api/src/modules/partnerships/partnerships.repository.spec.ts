@@ -10,10 +10,12 @@ describe('PartnershipsRepository', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
-    company: { findFirst: jest.Mock; create: jest.Mock };
+    company: { findFirst: jest.Mock; findUnique: jest.Mock; create: jest.Mock };
     companySettings: { create: jest.Mock };
     shop: { create: jest.Mock };
-    brand: { findMany: jest.Mock };
+    brand: { findMany: jest.Mock; create: jest.Mock };
+    contractor: { create: jest.Mock };
+    manufacturer: { create: jest.Mock };
     role: { findFirst: jest.Mock };
     user: { create: jest.Mock };
     case: { count: jest.Mock };
@@ -30,10 +32,12 @@ describe('PartnershipsRepository', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
-      company: { findFirst: jest.fn(), create: jest.fn() },
+      company: { findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn() },
       companySettings: { create: jest.fn() },
       shop: { create: jest.fn() },
-      brand: { findMany: jest.fn() },
+      brand: { findMany: jest.fn(), create: jest.fn() },
+      contractor: { create: jest.fn() },
+      manufacturer: { create: jest.fn() },
       role: { findFirst: jest.fn() },
       user: { create: jest.fn() },
       case: { count: jest.fn() },
@@ -80,20 +84,20 @@ describe('PartnershipsRepository', () => {
     });
   });
 
-  describe('zaproszenie e-mailem (Etap 5)', () => {
-    it('findPendingOrActiveInviteByEmail() filtruje po distributorCompanyId, inviteEmail i statusie Invited/Active (PARTNERSHIP-008)', async () => {
+  describe('zaproszenie e-mailem (Etap 5/6)', () => {
+    it('findPendingOrActiveInviteByEmail() filtruje po OR(shopCompanyId,distributorCompanyId) — Etap 6, wołający może być KTÓRĄKOLWIEK stroną (PARTNERSHIP-008)', async () => {
       prisma.partnership.findFirst.mockResolvedValue(null);
-      await repository.findPendingOrActiveInviteByEmail('distributor-1', 'partner@example.com');
+      await repository.findPendingOrActiveInviteByEmail('caller-1', 'partner@example.com');
       expect(prisma.partnership.findFirst).toHaveBeenCalledWith({
         where: {
-          distributorCompanyId: 'distributor-1',
+          OR: [{ shopCompanyId: 'caller-1' }, { distributorCompanyId: 'caller-1' }],
           inviteEmail: 'partner@example.com',
           status: { in: ['Invited', 'Active'] },
         },
       });
     });
 
-    it('createPendingPartnerCompany() zakłada Company + CompanySettings + Shop, bez samoopisanego Manufacturer/Brand', async () => {
+    it('createPendingPartnerCompany() dla type=Shop zakłada Company + CompanySettings + Shop, bez samoopisanego Manufacturer/Brand', async () => {
       prisma.company.create.mockResolvedValue({
         id: 'company-new',
         name: 'Nowy Partner Sp. z o.o.',
@@ -101,10 +105,14 @@ describe('PartnershipsRepository', () => {
       prisma.companySettings.create.mockResolvedValue({});
       prisma.shop.create.mockResolvedValue({});
 
-      const result = await repository.createPendingPartnerCompany('Nowy Partner Sp. z o.o.');
+      const result = await repository.createPendingPartnerCompany(
+        'Nowy Partner Sp. z o.o.',
+        '1234567890',
+        'Shop',
+      );
 
       expect(prisma.company.create).toHaveBeenCalledWith({
-        data: { name: 'Nowy Partner Sp. z o.o.' },
+        data: { name: 'Nowy Partner Sp. z o.o.', nip: '1234567890', type: 'Shop' },
       });
       expect(prisma.companySettings.create).toHaveBeenCalledWith({
         data: { companyId: 'company-new', caseNumberPrefix: expect.any(String) },
@@ -112,17 +120,55 @@ describe('PartnershipsRepository', () => {
       expect(prisma.shop.create).toHaveBeenCalledWith({
         data: { companyId: 'company-new', name: 'Nowy Partner Sp. z o.o. — siedziba' },
       });
+      expect(prisma.contractor.create).not.toHaveBeenCalled();
+      expect(prisma.manufacturer.create).not.toHaveBeenCalled();
+      expect(prisma.brand.create).not.toHaveBeenCalled();
       expect(result).toEqual({ id: 'company-new', name: 'Nowy Partner Sp. z o.o.' });
     });
 
-    it('createWithInviteToken() zapisuje inviteEmail/inviteTokenHash/inviteTokenExpiresAt razem z marakami partnerstwa', async () => {
+    it('createPendingPartnerCompany() dla type=ManufacturerDistributor DOKŁADA samoopisany Contractor+Manufacturer+Brand (Etap 6 — symetryczne zaproszenie, Sklep zaprasza NOWEGO dystrybutora)', async () => {
+      prisma.company.create.mockResolvedValue({ id: 'company-new', name: 'Nowy Dystrybutor' });
+      prisma.companySettings.create.mockResolvedValue({});
+      prisma.shop.create.mockResolvedValue({});
+      prisma.contractor.create.mockResolvedValue({ id: 'contractor-new' });
+      prisma.manufacturer.create.mockResolvedValue({ id: 'manufacturer-new' });
+      prisma.brand.create.mockResolvedValue({});
+
+      await repository.createPendingPartnerCompany(
+        'Nowy Dystrybutor',
+        '1234567890',
+        'ManufacturerDistributor',
+      );
+
+      expect(prisma.company.create).toHaveBeenCalledWith({
+        data: { name: 'Nowy Dystrybutor', nip: '1234567890', type: 'ManufacturerDistributor' },
+      });
+      expect(prisma.contractor.create).toHaveBeenCalledWith({
+        data: { companyId: 'company-new', name: 'Nowy Dystrybutor', category: 'Manufacturer' },
+      });
+      expect(prisma.manufacturer.create).toHaveBeenCalledWith({
+        data: {
+          companyId: 'company-new',
+          contractorId: 'contractor-new',
+          submissionMethod: 'FormularzWWW',
+        },
+      });
+      expect(prisma.brand.create).toHaveBeenCalledWith({
+        data: {
+          companyId: 'company-new',
+          manufacturerId: 'manufacturer-new',
+          name: 'Nowy Dystrybutor',
+        },
+      });
+    });
+
+    it('createWithInviteToken() zapisuje inviteEmail/inviteTokenHash/inviteTokenExpiresAt, BEZ marek (Etap 6)', async () => {
       const expiresAt = new Date('2026-09-11T00:00:00Z');
       prisma.partnership.create.mockResolvedValue({});
       await repository.createWithInviteToken(
         'shop-1',
         'distributor-1',
         'user-1',
-        ['brand-1'],
         'partner@example.com',
         'hash-abc',
         expiresAt,
@@ -135,7 +181,6 @@ describe('PartnershipsRepository', () => {
           inviteEmail: 'partner@example.com',
           inviteTokenHash: 'hash-abc',
           inviteTokenExpiresAt: expiresAt,
-          brands: { createMany: { data: [{ brandId: 'brand-1' }] } },
         },
         include: expect.anything(),
       });
@@ -158,6 +203,54 @@ describe('PartnershipsRepository', () => {
         data: {
           status: 'Active',
           acceptedAt: expect.any(Date),
+          inviteEmail: null,
+          inviteTokenHash: null,
+          inviteTokenExpiresAt: null,
+        },
+        include: expect.anything(),
+      });
+    });
+  });
+
+  describe('połączenie z istniejącą firmą (Etap 6)', () => {
+    it('findCompanyByNip() filtruje po nip i active:true (jednoznaczne dzięki Company_nip_key)', async () => {
+      prisma.company.findFirst.mockResolvedValue(null);
+      await repository.findCompanyByNip('1234567890');
+      expect(prisma.company.findFirst).toHaveBeenCalledWith({
+        where: { nip: '1234567890', active: true },
+      });
+    });
+
+    it('findCompanyById() woła findUnique po samym id, bez filtra active (wołający sam decyduje)', async () => {
+      prisma.company.findUnique.mockResolvedValue(null);
+      await repository.findCompanyById('company-1');
+      expect(prisma.company.findUnique).toHaveBeenCalledWith({ where: { id: 'company-1' } });
+    });
+
+    it('createConnectionRequest() tworzy Partnership BEZ żadnego PartnershipBrand', async () => {
+      prisma.partnership.create.mockResolvedValue({});
+      await repository.createConnectionRequest('shop-1', 'distributor-1', 'user-1');
+      expect(prisma.partnership.create).toHaveBeenCalledWith({
+        data: {
+          shopCompanyId: 'shop-1',
+          distributorCompanyId: 'distributor-1',
+          invitedByUserId: 'user-1',
+        },
+        include: expect.anything(),
+      });
+    });
+
+    it('resetRejectedToInvited() ustawia status Invited i zeruje WSZYSTKIE znaczniki cyklu życia + pola tokenu e-mail', async () => {
+      prisma.partnership.update.mockResolvedValue({});
+      await repository.resetRejectedToInvited('partnership-1', 'user-2');
+      expect(prisma.partnership.update).toHaveBeenCalledWith({
+        where: { id: 'partnership-1' },
+        data: {
+          status: 'Invited',
+          invitedByUserId: 'user-2',
+          invitedAt: expect.any(Date),
+          acceptedAt: null,
+          deactivatedAt: null,
           inviteEmail: null,
           inviteTokenHash: null,
           inviteTokenExpiresAt: null,

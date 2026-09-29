@@ -407,6 +407,12 @@ model Company {
   // zachowania, `orgKind` zostaje `null` (sensowne wyłącznie dla drugiego typu).
   type                 OrganizationType  @default(Shop)
   orgKind              OrganizationKind?
+  // Partnerzy B2B — "Połącz z istniejącą firmą" (`PartnershipsService.searchCompanyByNip`)
+  // wyszukuje DOKŁADNIE jedną firmę po NIP, więc unikalność musi być wymuszona.
+  // Częściowy unikalny indeks `Company_nip_key` (WHERE "nip" IS NOT NULL) —
+  // migracja `20260928120000_company_nip_unique_partnership_connection` — NIE
+  // wyrażalny w tej składni Prisma (brak `WHERE` w `@@unique`), stąd wyłącznie
+  // w SQL migracji, ten sam wzorzec co `User_companyId_login_key`.
   nip                  String?
   regon                String?
   address              String?

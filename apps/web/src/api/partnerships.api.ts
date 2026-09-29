@@ -37,6 +37,23 @@ export interface PartnerInviteInfo {
   brandNames: string[];
 }
 
+export type OrganizationType = 'Shop' | 'ManufacturerDistributor';
+
+/**
+ * Etap 6 — "Połącz z istniejącą firmą". Kształt odzwierciedla
+ * `SearchCompanyResultEntity` z `apps/api` — WYŁĄCZNIE dane bezpieczne do
+ * potwierdzenia "czy to właściwa firma" (bez adresu/e-maila/użytkowników/
+ * produktów/marek drugiej firmy, patrz doc-comment backendu).
+ */
+export interface SearchCompanyResult {
+  id: string;
+  name: string;
+  nip: string;
+  type: OrganizationType;
+  alreadyConnected: boolean;
+  pendingRequest: boolean;
+}
+
 export const partnershipsApi = {
   list: () => apiClient.get<Partnership[]>('/partnerships').then((res) => res.data),
   getById: (id: string) =>
@@ -52,10 +69,25 @@ export const partnershipsApi = {
   deactivate: (id: string) =>
     apiClient.post<Partnership>(`/partnerships/${id}/deactivate`).then((res) => res.data),
 
-  // --- Etap 5 — Dystrybutor zaprasza NOWEGO partnera e-mailem ---
-  invitePartner: (companyName: string, adminEmail: string, brandIds: string[]) =>
+  // --- Etap 5/6 — wołający (Sklep ALBO Producent/Dystrybutor, symetryczne od
+  // Etapu 6) zaprasza NOWEGO partnera e-mailem. BEZ `brandIds` (Etap 6,
+  // decyzja właściciela) — marki nie są częścią zapraszania/łączenia
+  // partnera, każda firma zarządza własnymi niezależnie. ---
+  invitePartner: (companyName: string, adminEmail: string, nip: string) =>
     apiClient
-      .post<Partnership>('/partnerships/invite-partner', { companyName, adminEmail, brandIds })
+      .post<Partnership>('/partnerships/invite-partner', { companyName, adminEmail, nip })
+      .then((res) => res.data),
+
+  // --- Etap 6 — "Połącz z istniejącą firmą" (symetryczne, obie strony) ---
+  /** `POST`, NIE `GET` — NIP w body, nie w query string (nie trafia do logów dostępu). Zwraca `null`, gdy nie znaleziono (backend odpowiada `{}` — puste query-object, patrz doc-comment kontrolera — normalizowane tu do `null`, wygodniejsze dla wywołującego). */
+  searchCompanyByNip: (nip: string) =>
+    apiClient
+      .post<SearchCompanyResult | Record<string, never>>('/partnerships/search-company', { nip })
+      .then((res) => ('id' in res.data ? res.data : null) as SearchCompanyResult | null),
+  /** Firma znaleziona WCZEŚNIEJ przez `searchCompanyByNip` — `targetCompanyId` weryfikowany od nowa na serwerze. */
+  requestConnection: (targetCompanyId: string) =>
+    apiClient
+      .post<Partnership>('/partnerships/request-connection', { targetCompanyId })
       .then((res) => res.data),
 
   // --- Publiczne (bez sesji) — zaproszony akceptuje i zakłada własne konto ---

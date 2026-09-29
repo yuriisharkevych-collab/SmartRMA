@@ -35,7 +35,16 @@ function buildPartnership(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 function buildDistributorCompany(overrides: Partial<Record<string, unknown>> = {}) {
-  return { id: 'distributor-1', type: OrganizationType.ManufacturerDistributor, ...overrides };
+  return {
+    id: 'distributor-1',
+    type: OrganizationType.ManufacturerDistributor,
+    active: true,
+    ...overrides,
+  };
+}
+
+function buildShopCompany(overrides: Partial<Record<string, unknown>> = {}) {
+  return { id: 'shop-1', type: OrganizationType.Shop, active: true, ...overrides };
 }
 
 describe('PartnershipsService', () => {
@@ -46,8 +55,12 @@ describe('PartnershipsService', () => {
       | 'findById'
       | 'findByCompanyPair'
       | 'findCompanyBySlug'
+      | 'findCompanyByNip'
+      | 'findCompanyById'
       | 'findBrandsOwnedByCompany'
       | 'create'
+      | 'createConnectionRequest'
+      | 'resetRejectedToInvited'
       | 'updateStatus'
       | 'countCasesForPartnership'
       | 'findPendingOrActiveInviteByEmail'
@@ -75,8 +88,12 @@ describe('PartnershipsService', () => {
       findById: jest.fn(),
       findByCompanyPair: jest.fn(),
       findCompanyBySlug: jest.fn(),
+      findCompanyByNip: jest.fn(),
+      findCompanyById: jest.fn(),
       findBrandsOwnedByCompany: jest.fn(),
       create: jest.fn(),
+      createConnectionRequest: jest.fn(),
+      resetRejectedToInvited: jest.fn(),
       updateStatus: jest.fn(),
       countCasesForPartnership: jest.fn().mockResolvedValue(0),
       findPendingOrActiveInviteByEmail: jest.fn(),
@@ -262,25 +279,14 @@ describe('PartnershipsService', () => {
     });
   });
 
-  describe('invitePartner (Etap 5 — Dystrybutor zaprasza NOWEGO partnera e-mailem)', () => {
+  describe('invitePartner (Etap 5/6 — wołający zaprasza NOWEGO partnera e-mailem, symetryczne)', () => {
     const dto = {
       companyName: 'Nowy Partner',
       adminEmail: 'admin@nowy-partner.pl',
-      brandIds: ['brand-1'],
+      nip: '1234567890',
     };
 
-    it('PARTNERSHIP-004 — rzuca, gdy wskazana marka nie należy do zapraszającego dystrybutora', async () => {
-      repository.findBrandsOwnedByCompany.mockResolvedValue([]);
-      await expect(service.invitePartner('distributor-1', 'user-1', dto)).rejects.toMatchObject({
-        code: 'PARTNERSHIP-004',
-      });
-      expect(repository.createPendingPartnerCompany).not.toHaveBeenCalled();
-    });
-
-    it('PARTNERSHIP-008 — rzuca, gdy ten e-mail ma już oczekujące/aktywne zaproszenie u tego dystrybutora', async () => {
-      repository.findBrandsOwnedByCompany.mockResolvedValue([
-        { id: 'brand-1', name: 'Marka' },
-      ] as never);
+    it('PARTNERSHIP-008 — rzuca, gdy ten e-mail ma już oczekujące/aktywne zaproszenie u wołającego', async () => {
       repository.findPendingOrActiveInviteByEmail.mockResolvedValue(buildPartnership() as never);
       await expect(service.invitePartner('distributor-1', 'user-1', dto)).rejects.toMatchObject({
         code: 'PARTNERSHIP-008',
@@ -288,11 +294,9 @@ describe('PartnershipsService', () => {
       expect(repository.createPendingPartnerCompany).not.toHaveBeenCalled();
     });
 
-    it('zakłada pustą firmę partnera, katalog statusów, Partnership z tokenem i wysyła e-mail', async () => {
-      repository.findBrandsOwnedByCompany.mockResolvedValue([
-        { id: 'brand-1', name: 'Marka' },
-      ] as never);
+    it('Dystrybutor zaprasza NOWEGO Sklepu — nowa firma dostaje type=Shop, wołający zostaje distributorCompanyId', async () => {
       repository.findPendingOrActiveInviteByEmail.mockResolvedValue(null);
+      repository.findCompanyById.mockResolvedValue(buildDistributorCompany() as never);
       repository.createPendingPartnerCompany.mockResolvedValue({
         id: 'new-shop-1',
         name: 'Nowy Partner',
@@ -301,13 +305,16 @@ describe('PartnershipsService', () => {
 
       const result = await service.invitePartner('distributor-1', 'user-1', dto);
 
-      expect(repository.createPendingPartnerCompany).toHaveBeenCalledWith('Nowy Partner');
+      expect(repository.createPendingPartnerCompany).toHaveBeenCalledWith(
+        'Nowy Partner',
+        '1234567890',
+        'Shop',
+      );
       expect(caseStatusesService.seedDefaultCatalog).toHaveBeenCalledWith('new-shop-1');
       expect(repository.createWithInviteToken).toHaveBeenCalledWith(
         'new-shop-1',
         'distributor-1',
         'user-1',
-        ['brand-1'],
         'admin@nowy-partner.pl',
         expect.any(String),
         expect.any(Date),
@@ -322,6 +329,229 @@ describe('PartnershipsService', () => {
         expect.objectContaining({ action: 'PARTNERSHIP_PARTNER_INVITED' }),
       );
       expect(result.distributorCompanyName).toBe('TekstylPro');
+    });
+
+    it('Etap 6 — Sklep zaprasza NOWEGO Dystrybutora — nowa firma dostaje type=ManufacturerDistributor, wołający zostaje shopCompanyId', async () => {
+      repository.findPendingOrActiveInviteByEmail.mockResolvedValue(null);
+      repository.findCompanyById.mockResolvedValue(buildShopCompany() as never);
+      repository.createPendingPartnerCompany.mockResolvedValue({
+        id: 'new-distributor-1',
+        name: 'Nowy Partner',
+      } as never);
+      repository.createWithInviteToken.mockResolvedValue(buildPartnership() as never);
+
+      await service.invitePartner('shop-1', 'user-1', dto);
+
+      expect(repository.createPendingPartnerCompany).toHaveBeenCalledWith(
+        'Nowy Partner',
+        '1234567890',
+        'ManufacturerDistributor',
+      );
+      expect(repository.createWithInviteToken).toHaveBeenCalledWith(
+        'shop-1',
+        'new-distributor-1',
+        'user-1',
+        'admin@nowy-partner.pl',
+        expect.any(String),
+        expect.any(Date),
+      );
+    });
+  });
+
+  describe('searchCompanyByNip (Etap 6)', () => {
+    it('zwraca null, gdy nie znaleziono żadnej firmy o tym NIP', async () => {
+      repository.findCompanyByNip.mockResolvedValue(null);
+      const result = await service.searchCompanyByNip('shop-1', { nip: '1234567890' });
+      expect(result).toBeNull();
+      expect(repository.findCompanyById).not.toHaveBeenCalled();
+    });
+
+    it('zwraca null, gdy trafiono we WŁASNĄ firmę wołającego', async () => {
+      repository.findCompanyByNip.mockResolvedValue(buildShopCompany({ id: 'shop-1' }) as never);
+      const result = await service.searchCompanyByNip('shop-1', { nip: '1234567890' });
+      expect(result).toBeNull();
+    });
+
+    it('bezpieczeństwo tenantów — zwraca WYŁĄCZNIE id/name/nip/type/alreadyConnected/pendingRequest, zero danych wewnętrznych', async () => {
+      repository.findCompanyByNip.mockResolvedValue(
+        buildDistributorCompany({ name: 'TekstylPro', nip: '9998887776' }) as never,
+      );
+      repository.findCompanyById.mockResolvedValue(buildShopCompany() as never);
+      repository.findByCompanyPair.mockResolvedValue(null);
+
+      const result = await service.searchCompanyByNip('shop-1', { nip: '9998887776' });
+
+      expect(result).toEqual({
+        id: 'distributor-1',
+        name: 'TekstylPro',
+        nip: '9998887776',
+        type: 'ManufacturerDistributor',
+        alreadyConnected: false,
+        pendingRequest: false,
+      });
+    });
+
+    it('alreadyConnected=true, gdy partnerstwo tej pary firm jest już Active', async () => {
+      repository.findCompanyByNip.mockResolvedValue(buildDistributorCompany() as never);
+      repository.findCompanyById.mockResolvedValue(buildShopCompany() as never);
+      repository.findByCompanyPair.mockResolvedValue(
+        buildPartnership({ status: PartnershipStatus.Active }) as never,
+      );
+
+      const result = await service.searchCompanyByNip('shop-1', { nip: '1234567890' });
+      expect(result?.alreadyConnected).toBe(true);
+      expect(result?.pendingRequest).toBe(false);
+    });
+
+    it('pendingRequest=true, gdy partnerstwo tej pary firm jest Invited', async () => {
+      repository.findCompanyByNip.mockResolvedValue(buildDistributorCompany() as never);
+      repository.findCompanyById.mockResolvedValue(buildShopCompany() as never);
+      repository.findByCompanyPair.mockResolvedValue(
+        buildPartnership({ status: PartnershipStatus.Invited }) as never,
+      );
+
+      const result = await service.searchCompanyByNip('shop-1', { nip: '1234567890' });
+      expect(result?.pendingRequest).toBe(true);
+      expect(result?.alreadyConnected).toBe(false);
+    });
+
+    it('para typów niezgodna (oba Shop) — zwraca znalezioną firmę, ale obie flagi false (nigdy nie mogłoby powstać partnerstwo)', async () => {
+      repository.findCompanyByNip.mockResolvedValue(buildShopCompany({ id: 'shop-2' }) as never);
+      repository.findCompanyById.mockResolvedValue(buildShopCompany({ id: 'shop-1' }) as never);
+
+      const result = await service.searchCompanyByNip('shop-1', { nip: '1234567890' });
+      expect(result?.alreadyConnected).toBe(false);
+      expect(result?.pendingRequest).toBe(false);
+      expect(repository.findByCompanyPair).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('requestConnection (Etap 6)', () => {
+    it('PARTNERSHIP-010 — rzuca, gdy targetCompanyId === callerCompanyId', async () => {
+      await expect(
+        service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'shop-1' }),
+      ).rejects.toMatchObject({ code: 'PARTNERSHIP-010' });
+    });
+
+    it('rzuca NotFoundException, gdy cel nie istnieje', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(id === 'shop-1' ? (buildShopCompany() as never) : null),
+      );
+      await expect(
+        service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'missing' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rzuca NotFoundException, gdy cel istnieje, ale jest nieaktywny', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'shop-1'
+            ? (buildShopCompany() as never)
+            : (buildDistributorCompany({ active: false }) as never),
+        ),
+      );
+      await expect(
+        service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'distributor-1' }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('PARTNERSHIP-001 — rzuca, gdy obie firmy są tego samego typu (Shop+Shop)', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'shop-1'
+            ? (buildShopCompany() as never)
+            : (buildShopCompany({ id: 'shop-2', active: true }) as never),
+        ),
+      );
+      await expect(
+        service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'shop-2' }),
+      ).rejects.toMatchObject({ code: 'PARTNERSHIP-001' });
+    });
+
+    it('PARTNERSHIP-002 — rzuca, gdy partnerstwo tej pary jest już Active', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'shop-1' ? (buildShopCompany() as never) : (buildDistributorCompany() as never),
+        ),
+      );
+      repository.findByCompanyPair.mockResolvedValue(
+        buildPartnership({ status: PartnershipStatus.Active }) as never,
+      );
+      await expect(
+        service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'distributor-1' }),
+      ).rejects.toMatchObject({ code: 'PARTNERSHIP-002' });
+      expect(repository.createConnectionRequest).not.toHaveBeenCalled();
+    });
+
+    it('PARTNERSHIP-009 — rzuca, gdy prośba do tej firmy już oczekuje (Invited)', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'shop-1' ? (buildShopCompany() as never) : (buildDistributorCompany() as never),
+        ),
+      );
+      repository.findByCompanyPair.mockResolvedValue(
+        buildPartnership({ status: PartnershipStatus.Invited }) as never,
+      );
+      await expect(
+        service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'distributor-1' }),
+      ).rejects.toMatchObject({ code: 'PARTNERSHIP-009' });
+      expect(repository.createConnectionRequest).not.toHaveBeenCalled();
+      expect(repository.resetRejectedToInvited).not.toHaveBeenCalled();
+    });
+
+    it('brak wcześniejszego partnerstwa — tworzy NOWĄ prośbę (createConnectionRequest), audytuje i powiadamia', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'shop-1'
+            ? (buildShopCompany() as never)
+            : (buildDistributorCompany({ email: 'kontakt@tekstylpro.pl' }) as never),
+        ),
+      );
+      repository.findByCompanyPair.mockResolvedValue(null);
+      repository.createConnectionRequest.mockResolvedValue(buildPartnership() as never);
+
+      const result = await service.requestConnection('shop-1', 'user-1', {
+        targetCompanyId: 'distributor-1',
+      });
+
+      expect(repository.createConnectionRequest).toHaveBeenCalledWith(
+        'shop-1',
+        'distributor-1',
+        'user-1',
+      );
+      expect(repository.resetRejectedToInvited).not.toHaveBeenCalled();
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PARTNERSHIP_CONNECTION_REQUESTED' }),
+      );
+      expect(notificationsService.createNotificationFromTemplate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: 'partnership.connection.requested',
+          recipientEmail: 'kontakt@tekstylpro.pl',
+        }),
+      );
+      expect(result.id).toBe('partnership-1');
+    });
+
+    it('Rejected → Invited (decyzja właściciela, punkt 2) — resetuje ISTNIEJĄCY wiersz, NIE tworzy drugiego Partnership', async () => {
+      repository.findCompanyById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'shop-1' ? (buildShopCompany() as never) : (buildDistributorCompany() as never),
+        ),
+      );
+      repository.findByCompanyPair.mockResolvedValue(
+        buildPartnership({ status: PartnershipStatus.Rejected }) as never,
+      );
+      repository.resetRejectedToInvited.mockResolvedValue(
+        buildPartnership({ status: PartnershipStatus.Invited }) as never,
+      );
+
+      await service.requestConnection('shop-1', 'user-1', { targetCompanyId: 'distributor-1' });
+
+      expect(repository.resetRejectedToInvited).toHaveBeenCalledWith('partnership-1', 'user-1');
+      expect(repository.createConnectionRequest).not.toHaveBeenCalled();
+      expect(auditRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PARTNERSHIP_CONNECTION_REQUESTED_AGAIN' }),
+      );
     });
   });
 

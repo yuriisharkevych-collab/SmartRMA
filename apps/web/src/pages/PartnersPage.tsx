@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { isApiError } from '@/api/client';
-import { type Partnership, partnershipsApi } from '@/api/partnerships.api';
-import { brandsApi } from '@/api/products.api';
+import {
+  type Partnership,
+  type SearchCompanyResult,
+  partnershipsApi,
+} from '@/api/partnerships.api';
 import { LoadingIndicator } from '@/components/common/LoadingIndicator';
 import { Modal } from '@/components/common/Modal';
 import { PermissionGate } from '@/components/common/PermissionGate';
@@ -51,46 +54,54 @@ export function PartnersPage() {
     queryFn: partnershipsApi.list,
   });
 
-  const { data: brands } = useQuery({
-    queryKey: ['brands'],
-    queryFn: brandsApi.list,
-    enabled: canManage,
-    retry: false,
-  });
-  const activeBrands = (brands ?? []).filter((b) => b.active);
+  // Etap 6 — modal "Dodaj partnera B2B" ma teraz DWA tryby wyboru na starcie:
+  // "Zaproś nową firmę" (Etap 5, bez zmiany ducha) i "Połącz z istniejącą
+  // firmą" (nowość). Żaden z nich nie zna pojęcia marek — marki NIE są
+  // częścią relacji B2B (decyzja właściciela), każda firma zarządza własnymi
+  // niezależnie w sekcji "Producenci".
+  type PartnerModalMode = 'choose' | 'invite' | 'connect';
 
   const [inviteModal, setInviteModal] = useState(false);
+  const [mode, setMode] = useState<PartnerModalMode>('choose');
+  const [modalError, setModalError] = useState<string | null>(null);
+
   const [companyName, setCompanyName] = useState('');
   const [adminEmail, setAdminEmail] = useState('');
-  const [brandIds, setBrandIds] = useState<string[]>([]);
-  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteNip, setInviteNip] = useState('');
+
+  const [connectNip, setConnectNip] = useState('');
+  // `undefined` = jeszcze nie szukano, `null` = szukano, nie znaleziono, obiekt = znaleziono.
+  const [searchResult, setSearchResult] = useState<SearchCompanyResult | null | undefined>(
+    undefined,
+  );
 
   const [actionError, setActionError] = useState<string | null>(null);
 
-  function openInvite() {
+  function openPartnerModal() {
+    setMode('choose');
+    setModalError(null);
     setCompanyName('');
     setAdminEmail('');
-    setBrandIds([]);
-    setInviteError(null);
+    setInviteNip('');
+    setConnectNip('');
+    setSearchResult(undefined);
     setInviteModal(true);
   }
 
-  function toggleBrand(id: string) {
-    setBrandIds((current) =>
-      current.includes(id) ? current.filter((b) => b !== id) : [...current, id],
-    );
+  function closePartnerModal() {
+    setInviteModal(false);
   }
 
   const inviteMutation = useMutation({
     mutationFn: () =>
-      partnershipsApi.invitePartner(companyName.trim(), adminEmail.trim(), brandIds),
+      partnershipsApi.invitePartner(companyName.trim(), adminEmail.trim(), inviteNip.trim()),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['partnerships'] });
       showToast('Zaproszenie wysłane. Partner otrzyma e-mail z linkiem do założenia konta.');
-      setInviteModal(false);
+      closePartnerModal();
     },
     onError: (err) => {
-      setInviteError(
+      setModalError(
         isApiError(err)
           ? (err.response?.data.error.message ?? 'Nie udało się wysłać zaproszenia.')
           : 'Nie udało się wysłać zaproszenia.',
@@ -99,21 +110,62 @@ export function PartnersPage() {
   });
 
   function handleInviteSubmit() {
-    setInviteError(null);
+    setModalError(null);
     if (!companyName.trim()) {
-      setInviteError('Podaj nazwę firmy partnera.');
+      setModalError('Podaj nazwę firmy partnera.');
       return;
     }
     if (!adminEmail.trim()) {
-      setInviteError('Podaj e-mail administratora partnera.');
+      setModalError('Podaj e-mail administratora partnera.');
       return;
     }
-    if (brandIds.length === 0) {
-      setInviteError('Wybierz co najmniej jedną markę, którą partner ma obsługiwać.');
+    if (!inviteNip.trim()) {
+      setModalError('Podaj NIP firmy.');
       return;
     }
     inviteMutation.mutate();
   }
+
+  const searchCompanyMutation = useMutation({
+    mutationFn: () => partnershipsApi.searchCompanyByNip(connectNip.trim()),
+    onSuccess: (result) => {
+      setSearchResult(result);
+    },
+    onError: (err) => {
+      setSearchResult(undefined);
+      setModalError(
+        isApiError(err)
+          ? (err.response?.data.error.message ?? 'Nie udało się wyszukać firmy.')
+          : 'Nie udało się wyszukać firmy.',
+      );
+    },
+  });
+
+  function handleSearchCompany() {
+    setModalError(null);
+    setSearchResult(undefined);
+    if (!connectNip.trim()) {
+      setModalError('Podaj NIP firmy.');
+      return;
+    }
+    searchCompanyMutation.mutate();
+  }
+
+  const requestConnectionMutation = useMutation({
+    mutationFn: (targetCompanyId: string) => partnershipsApi.requestConnection(targetCompanyId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['partnerships'] });
+      showToast('Prośba o połączenie wysłana. Druga firma musi ją zaakceptować.');
+      closePartnerModal();
+    },
+    onError: (err) => {
+      setModalError(
+        isApiError(err)
+          ? (err.response?.data.error.message ?? 'Nie udało się wysłać prośby o połączenie.')
+          : 'Nie udało się wysłać prośby o połączenie.',
+      );
+    },
+  });
 
   const acceptMutation = useMutation({
     mutationFn: (id: string) => partnershipsApi.accept(id),
@@ -163,12 +215,12 @@ export function PartnersPage() {
         <div>
           <h1>Partnerzy B2B</h1>
           <p className="page-subtitle">
-            Firmy powiązane z Twoją organizacją jako partnerzy handlowi — zaproś nowego partnera i
-            określ, jakie marki może obsługiwać w reklamacjach B2B.
+            Firmy powiązane z Twoją organizacją jako partnerzy handlowi — zaproś nową firmę albo
+            połącz się z firmą, która już ma konto w SmartRMA.
           </p>
         </div>
         <PermissionGate permissions={['partnerships.manage']}>
-          <button className="btn btn-primary" onClick={openInvite}>
+          <button className="btn btn-primary" onClick={openPartnerModal}>
             <PlusIcon />
             Dodaj partnera
           </button>
@@ -296,84 +348,203 @@ export function PartnersPage() {
 
       <Modal
         open={inviteModal}
-        title="Dodaj partnera"
-        onClose={() => setInviteModal(false)}
-        error={inviteError}
+        title={
+          mode === 'choose'
+            ? 'Dodaj partnera B2B'
+            : mode === 'invite'
+              ? 'Zaproś nową firmę'
+              : 'Połącz z istniejącą firmą'
+        }
+        onClose={closePartnerModal}
+        error={modalError}
         footer={
-          <>
-            <button className="btn btn-secondary" onClick={() => setInviteModal(false)}>
+          mode === 'choose' ? (
+            <button className="btn btn-secondary" onClick={closePartnerModal}>
               Anuluj
             </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleInviteSubmit}
-              disabled={inviteMutation.isPending}
-            >
-              {inviteMutation.isPending ? 'Wysyłanie…' : 'Wyślij zaproszenie'}
-            </button>
-          </>
-        }
-      >
-        <p className="field-hint-static" style={{ marginTop: 0, marginBottom: 14 }}>
-          Partner otrzyma e-mail z linkiem do samodzielnego założenia konta Administratora. Nie
-          twórz konta partnera ręcznie — zrobi to sam po kliknięciu w link.
-        </p>
-        <div className="form-grid single">
-          <div className="field">
-            <label htmlFor="pt-company-name">Nazwa firmy partnera</label>
-            <input
-              id="pt-company-name"
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="pt-admin-email">E-mail administratora partnera</label>
-            <input
-              id="pt-admin-email"
-              type="email"
-              value={adminEmail}
-              onChange={(e) => setAdminEmail(e.target.value)}
-            />
-            <span className="hint">
-              Link do założenia konta i akceptacji zaproszenia trafi na ten adres.
-            </span>
-          </div>
-        </div>
-        <div className="modal-section-label">Obsługiwane marki</div>
-        {activeBrands.length === 0 && (
-          <p className="text-sm text-muted">
-            Brak aktywnych marek — dodaj markę w sekcji „Producenci", zanim zaprosisz partnera.
-          </p>
-        )}
-        <div className="chip-list">
-          {activeBrands.map((brand) => {
-            const checked = brandIds.includes(brand.id);
-            return (
-              <label
-                key={brand.id}
-                className="chip"
-                style={{
-                  cursor: 'pointer',
-                  background: checked ? undefined : 'transparent',
+          ) : mode === 'invite' ? (
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setModalError(null);
+                  setMode('choose');
                 }}
               >
+                Wstecz
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleInviteSubmit}
+                disabled={inviteMutation.isPending}
+              >
+                {inviteMutation.isPending ? 'Wysyłanie…' : 'Wyślij zaproszenie'}
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setModalError(null);
+                setMode('choose');
+              }}
+            >
+              Wstecz
+            </button>
+          )
+        }
+      >
+        {mode === 'choose' && (
+          <div className="form-grid single">
+            <div className="field">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                onClick={() => {
+                  setModalError(null);
+                  setMode('invite');
+                }}
+              >
+                Zaproś nową firmę
+              </button>
+              <span className="hint">
+                Firma jeszcze nie ma konta w SmartRMA — założymy jej puste konto i wyślemy
+                zaproszenie e-mailem do samodzielnego założenia konta Administratora.
+              </span>
+            </div>
+            <div className="field">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+                onClick={() => {
+                  setModalError(null);
+                  setMode('connect');
+                }}
+              >
+                Połącz z istniejącą firmą
+              </button>
+              <span className="hint">
+                Firma już korzysta ze SmartRMA — wyszukaj ją po NIP-ie i wyślij prośbę o współpracę.
+                Druga strona musi ją zaakceptować.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {mode === 'invite' && (
+          <>
+            <p className="field-hint-static" style={{ marginTop: 0, marginBottom: 14 }}>
+              Partner otrzyma e-mail z linkiem do samodzielnego założenia konta Administratora. Nie
+              twórz konta partnera ręcznie — zrobi to sam po kliknięciu w link.
+            </p>
+            <div className="form-grid single">
+              <div className="field">
+                <label htmlFor="pt-company-name">Nazwa firmy partnera</label>
                 <input
-                  type="checkbox"
-                  style={{ width: 'auto', marginRight: 6 }}
-                  checked={checked}
-                  onChange={() => toggleBrand(brand.id)}
+                  id="pt-company-name"
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
                 />
-                {brand.name}
-              </label>
-            );
-          })}
-        </div>
-        <span className="hint">
-          Partner będzie mógł zgłaszać reklamacje B2B wyłącznie dla wybranych tutaj marek — próba
-          zgłoszenia dla innej marki zostanie odrzucona przez serwer.
-        </span>
+              </div>
+              <div className="field">
+                <label htmlFor="pt-nip">NIP</label>
+                <input
+                  id="pt-nip"
+                  type="text"
+                  placeholder="np. 123-456-32-18"
+                  value={inviteNip}
+                  onChange={(e) => setInviteNip(e.target.value)}
+                />
+                <span className="hint">10 cyfr — myślniki i spacje są dozwolone.</span>
+              </div>
+              <div className="field">
+                <label htmlFor="pt-admin-email">E-mail administratora partnera</label>
+                <input
+                  id="pt-admin-email"
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                />
+                <span className="hint">
+                  Link do założenia konta i akceptacji zaproszenia trafi na ten adres.
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+
+        {mode === 'connect' && (
+          <>
+            <div className="form-grid single">
+              <div className="field">
+                <label htmlFor="pt-connect-nip">NIP firmy</label>
+                <div className="flex gap-8">
+                  <input
+                    id="pt-connect-nip"
+                    type="text"
+                    placeholder="np. 123-456-32-18"
+                    value={connectNip}
+                    style={{ flex: 1 }}
+                    onChange={(e) => {
+                      setConnectNip(e.target.value);
+                      setSearchResult(undefined);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleSearchCompany}
+                    disabled={searchCompanyMutation.isPending}
+                  >
+                    {searchCompanyMutation.isPending ? 'Szukam…' : 'Wyszukaj'}
+                  </button>
+                </div>
+                <span className="hint">10 cyfr — myślniki i spacje są dozwolone.</span>
+              </div>
+            </div>
+
+            {searchResult === null && (
+              <p className="text-sm text-muted" style={{ marginTop: 4 }}>
+                Nie znaleziono firmy o podanym NIP-ie.
+              </p>
+            )}
+
+            {searchResult && (
+              <div className="card" style={{ marginTop: 14, padding: 14 }}>
+                <div style={{ fontWeight: 600 }}>{searchResult.name}</div>
+                <div className="text-sm text-muted">NIP: {searchResult.nip}</div>
+                <div className="text-sm text-muted">
+                  {searchResult.type === 'Shop' ? 'Sklep' : 'Producent / Dystrybutor'}
+                </div>
+
+                {searchResult.alreadyConnected ? (
+                  <p className="hint" style={{ marginTop: 10, display: 'block' }}>
+                    Ta firma jest już Twoim partnerem B2B.
+                  </p>
+                ) : searchResult.pendingRequest ? (
+                  <p className="hint" style={{ marginTop: 10, display: 'block' }}>
+                    Prośba o współpracę z tą firmą została już wysłana.
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ marginTop: 10 }}
+                    onClick={() => requestConnectionMutation.mutate(searchResult.id)}
+                    disabled={requestConnectionMutation.isPending}
+                  >
+                    {requestConnectionMutation.isPending
+                      ? 'Wysyłanie…'
+                      : 'Wyślij prośbę o połączenie'}
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </Modal>
     </div>
   );

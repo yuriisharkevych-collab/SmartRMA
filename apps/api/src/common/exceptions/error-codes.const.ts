@@ -322,15 +322,16 @@ export const ERROR_CODES = {
   },
 
   // --- PARTNERSHIP (Producent/Dystrybutor + Partnerzy B2B) ---
+  /** Etap 6 (Partnerzy B2B — połączenie z istniejącą firmą) — komunikat celowo NIE zakłada, która strona jest Sklepem: reguła jest symetryczna (obie strony mogą inicjować), więc treść mówi o parze typów, nie o konkretnej roli wołającego. */
   PARTNERSHIP_001: {
     code: 'PARTNERSHIP-001',
     status: HttpStatus.UNPROCESSABLE_ENTITY,
-    message: 'Wskazana organizacja nie jest producentem ani dystrybutorem.',
+    message: 'Partnerstwo B2B jest możliwe wyłącznie między Sklepem a Producentem/Dystrybutorem.',
   },
   PARTNERSHIP_002: {
     code: 'PARTNERSHIP-002',
     status: HttpStatus.CONFLICT,
-    message: 'Partnerstwo z tą organizacją już istnieje.',
+    message: 'Ta firma jest już Twoim partnerem B2B.',
   },
   /** `PartnershipsService.accept/reject` — tylko strona Producenta/Dystrybutora (`distributorCompanyId`) może zaakceptować/odrzucić zaproszenie; strona Sklepu je wysyła, nie potwierdza sama sobie. */
   PARTNERSHIP_003: {
@@ -364,6 +365,18 @@ export const ERROR_CODES = {
     code: 'PARTNERSHIP-008',
     status: HttpStatus.CONFLICT,
     message: 'Ta firma ma już oczekujące zaproszenie albo jest już Twoim partnerem.',
+  },
+  /** `PartnershipsService.requestConnection` (Etap 6) — odpowiednik PARTNERSHIP-002 dla statusu `Invited`, osobny kod, bo UI ma pokazać INNY komunikat dla "już partner" niż dla "prośba już wysłana, czeka na odpowiedź". */
+  PARTNERSHIP_009: {
+    code: 'PARTNERSHIP-009',
+    status: HttpStatus.CONFLICT,
+    message: 'Prośba o współpracę z tą firmą została już wysłana.',
+  },
+  /** `PartnershipsService.requestConnection`/`searchCompanyByNip` — firma nie może wysłać sobie samej prośby o połączenie (targetCompanyId === callerCompanyId). */
+  PARTNERSHIP_010: {
+    code: 'PARTNERSHIP-010',
+    status: HttpStatus.UNPROCESSABLE_ENTITY,
+    message: 'Nie można nawiązać partnerstwa z własną firmą.',
   },
 
   // --- COMPANY (Etap 6 — onboarding samoobsługowy) ---

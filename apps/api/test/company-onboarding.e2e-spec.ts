@@ -7,8 +7,27 @@ import { toValidationException } from '../src/common/validation/to-validation-ex
 import { MAIL_SERVICE } from '../src/mail/mail.interface';
 import { PrismaService } from '../src/prisma/prisma.service';
 
-/** NIP testowy o poprawnej sumie kontrolnej (Ministerstwo Finansów, powszechnie używany w środowiskach testowych) — `Company.nip` nie ma unikalności w bazie, więc bezpieczny do reużycia przez wszystkie signupy w tym pliku. */
-const TEST_NIP = '5260001246';
+/**
+ * Etap 6 (Partnerzy B2B) — `Company.nip` dostał globalny częściowy unikalny
+ * indeks (`Company_nip_key`, migracja `20260928120000_...`), więc STAŁY,
+ * współdzielony NIP (dawniej: Ministerstwo Finansów, `5260001246`) już NIE
+ * jest bezpieczny — `signupAndLogin()` niżej zakłada NOWĄ firmę przy KAŻDYM
+ * wywołaniu (ten plik woła ją 4×), każda potrzebuje WŁASNEGO, poprawnego
+ * NIP-u. Losowa baza (nie `Date.now()`+offset) — deterministyczny seed
+ * kolidował między RÓŻNYMI plikami e2e uruchomionymi równolegle (patrz
+ * identyczny komentarz w `partner-onboarding.e2e-spec.ts`).
+ */
+function makeValidNip(): string {
+  const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const base = String(Math.floor(Math.random() * 1_000_000_000)).padStart(9, '0').slice(-9);
+    const digits = base.split('').map(Number);
+    const sum = weights.reduce((acc, w, i) => acc + w * digits[i], 0);
+    const checkDigit = sum % 11;
+    if (checkDigit !== 10) return base + checkDigit;
+  }
+  throw new Error('Nie udało się wygenerować poprawnego NIP-u testowego.');
+}
 
 /**
  * Fundament „Fresh Install" — `POST /companies/signup` NIE loguje już
@@ -90,7 +109,7 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
   }): Promise<{ status: number; token?: string }> {
     const signup = await request(app.getHttpServer())
       .post('/api/companies/signup')
-      .send({ ...payload, nip: TEST_NIP });
+      .send({ ...payload, nip: makeValidNip() });
     if (signup.status !== 201) return { status: signup.status };
 
     const email = capturedEmails
@@ -443,13 +462,14 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
     });
   });
 
-  describe('Krok 3 — TextilePro zaprasza partnera B2B (mechanizm Etapu 5, nietknięty)', () => {
-    it('zaprasza partnera scope\'owanego WYŁĄCZNIE do marki TextilePro Home', async () => {
+  describe('Krok 3 — TextilePro zaprasza partnera B2B (Etap 5, DTO zaktualizowane w Etapie 6: nip zamiast brandIds)', () => {
+    it('zaprasza NOWEGO partnera (bez marek — Etap 6) i zakłada mu pustą firmę', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/partnerships/invite-partner')
         .set(auth(textileToken))
-        .send({ companyName: `Partner TextilePro ${suffix}`, adminEmail: partnerAdminEmail, brandIds: [textileBrandId] });
+        .send({ companyName: `Partner TextilePro ${suffix}`, adminEmail: partnerAdminEmail, nip: makeValidNip() });
       expect(res.status).toBe(201);
+      expect(res.body.brands).toEqual([]);
       partnershipId = res.body.id;
       partnerCompanyId = res.body.shopCompanyId;
     });
@@ -533,6 +553,17 @@ describe('Onboarding samoobsługowy nowej firmy (e2e) — Etap 6', () => {
   });
 
   describe('Test B2B — partner: loguje się, widzi dozwoloną markę, tworzy reklamację, trafia do TextilePro', () => {
+    /**
+     * Etap 6 usunął wybór marek z `invite-partner` — `PartnershipBrand`
+     * poniżej wstawiane WPROST przez Prisma (nie przez żaden endpoint, taki
+     * dziś nie istnieje), żeby scenariusz PARTNERSHIP-005/formularza marki
+     * (logika NIEZMIENIONA) nadal miał sens do przetestowania. Patrz
+     * identyczny fixture w `partner-onboarding.e2e-spec.ts`.
+     */
+    beforeAll(async () => {
+      await prisma.partnershipBrand.create({ data: { partnershipId, brandId: textileBrandId } });
+    });
+
     it('PARTNERSHIP-005 — partner NIE może zgłosić reklamacji dla marki "TextilePro Away" (poza zakresem partnerstwa)', async () => {
       const res = await request(app.getHttpServer())
         .post(`/api/intake/brand/textilepro-home-${suffix}/complaints`)

@@ -27,6 +27,29 @@ describe('Partner B2B onboarding (e2e) — Etap 5', () => {
   const suffix = Date.now();
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
+  /**
+   * Etap 6 — `nip` jest teraz WYMAGANY w `InvitePartnerDto` (walidacja sumy
+   * kontrolnej, `IsPolishNip`) — generuje poprawny NIP testowy, bo
+   * `Company.nip` ma dziś globalny częściowy unikalny indeks. LOSOWA baza
+   * (nie `Date.now()`+offset) — deterministyczny seed kolidował między
+   * RÓŻNYMI plikami e2e uruchomionymi równolegle (dwa procesy jest workera
+   * odczytują `Date.now()` w tej samej milisekundzie, więc małe, przewidywalne
+   * offsety w dwóch plikach mogą wylądować na TYM SAMYM NIP-ie). Przestrzeń
+   * 10^9 losowych baz czyni kolizję między garstką firm testowych w całym
+   * uruchomieniu praktycznie niemożliwą.
+   */
+  function makeValidNip(): string {
+    const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const base = String(Math.floor(Math.random() * 1_000_000_000)).padStart(9, '0').slice(-9);
+      const digits = base.split('').map(Number);
+      const sum = weights.reduce((acc, w, i) => acc + w * digits[i], 0);
+      const checkDigit = sum % 11;
+      if (checkDigit !== 10) return base + checkDigit;
+    }
+    throw new Error('Nie udało się wygenerować poprawnego NIP-u testowego.');
+  }
+
   type Org = {
     companyId: string;
     slug: string;
@@ -221,37 +244,46 @@ describe('Partner B2B onboarding (e2e) — Etap 5', () => {
   }, 30_000);
 
   describe('Zaproszenie e-mailem nowego partnera (invitePartner)', () => {
-    it('PARTNERSHIP-004 — Dystrybutor nie może scope\'ować zaproszenia do marki, której nie posiada', async () => {
+    it('422 VALIDATION-001 — brak wymaganego nip (Etap 6: nip wymagany, brandIds USUNIĘTE z DTO)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/partnerships/invite-partner')
+        .set(auth(dist.token))
+        .send({ companyName: 'Firma bez NIP-u', adminEmail: `nieistnieje-${suffix}@example.com` });
+      expect(res.status).toBe(422);
+    });
+
+    it('422 — brandIds NIE jest już rozpoznawanym polem DTO (whitelist odrzuca nieznane pole)', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/partnerships/invite-partner')
         .set(auth(dist.token))
         .send({
           companyName: 'Firma widmo',
-          adminEmail: `nieistnieje-${suffix}@example.com`,
+          adminEmail: `nieistnieje2-${suffix}@example.com`,
+          nip: makeValidNip(),
           brandIds: [outsider.brandId],
         });
       expect(res.status).toBe(422);
-      expect(res.body.error.code).toBe('PARTNERSHIP-004');
     });
 
     it('bez tokenu — 401', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/partnerships/invite-partner')
-        .send({ companyName: 'X', adminEmail: 'x@example.com', brandIds: [] });
+        .send({ companyName: 'X', adminEmail: 'x@example.com', nip: makeValidNip() });
       expect(res.status).toBe(401);
     });
 
-    it('201 — zaprasza NOWĄ firmę, zakłada ją pustą i wysyła e-mail z linkiem', async () => {
+    it('201 — zaprasza NOWĄ firmę, zakłada ją pustą (BEZ marek — Etap 6) i wysyła e-mail z linkiem', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/partnerships/invite-partner')
         .set(auth(dist.token))
-        .send({ companyName: partnerCompanyName, adminEmail: partnerAdminEmail, brandIds: [dist.brandId] });
+        .send({ companyName: partnerCompanyName, adminEmail: partnerAdminEmail, nip: makeValidNip() });
 
       expect(res.status).toBe(201);
       expect(res.body.status).toBe('Invited');
       expect(res.body.hasPendingInvite).toBe(true);
       expect(res.body.inviteEmail).toBe(partnerAdminEmail);
-      expect(res.body.brands.map((b: { id: string }) => b.id)).toEqual([dist.brandId]);
+      // Etap 6, decyzja właściciela — marki NIE są częścią zapraszania partnera.
+      expect(res.body.brands).toEqual([]);
       expect(res.body.caseCount).toBe(0);
       partnershipId = res.body.id;
       partnerCompanyId = res.body.shopCompanyId;
@@ -270,7 +302,7 @@ describe('Partner B2B onboarding (e2e) — Etap 5', () => {
       const res = await request(app.getHttpServer())
         .post('/api/partnerships/invite-partner')
         .set(auth(dist.token))
-        .send({ companyName: 'Duplikat', adminEmail: partnerAdminEmail, brandIds: [dist.brandId] });
+        .send({ companyName: 'Duplikat', adminEmail: partnerAdminEmail, nip: makeValidNip() });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('PARTNERSHIP-008');
     });
@@ -298,14 +330,14 @@ describe('Partner B2B onboarding (e2e) — Etap 5', () => {
       expect(res.body.error.code).toBe('PARTNERSHIP-007');
     });
 
-    it('GET /partnerships/invite/:token — zwraca nazwę firmy, dystrybutora, e-mail i nazwy marek', async () => {
+    it('GET /partnerships/invite/:token — zwraca nazwę firmy, dystrybutora, e-mail (brandNames puste — Etap 6, marki nie są już częścią zaproszenia)', async () => {
       const res = await request(app.getHttpServer()).get(`/api/partnerships/invite/${inviteToken}`);
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         companyName: partnerCompanyName,
         distributorName: `Dist ${suffix}`,
         email: partnerAdminEmail,
-        brandNames: [`Dist marka A ${suffix}`],
+        brandNames: [],
       });
     });
 
@@ -360,6 +392,21 @@ describe('Partner B2B onboarding (e2e) — Etap 5', () => {
   });
 
   describe('Zgłoszenie B2B "w imieniu klienta końcowego" — zakres marek (PartnershipBrand)', () => {
+    /**
+     * Etap 6 (decyzja właściciela) usunął wybór marek z procesu zapraszania/
+     * łączenia partnera — `invitePartner()` już nie tworzy `PartnershipBrand`.
+     * Logika CaseHandoff/formularza marki, sprawdzana testami niżej, jest
+     * NIEZMIENIONA i nadal wymaga co najmniej jednego `PartnershipBrand`, żeby
+     * partner mógł cokolwiek zgłosić — właściciel świadomie NIE buduje na tym
+     * etapie żadnego zastępczego mechanizmu UI/API do przypisania marki do
+     * partnerstwa (osobny temat). Wstawiane tu WPROST przez Prisma (nie przez
+     * żaden endpoint — taki dziś nie istnieje), żeby pokrycie testowe już
+     * wdrożonej logiki (`assertActivePartnerCoversBrand`) nie ucierpiało.
+     */
+    beforeAll(async () => {
+      await prisma.partnershipBrand.create({ data: { partnershipId, brandId: dist.brandId } });
+    });
+
     it('GET /intake/brand/:brandSlug/brands?partnerCompanyId=… zawęża do WYŁĄCZNIE marki objętej partnerstwem', async () => {
       const all = await request(app.getHttpServer()).get(`/api/intake/brand/${dist.brandSlug}/brands`);
       expect(all.body.map((b: { id: string }) => b.id).sort()).toEqual(

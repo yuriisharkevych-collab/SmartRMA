@@ -58,6 +58,7 @@ describe('AuthService', () => {
     Pick<
       UsersRepository,
       | 'findPasswordAccountByEmail'
+      | 'findPasswordAccountsByLogin'
       | 'findPinAccountsByEmail'
       | 'findById'
       | 'touchLastLogin'
@@ -77,6 +78,12 @@ describe('AuthService', () => {
   beforeEach(() => {
     usersRepository = {
       findPasswordAccountByEmail: jest.fn(),
+      // Zadanie "Pracownicy bez e-maila" — `validateCredentials` woła to ZAWSZE,
+      // gdy dopasowanie po e-mailu nie powiodło się (patrz `auth.service.ts`,
+      // ścieżka logowania loginem). `[]` domyślnie = "nikt taki loginem się nie
+      // loguje" — istniejące testy (e-mail/PIN) nie znają pojęcia loginu, więc
+      // powinny przejść przez tę gałąź bez wpływu na resztę scenariusza.
+      findPasswordAccountsByLogin: jest.fn().mockResolvedValue([]),
       findPinAccountsByEmail: jest.fn().mockResolvedValue([]),
       findById: jest.fn(),
       touchLastLogin: jest.fn().mockResolvedValue(undefined),

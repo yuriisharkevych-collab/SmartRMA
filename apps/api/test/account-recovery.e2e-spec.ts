@@ -8,8 +8,28 @@ import { toValidationException } from '../src/common/validation/to-validation-ex
 import { MAIL_SERVICE } from '../src/mail/mail.interface';
 import { PrismaService } from '../src/prisma/prisma.service';
 
-/** Ministerstwo Finansów, powszechnie używany w środowiskach testowych — `Company.nip` nie ma unikalności w bazie. */
-const TEST_NIP = '5260001246';
+/**
+ * Etap 6 (Partnerzy B2B) — `Company.nip` dostał globalny częściowy unikalny
+ * indeks (`Company_nip_key`, migracja `20260928120000_...`), więc STAŁY,
+ * współdzielony NIP (dawniej: Ministerstwo Finansów, `5260001246`, używany
+ * też w `companies.e2e-spec.ts`/`company-onboarding.e2e-spec.ts`) już NIE
+ * jest bezpieczny — ten plik zakłada SIEDEM osobnych firm przez
+ * `POST /companies/signup`, każda potrzebuje WŁASNEGO, poprawnego NIP-u.
+ * Losowa baza (nie `Date.now()`+offset) — deterministyczny seed kolidował
+ * między RÓŻNYMI plikami e2e uruchomionymi równolegle (patrz identyczny
+ * komentarz w `partner-onboarding.e2e-spec.ts`).
+ */
+function makeValidNip(): string {
+  const weights = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const base = String(Math.floor(Math.random() * 1_000_000_000)).padStart(9, '0').slice(-9);
+    const digits = base.split('').map(Number);
+    const sum = weights.reduce((acc, w, i) => acc + w * digits[i], 0);
+    const checkDigit = sum % 11;
+    if (checkDigit !== 10) return base + checkDigit;
+  }
+  throw new Error('Nie udało się wygenerować poprawnego NIP-u testowego.');
+}
 
 /**
  * Fundament „Fresh Install" — e2e dla rejestracji (Shop/Producent/Dystrybutor
@@ -113,7 +133,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const res = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Org ${orgType} ${suffix}`,
         orgType,
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Test',
         adminLastName: orgType,
         adminEmail: email,
@@ -161,7 +181,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const res = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Slabe Haslo ${suffix}`,
         orgType: 'Shop',
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Test',
         adminLastName: 'SlabeHaslo',
         adminEmail: `slabe-haslo-${suffix}@example.local`,
@@ -176,7 +196,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const first = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Duplikat A ${suffix}`,
         orgType: 'Shop',
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Test',
         adminLastName: 'A',
         adminEmail: email,
@@ -190,7 +210,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const second = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Duplikat B ${suffix}`,
         orgType: 'Shop',
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Test',
         adminLastName: 'B',
         adminEmail: email,
@@ -210,7 +230,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const res = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Weryfikacja Org ${suffix}`,
         orgType: 'Shop',
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Wery',
         adminLastName: 'Fikacja',
         adminEmail: email,
@@ -279,7 +299,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const signup = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Reset Org ${suffix}`,
         orgType: 'Shop',
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Re',
         adminLastName: 'Set',
         adminEmail: email,
@@ -385,7 +405,7 @@ describe('Fundament „Fresh Install" — rejestracja, weryfikacja e-mail, reset
       const signup = await request(app.getHttpServer()).post('/api/companies/signup').send({
         companyName: `Platform Izolacja ${suffix}`,
         orgType: 'Shop',
-        nip: TEST_NIP,
+        nip: makeValidNip(),
         adminFirstName: 'Plat',
         adminLastName: 'Form',
         adminEmail: email,

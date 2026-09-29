@@ -140,15 +140,34 @@ const DEFAULT_NOTIFICATION_TEMPLATES: Array<{
     variables: ['caseNumber', 'reason'],
   },
   {
-    // Etap 5 — Dystrybutor/Producent zaprasza NOWEGO partnera e-mailem
+    // Etap 5/6 — wołający (Sklep ALBO Producent/Dystrybutor, symetryczne od
+    // Etapu 6) zaprasza NOWEGO partnera e-mailem
     // (`PartnershipsService.invitePartner`) — jedyny e-mail w tym module
-    // wysyłany do kogoś, kto jeszcze nie ma konta w SmartRMA.
+    // wysyłany do kogoś, kto jeszcze nie ma konta w SmartRMA. `{{brandNames}}`
+    // zostaje w liście `variables` dla wstecznej zgodności ze środowiskami,
+    // które mają ten szablon zasiany PRZED Etapem 6 (seed nie nadpisuje
+    // istniejących wierszy — patrz pętla niżej) — `PartnershipsService`
+    // przekazuje dla niego pusty string, treść NOWO zasianego szablonu już
+    // go nie wspomina (marki nie są częścią zaproszenia, Etap 6).
     code: 'partnership.invited.partner',
     channel: NotificationChannel.Email,
     subject: 'Zaproszenie do współpracy z {{distributorName}} w SmartRMA',
     bodyTemplate:
-      'Dzień dobry,\n\n{{distributorName}} zaprasza firmę {{companyName}} do współpracy w SmartRMA jako partner B2B, w zakresie marek: {{brandNames}}.\n\nAby założyć konto i zaakceptować zaproszenie, przejdź pod adres:\n{{inviteUrl}}\n\nJeżeli nie spodziewał(a)eś się tej wiadomości, możesz ją zignorować.',
+      'Dzień dobry,\n\n{{distributorName}} zaprasza firmę {{companyName}} do współpracy w SmartRMA jako partner B2B.\n\nAby założyć konto i zaakceptować zaproszenie, przejdź pod adres:\n{{inviteUrl}}\n\nJeżeli nie spodziewał(a)eś się tej wiadomości, możesz ją zignorować.',
     variables: ['distributorName', 'companyName', 'brandNames', 'inviteUrl'],
+  },
+  {
+    // Etap 6 — "Połącz z istniejącą firmą" (`PartnershipsService.requestConnection`)
+    // — w przeciwieństwie do szablonu wyżej, druga strona JUŻ ISTNIEJE w
+    // SmartRMA (własne konto/pracownicy), więc treść nie zawiera linku do
+    // zakładania konta — tylko informację + odesłanie do panelu "Partnerzy
+    // B2B" (akceptacja/odrzucenie dzieje się tam, `POST /partnerships/:id/accept`).
+    code: 'partnership.connection.requested',
+    channel: NotificationChannel.Email,
+    subject: 'Prośba o współpracę B2B od {{callerName}} w SmartRMA',
+    bodyTemplate:
+      'Dzień dobry,\n\nfirma {{callerName}} chce nawiązać współpracę B2B z Twoją firmą ({{targetName}}) w SmartRMA.\n\nZaloguj się do panelu i przejdź do sekcji „Partnerzy B2B", żeby zaakceptować lub odrzucić tę prośbę.',
+    variables: ['callerName', 'targetName'],
   },
   {
     // Fundament „Fresh Install" — jedyny e-mail wysyłany PRZED aktywacją konta

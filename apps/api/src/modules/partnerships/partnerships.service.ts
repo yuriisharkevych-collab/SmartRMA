@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotFoundException } from '@nestjs/common';
 import {
+  Company,
   NotificationChannel,
   NotificationRecipientType,
   OrganizationType,
@@ -24,8 +25,11 @@ import { AuthTokensEntity } from '../auth/entities/auth-tokens.entity';
 import { AcceptPartnerInviteDto } from './dto/accept-partner-invite.dto';
 import { InvitePartnerDto } from './dto/invite-partner.dto';
 import { InvitePartnershipDto } from './dto/invite-partnership.dto';
+import { RequestConnectionDto } from './dto/request-connection.dto';
+import { SearchCompanyDto } from './dto/search-company.dto';
 import { PartnerInviteInfoEntity } from './entities/partner-invite-info.entity';
 import { PartnershipEntity } from './entities/partnership.entity';
+import { SearchCompanyResultEntity } from './entities/search-company-result.entity';
 import { PartnershipMapper, PartnershipWithRelations } from './mappers/partnership.mapper';
 import { PartnershipsRepository } from './partnerships.repository';
 
@@ -137,6 +141,190 @@ export class PartnershipsService {
     return this.toEntityWithCaseCount(created);
   }
 
+  // --- Etap 6 — "Połącz z istniejącą firmą" (symetryczne, obie strony) ---
+
+  /**
+   * `POST /partnerships/search-company` — WYŁĄCZNIE odczyt, zero efektów
+   * ubocznych. Zwraca `null`, gdy nie znaleziono (200, nie 404 — "brak
+   * wyniku" to normalny wynik wyszukiwania, nie błąd) ALBO gdy trafiono we
+   * WŁASNĄ firmę (nie ma sensu "połączyć się" z samym sobą — patrz
+   * `PARTNERSHIP_010` w `requestConnection`, tu po prostu chowamy wynik,
+   * żeby UI od razu wiedziało "nic nie znaleziono", bez osobnego
+   * komunikatu błędu na etapie SAMEGO wyszukiwania).
+   *
+   * Bezpieczeństwo tenantów (specyfikacja właściciela, punkt 9) — zwracany
+   * kształt to WYŁĄCZNIE `SearchCompanyResultEntity`: nazwa, NIP, typ,
+   * dwie flagi. Zero użytkowników/produktów/marek/reklamacji/ustawień/
+   * adresu/e-maila/telefonu drugiej firmy.
+   */
+  async searchCompanyByNip(
+    callerCompanyId: string,
+    dto: SearchCompanyDto,
+  ): Promise<SearchCompanyResultEntity | null> {
+    const target = await this.partnershipsRepository.findCompanyByNip(dto.nip);
+    if (!target || target.id === callerCompanyId) return null;
+
+    const caller = await this.partnershipsRepository.findCompanyById(callerCompanyId);
+    // `caller` zawsze istnieje (companyId z JWT zalogowanego użytkownika) — `!` bezpieczne.
+    const pair = this.tryResolveShopDistributorPair(caller!, target);
+
+    let alreadyConnected = false;
+    let pendingRequest = false;
+    if (pair) {
+      const existing = await this.partnershipsRepository.findByCompanyPair(
+        pair.shopCompanyId,
+        pair.distributorCompanyId,
+      );
+      alreadyConnected = existing?.status === PartnershipStatus.Active;
+      pendingRequest = existing?.status === PartnershipStatus.Invited;
+    }
+
+    return {
+      id: target.id,
+      name: target.name,
+      nip: target.nip!,
+      type: target.type,
+      alreadyConnected,
+      pendingRequest,
+    };
+  }
+
+  /**
+   * `POST /partnerships/request-connection` — druga połowa "Połącz z
+   * istniejącą firmą". Weryfikuje WSZYSTKO od nowa (nie ufa, że klient
+   * przesyła dokładnie to, co pokazał `searchCompanyByNip` chwilę wcześniej
+   * — `targetCompanyId` to zwykły parametr sterowany przez klienta).
+   *
+   * Właściciel, punkt 6: NIE tworzymy `Company`, NIE tworzymy `User`, NIE
+   * kopiujemy żadnych danych/marek drugiej firmy — WYŁĄCZNIE nowy albo
+   * zresetowany wiersz `Partnership{status:Invited}`, bez `PartnershipBrand`
+   * (patrz doc-comment `InvitePartnerDto` — marki nie są częścią tego
+   * procesu). Druga strona musi jeszcze zaakceptować (`accept()` powyżej,
+   * bez zmian — działa identycznie dla partnerstw z obu trybów, bo oba
+   * zapisują się do TEGO SAMEGO modelu).
+   */
+  async requestConnection(
+    callerCompanyId: string,
+    actorUserId: string,
+    dto: RequestConnectionDto,
+  ): Promise<PartnershipEntity> {
+    if (dto.targetCompanyId === callerCompanyId) {
+      throw new AppException(
+        ERROR_CODES.PARTNERSHIP_010.code,
+        ERROR_CODES.PARTNERSHIP_010.message,
+        ERROR_CODES.PARTNERSHIP_010.status,
+      );
+    }
+
+    const [caller, target] = await Promise.all([
+      this.partnershipsRepository.findCompanyById(callerCompanyId),
+      this.partnershipsRepository.findCompanyById(dto.targetCompanyId),
+    ]);
+    // 404, nie PARTNERSHIP-001 — to NIE jest "zła para typów", to brak/
+    // dezaktywacja celu (np. wyszukano chwilę temu, w międzyczasie
+    // dezaktywowana, albo klient wysłał dowolne, niezweryfikowane UUID).
+    if (!target || !target.active) {
+      throw new NotFoundException();
+    }
+    const pair = this.tryResolveShopDistributorPair(caller!, target);
+    if (!pair) {
+      throw new AppException(
+        ERROR_CODES.PARTNERSHIP_001.code,
+        ERROR_CODES.PARTNERSHIP_001.message,
+        ERROR_CODES.PARTNERSHIP_001.status,
+      );
+    }
+
+    const existing = await this.partnershipsRepository.findByCompanyPair(
+      pair.shopCompanyId,
+      pair.distributorCompanyId,
+    );
+    if (existing?.status === PartnershipStatus.Active) {
+      throw new AppException(
+        ERROR_CODES.PARTNERSHIP_002.code,
+        ERROR_CODES.PARTNERSHIP_002.message,
+        ERROR_CODES.PARTNERSHIP_002.status,
+      );
+    }
+    if (existing?.status === PartnershipStatus.Invited) {
+      throw new AppException(
+        ERROR_CODES.PARTNERSHIP_009.code,
+        ERROR_CODES.PARTNERSHIP_009.message,
+        ERROR_CODES.PARTNERSHIP_009.status,
+      );
+    }
+
+    const created =
+      existing?.status === PartnershipStatus.Rejected
+        ? await this.partnershipsRepository.resetRejectedToInvited(existing.id, actorUserId)
+        : await this.partnershipsRepository.createConnectionRequest(
+            pair.shopCompanyId,
+            pair.distributorCompanyId,
+            actorUserId,
+          );
+
+    await this.auditRepository.create({
+      companyId: callerCompanyId,
+      userId: actorUserId,
+      action:
+        existing?.status === PartnershipStatus.Rejected
+          ? 'PARTNERSHIP_CONNECTION_REQUESTED_AGAIN'
+          : 'PARTNERSHIP_CONNECTION_REQUESTED',
+      entityType: 'Partnership',
+      entityId: created.id,
+      newValue: { targetCompanyId: dto.targetCompanyId } as Prisma.InputJsonValue,
+    });
+
+    await this.notifyConnectionRequested(target, caller!.name);
+
+    return this.toEntityWithCaseCount(created);
+  }
+
+  /**
+   * Powiadamia drugą firmę e-mailem na jej OGÓLNY adres kontaktowy
+   * (`Company.email`) — w przeciwieństwie do `invitePartner()` (gdzie
+   * `adminEmail` jest jawnie podanym parametrem, bo firma jeszcze nie ma
+   * żadnych użytkowników), tu firma docelowa JUŻ ISTNIEJE i ma własnych
+   * pracowników, ale system nie ma dziś mechanizmu "wyślij do wszystkich
+   * pracowników z uprawnieniem partnerships.manage" — świadome uproszczenie
+   * zakresu tego etapu (do rozbudowy jako osobne zadanie, jeśli potrzebne).
+   * Brak `Company.email` u celu = `NotificationsService` sam ustawi
+   * `status=Failed` bez próby wysyłki (NOTIFICATIONS.md §8) — nie wywala się.
+   */
+  private async notifyConnectionRequested(target: Company, callerName: string): Promise<void> {
+    await this.notificationsService.createNotificationFromTemplate({
+      companyId: target.id,
+      code: 'partnership.connection.requested',
+      channel: NotificationChannel.Email,
+      recipientType: NotificationRecipientType.Employee,
+      recipientEmail: target.email ?? undefined,
+      variables: { callerName, targetName: target.name },
+    });
+  }
+
+  /**
+   * Etap 6 — rozstrzyga role Sklep/Dystrybutor z PARY TYPÓW, nie z tego, kto
+   * jest wołającym (w przeciwieństwie do starego `invite()` powyżej, gdzie
+   * `companyId` wołającego to ZAWSZE Sklep). Dokładnie DWIE organizacje typu
+   * `OrganizationType` dziś istnieją, więc jedyna poprawna para to jedna
+   * `Shop` + jedna `ManufacturerDistributor` — w dowolnej kolejności
+   * wołania. `null`, gdy para jest niezgodna (oba `Shop` albo oba
+   * `ManufacturerDistributor`) — wołający decyduje, jak to zgłosić
+   * (wyjątek vs. ciche `false` w wynikach wyszukiwania).
+   */
+  private tryResolveShopDistributorPair(
+    a: Pick<Company, 'id' | 'type'>,
+    b: Pick<Company, 'id' | 'type'>,
+  ): { shopCompanyId: string; distributorCompanyId: string } | null {
+    if (a.type === OrganizationType.Shop && b.type === OrganizationType.ManufacturerDistributor) {
+      return { shopCompanyId: a.id, distributorCompanyId: b.id };
+    }
+    if (a.type === OrganizationType.ManufacturerDistributor && b.type === OrganizationType.Shop) {
+      return { shopCompanyId: b.id, distributorCompanyId: a.id };
+    }
+    return null;
+  }
+
   /** Wyłącznie strona Dystrybutora/Producenta może zaakceptować zaproszenie — PARTNERSHIP-003, gdy woła Sklep (który JEST stroną, więc widzi 403, nie 404 — patrz `findRawOrThrow`). */
   async accept(id: string, companyId: string, actorUserId: string): Promise<PartnershipEntity> {
     const partnership = await this.assertDistributorSide(id, companyId);
@@ -193,36 +381,28 @@ export class PartnershipsService {
     return this.toEntityWithCaseCount(updated);
   }
 
-  // --- Etap 5 — zaproszenie partnera e-mailem (Dystrybutor inicjuje) ---
+  // --- Etap 5/6 — zaproszenie partnera e-mailem (symetryczne — obie strony) ---
 
   /**
-   * Dystrybutor/Producent zaprasza firmę, która JESZCZE NIE ISTNIEJE w
-   * SmartRMA. Zakłada od razu: `Company` (typ domyślny Shop) + siedzibę +
-   * własny prefiks numeracji + katalog statusów (dokładnie ten sam komplet
-   * co `scripts/create-organization.ts`) + `Partnership{status:Invited}` +
-   * `PartnershipBrand` + wysyła e-mail z linkiem. Zaproszony sam zakłada
+   * Wołający zaprasza firmę, która JESZCZE NIE ISTNIEJE w SmartRMA. Zakłada
+   * od razu: `Company` (typ PRZECIWNY do wołającego — Etap 6, symetria) +
+   * siedzibę + własny prefiks numeracji + katalog statusów (dokładnie ten
+   * sam komplet co `scripts/create-organization.ts`) + samoopisany
+   * Contractor/Manufacturer/Brand, JEŚLI nowa firma jest Producentem/
+   * Dystrybutorem (patrz `PartnershipsRepository.createPendingPartnerCompany`)
+   * + `Partnership{status:Invited}` (BEZ `PartnershipBrand` — Etap 6,
+   * decyzja właściciela: marki nie są częścią zapraszania, każda firma
+   * zarządza własnymi) + wysyła e-mail z linkiem. Zaproszony sam zakłada
    * swoje konto poprzez `acceptPartnerInvite` — właściciel wprost zastrzegł,
    * że administrator SmartRMA nie ma ręcznie zakładać kont partnerów.
    */
   async invitePartner(
-    distributorCompanyId: string,
+    callerCompanyId: string,
     actorUserId: string,
     dto: InvitePartnerDto,
   ): Promise<PartnershipEntity> {
-    const ownedBrands = await this.partnershipsRepository.findBrandsOwnedByCompany(
-      dto.brandIds,
-      distributorCompanyId,
-    );
-    if (ownedBrands.length !== dto.brandIds.length) {
-      throw new AppException(
-        ERROR_CODES.PARTNERSHIP_004.code,
-        ERROR_CODES.PARTNERSHIP_004.message,
-        ERROR_CODES.PARTNERSHIP_004.status,
-      );
-    }
-
     const existingInvite = await this.partnershipsRepository.findPendingOrActiveInviteByEmail(
-      distributorCompanyId,
+      callerCompanyId,
       dto.adminEmail,
     );
     if (existingInvite) {
@@ -233,46 +413,64 @@ export class PartnershipsService {
       );
     }
 
-    const company = await this.partnershipsRepository.createPendingPartnerCompany(dto.companyName);
+    const caller = await this.partnershipsRepository.findCompanyById(callerCompanyId);
+    // Dokładnie dwa typy istnieją (`OrganizationType`) — nowa firma dostaje ten drugi.
+    const newCompanyType =
+      caller!.type === OrganizationType.Shop
+        ? OrganizationType.ManufacturerDistributor
+        : OrganizationType.Shop;
+
+    const company = await this.partnershipsRepository.createPendingPartnerCompany(
+      dto.companyName,
+      dto.nip,
+      newCompanyType,
+    );
     await this.caseStatusesService.seedDefaultCatalog(company.id);
+
+    const pair = this.tryResolveShopDistributorPair(caller!, {
+      id: company.id,
+      type: newCompanyType,
+    })!;
 
     const token = generatePartnerInviteToken();
     const expiresAt = new Date(Date.now() + INVITE_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
     const created = await this.partnershipsRepository.createWithInviteToken(
-      company.id,
-      distributorCompanyId,
+      pair.shopCompanyId,
+      pair.distributorCompanyId,
       actorUserId,
-      dto.brandIds,
       dto.adminEmail,
       hashPartnerInviteToken(token),
       expiresAt,
     );
 
     await this.auditRepository.create({
-      companyId: distributorCompanyId,
+      companyId: callerCompanyId,
       userId: actorUserId,
       action: 'PARTNERSHIP_PARTNER_INVITED',
       entityType: 'Partnership',
       entityId: created.id,
       newValue: {
-        shopCompanyId: company.id,
+        newCompanyId: company.id,
         inviteEmail: dto.adminEmail,
-        brandIds: dto.brandIds,
       } as Prisma.InputJsonValue,
     });
 
     const publicUrl = this.config.get<string>('publicUrl.url')!;
     const inviteUrl = `${publicUrl}/partner-invite/${token}`;
     await this.notificationsService.createNotificationFromTemplate({
-      companyId: distributorCompanyId,
+      companyId: callerCompanyId,
       code: 'partnership.invited.partner',
       channel: NotificationChannel.Email,
       recipientType: NotificationRecipientType.Employee,
       recipientEmail: dto.adminEmail,
       variables: {
         companyName: dto.companyName,
-        distributorName: created.distributorCompany.name,
-        brandNames: ownedBrands.map((b) => b.name).join(', '),
+        distributorName: caller!.name,
+        // Etap 6 — marki nie są już częścią zaproszenia; placeholder zostaje
+        // puste (szablon dawnego tekstu może jeszcze wspominać {{brandNames}}
+        // na środowiskach zasianych PRZED tą zmianą — `renderTemplate` po
+        // prostu wstawia pusty string zamiast listy, bez wyjątku).
+        brandNames: '',
         inviteUrl,
       },
     });
